@@ -1,57 +1,52 @@
-@startuml CU06_Descenso_Desacoplamiento_Geofencing
-skinparam dpi 300
-skinparam defaultFontName Arial
+@startuml CU06_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
 skinparam shadowing false
-skinparam RoundCorner 10
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
 
-|#FCE4D6|POS Bus (Nodo GPS)|
-start
-:Transmite telemetria continua cada 3-5s (Lat_B, Lng_B, Rumbo);
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
 
-|#FFF2CC|App Movil (Segundo Plano)|
-:Servicio en background despierta cada 45s;
-:Captura GPS de baja energia (Lat_U, Lng_U);
-:Envia POST /api/v1/trips/heartbeat;
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
 
-|#E2EFDA|Backend Central BC|
-:<<include>> CU-06.1 (Evaluar Distancia Relativa);
-:Calcula Delta_D = Distancia_Haversine(Bus, Celular);
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
 
-if (Usuario pre-marco parada de destino?) then (Si)
-  if (Distancia Bus a Parada Destino < 400m?) then (Si)
-    :<<extend>> CU-06.A (Alarma Anticipada de Bajada);
-    |#FFF2CC|App Movil (Segundo Plano)|
-    :Emite campanilla sonora y vibracion;
-    :Notifica: 'Tu parada esta proxima! Alistate';
-  else (No)
-  endif
-else (No)
-endif
+actor "Backend Central BC\n(Sistema Autónomo)" as B
+actor "Pasajero" as P
+actor "POS en Bus (GPS)" as POS
 
-|#E2EFDA|Backend Central BC|
-if (Delta_D > 150 metros?) then (No: Delta_D < 25m)
-  :Mantiene estado EN_BUS;
-  stop
-else (Si: Usuario descendio fisicamente)
-  :<<include>> CU-06.2 (Finalizar Sesion y Desuscribir);
-  :Asocia paradero mas cercano al punto de bajada;
-  :Actualiza trips: status='COMPLETED', ended_at=NOW();
-  :Desuscribe socket del bus;
-  :Despacha Push Notification de despedida;
-  |#FFF2CC|App Movil (Segundo Plano)|
-  :Detiene servicio de segundo plano;
-  :Cierra vista 'Viaje en Curso' y regresa a mapa libre;
-  |#E8F4F8|Pasajero|
-  :Recibe notificacion de fin de viaje;
-  stop
-endif
+rectangle "Módulo de Telemetría y Desacoplamiento" {
+  usecase "CU-06: Descenso y Desacoplamiento\npor Distancia GPS" as UC_Main
+  
+  usecase "CU-06.1: Evaluar Distancia\nRelativa Bus vs Celular" as UC_Inc1
+  usecase "CU-06.2: Finalizar Sesión\nde Viaje y Desuscribir" as UC_Inc2
 
-|#FCE4D6|POS Bus (Nodo GPS)|
-if (Bus entra a geocerca de Terminal Final?) then (Si)
-  |#E2EFDA|Backend Central BC|
-  :<<extend>> CU-06.B (Cierre Forzoso por Fin de Ruta);
-  :Cierra automaticamente todos los viajes activos del bus;
-else (No)
-endif
-stop
+  usecase "CU-06.A: Emitir Alarma Anticipada\nde Bajada (400m)" as UC_Ext1
+  usecase "CU-06.B: Cierre Forzoso por\nLlegada a Terminal" as UC_Ext2
+  usecase "CU-06.C: Cierre de Sesión\npor Timeout Inactividad" as UC_Ext3
+}
+
+B -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+UC_Ext3 ..> UC_Main : extend
+
+UC_Inc1 -- POS
+UC_Inc2 -- P
+UC_Ext1 -- P
 @enduml

@@ -1,83 +1,54 @@
-@startuml CU04_Operacion_Turno_Conductor_Tablet
-skinparam dpi 300
-skinparam defaultFontName Arial
+@startuml CU04_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
 skinparam shadowing false
-skinparam RoundCorner 10
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
 
-|#E8F4F8|Chofer|
-start
-:Ingresa a la cabina del bus;
-:Digita PIN personal en la Tablet;
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
 
-|#E8EAF6|Tablet Chofer|
-:<<include>> CU-04.1 (Autenticar Chofer por PIN);
-:Envia POST /api/v1/shifts/start;
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
 
-|#E2EFDA|Backend Central BC|
-:Valida PIN, asocia Chofer al bus_id y abre Turno;
-:Retorna ruta asignada y configuracion;
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
 
-|#E8EAF6|Tablet Chofer|
-:Despliega Tablero Operativo:
-- Semaforo de Aforo
-- Feed de Cobros en Vivo
-- Boton [+1 CONADIS]
-- Boton [Ajustar Bajada]
-- Boton [Averia de Unidad];
+actor "Conductor (Chofer)" as C
+actor "Pasajero CONADIS" as Conadis
+actor "Backend Central BC" as B
 
-repeat
-  |#E8F4F8|Chofer|
-  if (Evento en ruta?) then (Pasajero paga en POS)
-    |#E2EFDA|Backend Central BC|
-    :Procesa cobro (CU-01 / CU-02);
-    :Envia WebSocket FARE_PAID;
-    |#E8EAF6|Tablet Chofer|
-    :Sonido de confirmacion;
-    :Muestra Tarjeta Verde/Amarilla (3 seg);
-    :Suma aforo en tiempo real;
-  else if (Sube Pasajero con Carnet CONADIS) then
-    |#E8F4F8|Chofer|
-    :Revisa carnet fisico amarillo;
-    :Presiona boton tactil grande '[+1 CONADIS]';
-    note right: <<extend>> CU-08 (Abordaje Gratuito)
-    |#E8EAF6|Tablet Chofer|
-    :Envia POST /api/v1/trips/conadis (S/. 0.00);
-    :Emite tono corto y suma aforo +1;
-  else if (Paradero de Desembarque Masivo) then
-    |#E8F4F8|Chofer|
-    :Presiona '[Ajustar Bajada]';
-    note right: <<extend>> CU-04.B (Calibrar Aforo)
-    |#E8EAF6|Tablet Chofer|
-    :Calibra semaforo a 'Asientos Libres';
-  else if (Ocurre Falla Mecanica / Accidente) then
-    |#E8F4F8|Chofer|
-    :Presiona boton rojo '[Reportar Averia]';
-    note right: <<extend>> CU-04.A (Reembolso por Averia)
-    |#E8EAF6|Tablet Chofer|
-    :Envia POST /api/v1/buses/breakdown;
-    |#E2EFDA|Backend Central BC|
-    :Marca bus como OUT_OF_SERVICE;
-    :Reembolsa Puntos BC a todos los pasajeros a bordo;
-    :Despacha Push Notification de transbordo;
-    |#E8EAF6|Tablet Chofer|
-    :Pantalla en Rojo 'UNIDAD FUERA DE SERVICIO';
-    stop
-  endif
-repeat while (Continua en jornada laboral?) is (Si)
-->No (Llegada a Terminal);
+rectangle "Módulo de Cabina y Operación" {
+  usecase "CU-04: Operar Turno de\nConducción en Tablet" as UC_Main
+  
+  usecase "CU-04.1: Autenticar Chofer\npor PIN" as UC_Inc1
+  usecase "CU-04.2: Liquidar Turno\ny Generar Arqueo" as UC_Inc2
+  usecase "CU-04.3: Monitorear Aforo\nSemafórico en Vivo" as UC_Inc3
 
-|#E8F4F8|Chofer|
-:Presiona '[Cerrar Turno]';
+  usecase "CU-08: Registrar Abordaje\nGratuito CONADIS (S/. 0.00)" as UC_Ext1
+  usecase "CU-04.A: Declarar Avería Mecánica\ny Disparar Reembolso" as UC_Ext2
+  usecase "CU-04.B: Calibrar Aforo por\nDesembarque Masivo" as UC_Ext3
+}
 
-|#E8EAF6|Tablet Chofer|
-:<<include>> CU-04.2 (Liquidar y Generar Arqueo);
-:Envia POST /api/v1/shifts/close;
+C -- UC_Main
+Conadis -- UC_Ext1
 
-|#E2EFDA|Backend Central BC|
-:Consolida ingresos: App vs Yape vs CONADIS;
-:Genera reporte inmutable de liquidacion;
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+UC_Main ..> UC_Inc3 : include
 
-|#E8EAF6|Tablet Chofer|
-:Despliega Reporte de Liquidacion de Turno;
-stop
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+UC_Ext3 ..> UC_Main : extend
+
+UC_Inc2 -- B
+UC_Ext2 -- B
 @enduml

@@ -1,61 +1,51 @@
-@startuml CU05_Recarga_Puntos_BC
-skinparam dpi 300
-skinparam defaultFontName Arial
+@startuml CU05_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
 skinparam shadowing false
-skinparam RoundCorner 10
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
 
-|#E8F4F8|Pasajero|
-start
-:Abre monedero en App BC;
-:Presiona 'Recargar Puntos';
-:Selecciona importe en Soles (min S/. 5, max S/. 100);
-:Elige metodo de pago (Yape / Tarjeta Debito);
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
 
-|#FFF2CC|App Movil Pasajero|
-:<<include>> CU-05.1 (Iniciar Intencion de Pago);
-:Envia POST /api/v1/wallet/recharge/intent;
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
 
-|#E2EFDA|Backend Central BC|
-:Crea registro de recarga en estado PENDING;
-:Invoca API de Pasarela de Pagos (Niubiz/Yape);
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
 
-|#E8EAF6|Pasarela de Pagos (Yape/Niubiz)|
-:Genera sesion de pago seguro;
-|#FFF2CC|App Movil Pasajero|
-:Despliega modal de pago de la pasarela;
+actor "Pasajero Registrado" as P
+actor "Pasarela de Pagos\n(Yape / Tarjetas)" as Gate
+actor "Backend BC" as B
 
-|#E8F4F8|Pasajero|
-:Confirma el pago en la pasarela;
-
-|#E8EAF6|Pasarela de Pagos (Yape/Niubiz)|
-if (Cobro bancario autorizado?) then (No)
-  :<<extend>> CU-05.A (Manejar Rechazo Bancario);
-  :Envia Webhook PAYMENT_DECLINED;
-  |#E2EFDA|Backend Central BC|
-  :Marca recarga como FAILED;
-  |#FFF2CC|App Movil Pasajero|
-  :Muestra 'Pago declinado por su banco';
-  stop
-else (Si)
-  :Debita fondos bancarios en Soles;
-  :Envia Webhook firmado PAYMENT_APPROVED;
+rectangle "Módulo de Monedero Digital" {
+  usecase "CU-05: Recargar Puntos BC" as UC_Main
   
-  |#E2EFDA|Backend Central BC|
-  :Valida firma criptografica HMAC-SHA256;
-  :Calcula Puntos = Monto_PEN * 10;
-  :<<include>> CU-05.2 (Asentar en Libro Mayor Ledger);
-  :Transaccion ACID:
-  - Marca recarga como COMPLETED
-  - Inserta RECHARGE_CREDIT en ledger_transactions
-  - Incrementa users.wallet_points;
-  :Emite notificacion Push / WebSocket al usuario;
-  
-  |#FFF2CC|App Movil Pasajero|
-  :Sonido de monedas y vibracion haptica;
-  :Actualiza saldo en vivo en pantalla;
-endif
+  usecase "CU-05.1: Iniciar Intención\nde Pago Digital" as UC_Inc1
+  usecase "CU-05.2: Asentar en Libro\nMayor (Ledger)" as UC_Inc2
+  usecase "CU-05.3: Notificar Nuevo\nSaldo al Usuario" as UC_Inc3
 
-|#E8F4F8|Pasajero|
-:Visualiza nuevo saldo listo para viajar;
-stop
+  usecase "CU-05.A: Manejar Rechazo\nde Fondos Bancarios" as UC_Ext1
+  usecase "CU-05.B: Cancelar Intención\npor Abandono" as UC_Ext2
+}
+
+P -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+UC_Main ..> UC_Inc3 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+
+UC_Inc1 -- Gate
+UC_Inc2 -- B
 @enduml

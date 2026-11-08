@@ -1,69 +1,53 @@
-@startuml CU03_Acreditacion_Carnet_SUNEDU
-skinparam dpi 300
-skinparam defaultFontName Arial
+@startuml CU03_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
 skinparam shadowing false
-skinparam RoundCorner 10
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
 
-|#E8F4F8|Estudiante|
-start
-:Ingresa a Perfil en App BC;
-:Selecciona 'Activar Tarifa Universitaria';
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
 
-|#FFF2CC|App Movil Pasajero|
-:Abre camara con marco para QR SUNEDU;
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
 
-|#E8F4F8|Estudiante|
-:Enfoca QR oficial impreso en carnet fisico;
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
 
-|#FFF2CC|App Movil Pasajero|
-if (Camara decodifica QR tras 2 intentos?) then (No)
-  :<<extend>> CU-03.A (Cola de Auditoria Manual);
-  :Solicita fotos de anverso y reverso;
-  |#E8F4F8|Estudiante|
-  :Adjunta fotografias nitidas;
-  |#E8EAF6|Panel Web Administrador|
-  :Pasa a cola 'Auditoria Manual Pendiente';
-  :Auditor revisa y aprueba/rechaza en < 24h;
-  if (Aprobado por Auditor?) then (Si)
-    :Activa rol STUDENT;
-  else (No)
-    :Notifica motivo de rechazo;
-    stop
-  endif
-else (Si)
-  :<<include>> CU-03.1 (Decodificar Payload SUNEDU);
-  :Extrae DNI, Universidad, Nombres, Caducidad;
-  :Solicita foto del anverso (selfie/rostro);
-  |#E8F4F8|Estudiante|
-  :Captura foto de respaldo;
-  |#FFF2CC|App Movil Pasajero|
-  :Envia POST /api/v1/students/verify;
+actor "Pasajero Estudiante" as E
+actor "Servicio SUNEDU" as S
+actor "Auditor de Transporte\n(Admin Web)" as A
+
+rectangle "Módulo de Beneficios y Tarifas" {
+  usecase "CU-03: Acreditar Carnet\nUniversitario" as UC_Main
   
-  |#E2EFDA|Backend Central BC|
-  :<<include>> CU-03.2 (Verificar Unicidad de DNI);
-  if (DNI ya registrado en otra cuenta activa?) then (Si)
-    :Retorna error 409 STUDENT_ID_ALREADY_IN_USE;
-    |#FFF2CC|App Movil Pasajero|
-    :Muestra 'Carnet ya vinculado a otra cuenta';
-    stop
-  else (No)
-    if (Fecha Caducidad SUNEDU >= Fecha Actual?) then (No)
-      :<<extend>> CU-03.B (Rechazo por Caducidad Vencida);
-      :Retorna error 422 STUDENT_CARD_EXPIRED;
-      |#FFF2CC|App Movil Pasajero|
-      :Muestra 'Carnet vencido ante SUNEDU';
-      stop
-    else (Si)
-      :Guarda evidencia en almacenamiento seguro;
-      :Actualiza Users: rol='STUDENT', expires_at=caducidad;
-      :Programa Cron Job de revocacion automatica;
-      :Retorna 200 OK con insignia de estudiante;
-    endif
-  endif
-endif
+  usecase "CU-03.1: Decodificar y\nValidar QR SUNEDU" as UC_Inc1
+  usecase "CU-03.2: Verificar Unicidad\nde DNI en Sistema" as UC_Inc2
+  usecase "CU-03.3: Registrar Evidencia\ny Programar Vigencia" as UC_Inc3
 
-|#FFF2CC|App Movil Pasajero|
-:Despliega insignia dorada 'Estudiante Verificado';
-:Actualiza costo de viaje a 7 Puntos (S/. 0.70);
-stop
+  usecase "CU-03.A: Derivar a Cola de\nAuditoría Manual" as UC_Ext1
+  usecase "CU-03.B: Rechazar por\nCaducidad Vencida" as UC_Ext2
+  usecase "CU-03.C: Bloquear por\nDNI Duplicado" as UC_Ext3
+}
+
+E -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+UC_Main ..> UC_Inc3 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+UC_Ext3 ..> UC_Main : extend
+
+UC_Inc1 -- S
+UC_Ext1 -- A
 @enduml

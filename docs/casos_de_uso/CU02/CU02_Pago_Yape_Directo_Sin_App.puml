@@ -1,67 +1,50 @@
-@startuml CU02_Pago_Yape_Directo_Sin_App
-skinparam dpi 300
-skinparam defaultFontName Arial
+@startuml CU02_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
 skinparam shadowing false
-skinparam RoundCorner 10
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
 
-|#E8F4F8|Pasajero Sin App|
-start
-:Sube por puerta delantera del bus;
-:Presiona boton 'Pagar con Yape/Plin' en POS;
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
 
-|#FCE4D6|POS en Puerta|
-:Muestra QR Institucional con monto S/. 1.50;
-:Inicia cuenta regresiva Failsafe de 5.0 segundos;
-:Cambia a estado 'Verificando pago...';
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
 
-|#E8F4F8|Pasajero Sin App|
-:Abre app Yape en su smartphone;
-:Escanea QR del POS y confirma pago S/. 1.50;
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
 
-|#FFF2CC|Pasarela Bancaria (Yape/BCP)|
-:Procesa transferencia a cuenta del transportista;
-:Emite HTTP Webhook firmado a Backend BC;
+actor "Pasajero Sin App" as P
+actor "Conductor (Chofer)" as C
+actor "Pasarela Bancaria\n(Yape / Niubiz)" as Bank
 
-|#E2EFDA|Backend Central BC|
-if (Webhook recibido en <= 5 segundos?) then (Si)
-  :<<include>> CU-02.1 (Procesar Transaccion Bancaria);
-  :Valida firma HMAC-SHA256 y monto S/. 1.50;
-  :Registra ingreso DIRECT_YAPE en Libro Mayor;
-  :<<include>> CU-01.2 (Emitir Feedback en Hardware);
-  fork
-    |#FCE4D6|POS en Puerta|
-    :Emite BEEP Verde agudo (800ms);
-    :Muestra 'Yape Recibido! Pase';
-  fork again
-    |#E8EAF6|Tablet Chofer|
-    :Muestra Tarjeta Verde 'Yape Directo S/. 1.50';
-    :Actualiza aforo +1;
-  end fork
-else (No: Timeout bancario > 5s)
-  |#E8EAF6|Tablet Chofer|
-  :<<extend>> CU-02.A (Failsafe Autorizacion Manual);
-  :Alerta sonora 'Yape demorado';
-  :Habilita boton 'Validar Manualmente';
-  |#E8F4F8|Pasajero Sin App|
-  :Muestra animacion oficial en movimiento de Yape al chofer;
-  |#E8EAF6|Tablet Chofer|
-  if (Comprobante oficial valido y hora exacta?) then (Si)
-    :Chofer presiona 'Validar Manualmente';
-    :Registra pasaje como CONFIRMADO_MANUAL;
-    :Actualiza aforo +1;
-    |#FCE4D6|POS en Puerta|
-    :Emite BEEP Verde y muestra 'Pase';
-  else (No / Captura Falsa)
-    :Chofer rechaza paso del pasajero;
-    |#E8F4F8|Pasajero Sin App|
-    :Desciende del bus;
-    stop
-  endif
-endif
+rectangle "Módulo de Recaudación Directa" {
+  usecase "CU-02: Pagar Directo con\nYape en POS (Sin App)" as UC_Main
+  
+  usecase "CU-02.1: Procesar Transacción\nBancaria Webhook" as UC_Inc1
+  usecase "CU-01.2: Emitir Feedback\nen Hardware" as UC_Inc2
 
-|#FCE4D6|POS en Puerta|
-:Regresa a pantalla principal de QR dinamico;
-|#E8F4F8|Pasajero Sin App|
-:Avanza hacia los asientos;
-stop
+  usecase "CU-02.A: Autorizar Manualmente\npor Timeout (Failsafe 5s)" as UC_Ext1
+  usecase "CU-02.B: Notificar Pago\nRechazado por Banco" as UC_Ext2
+}
+
+P -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+
+UC_Inc1 -- Bank
+UC_Ext1 -- C
+UC_Inc2 -- C
 @enduml

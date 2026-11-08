@@ -23,7 +23,14 @@
 
 ---
 
-## 2. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
+## 2. Diagrama UML de Casos de Uso (Estructura y Relaciones)
+
+<div align="center">
+  <img src="CU02_Pago_Yape_Directo_Sin_App.png" alt="Diagrama UML de Casos de Uso - CU-02: Pago Directo con Yape/Plin en POS (Sin App)" style="max-width: 100%; height: auto; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);" />
+  <p><em>Figura: Diagrama UML 2.5 del Caso de Uso con Actores, Caso Base, relaciones &laquo;include&raquo; y &laquo;extend&raquo;.</em></p>
+</div>
+
+## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
 ### 2.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-02.1` (Procesar Transacción Bancaria):** Recepción y verificación criptográfica de la notificación HTTP Webhook proveniente de la pasarela bancaria oficial (Niubiz/BCP).
@@ -45,8 +52,8 @@
 
 ## 3. Diagrama de Actividades UML
 
-### Diagrama de Actividades UML (Renderizado en Alta Resolución 300 DPI)
-![CU02_Pago_Yape_Directo_Sin_App](CU02_Pago_Yape_Directo_Sin_App.png)
+
+
 
  (Flujo de Decisiones)
 

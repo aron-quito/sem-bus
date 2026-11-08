@@ -1,84 +1,55 @@
-@startuml CU01_Abordaje_Pago_App
-skinparam dpi 300
-skinparam defaultFontName Arial
+@startuml CU01_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
 skinparam shadowing false
-skinparam RoundCorner 10
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
 
-|#E8F4F8|Pasajero|
-start
-:Sube por puerta delantera del bus;
-:Abre App Movil BC y activa escaner;
-if (Viaja con acompanantes?) then (Si)
-  :Presiona [+] y agrega N pasajes extra;
-  note right: <<extend>> CU-01.B (Pasajes Acompanantes)
-else (No)
-endif
-:Enfoca codigo QR dinamico en pantalla del POS;
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
 
-|#FFF2CC|App Movil Pasajero|
-:Decodifica payload QR (bus_id, nonce, timestamp);
-:Envia solicitud POST /api/v1/trips/pay;
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
 
-|#E2EFDA|Backend Central BC|
-if (Nonce valido y no utilizado previamente?) then (No)
-  :Retorna error 409 QR_EXPIRED;
-  note right: <<extend>> CU-01.D (Manejo QR Expirado)
-  |#FFF2CC|App Movil Pasajero|
-  :Muestra "QR actualizado, reintente";
-  stop
-else (Si)
-  if (Usuario posee rol STUDENT activo?) then (Si)
-    if (Cooldown de 120s superado?) then (Si)
-      :Tarifa Titular = 7 Puntos (S/. 0.70);
-      note right: <<extend>> CU-01.A (Tarifa Universitaria)
-    else (No)
-      :Tarifa Titular = 15 Puntos (S/. 1.50);
-    endif
-  else (No)
-    :Tarifa Titular = 15 Puntos (S/. 1.50);
-  endif
-  :Total Puntos = Tarifa Titular + (N * 15 Puntos);
-  if (Saldo en Puntos >= Total Puntos?) then (No)
-    :Retorna error 402 INSUFFICIENT_FUNDS;
-    note right: <<extend>> CU-01.C (Notificar Saldo Insuficiente)
-    |#FCE4D6|POS en Puerta|
-    :Emite BEEP-BEEP Rojo "Saldo Insuficiente";
-    |#E8EAF6|Tablet Chofer|
-    :Despliega Tarjeta Roja "NO PASA";
-    |#FFF2CC|App Movil Pasajero|
-    :Muestra modal con opcion de recargar o Yape directo;
-    stop
-  else (Si)
-    :<<include>> CU-01.1 (Debitar Puntos de Monedero);
-    :Transaccion ACID en Libro Mayor (Ledger);
-    :Registra viaje ACTIVO en tabla trips;
-    :Marca Nonce como CONSUMIDO;
-    if (Aplico tarifa estudiante?) then (Si)
-      :Activa cooldown de 120s para el usuario;
-    endif
-    :<<include>> CU-01.2 (Emitir Feedback en Hardware);
-    fork
-      |#FCE4D6|POS en Puerta|
-      :Recibe evento WebSocket;
-      :Emite BEEP Verde agudo (800ms);
-      :Pantalla verde "PAGO EXITOSO";
-      :Genera nuevo QR dinamico con nuevo nonce;
-    fork again
-      |#E8EAF6|Tablet Chofer|
-      :Recibe evento WebSocket;
-      :Emite sonido discreto de confirmacion;
-      :Despliega Tarjeta Verde/Amarilla con monto cobrado;
-      :Incrementa aforo en +(1 + N);
-    fork again
-      |#FFF2CC|App Movil Pasajero|
-      :<<include>> CU-01.3 (Suscribir Sesion a Unidad);
-      :Cambia interfaz a "Viaje en Curso";
-      :Inicia monitoreo de desacoplamiento GPS cada 45s;
-    end fork
-  endif
-endif
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
 
-|#E8F4F8|Pasajero|
-:Escucha BEEP verde y avanza hacia los asientos;
-stop
+actor "Pasajero Registrado" as P
+actor "Conductor (Chofer)" as C
+actor "Backend BC" as B
+
+rectangle "Módulo de Abordaje y Pasajes" {
+  usecase "CU-01: Abordar y Pagar\ncon App en POS" as UC_Main
+  
+  usecase "CU-01.1: Validar y\nDebitar Puntos" as UC_Inc1
+  usecase "CU-01.2: Emitir Feedback\nen Hardware" as UC_Inc2
+  usecase "CU-01.3: Suscribir Sesión\na Unidad" as UC_Inc3
+
+  usecase "CU-01.A: Aplicar Tarifa\nUniversitaria (7 Pts)" as UC_Ext1
+  usecase "CU-01.B: Agregar Pasajes\nAcompañantes (+15 Pts)" as UC_Ext2
+  usecase "CU-01.C: Notificar Saldo\nInsuficiente" as UC_Ext3
+  usecase "CU-01.D: Manejar QR\nExpirado o Usado" as UC_Ext4
+}
+
+P -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+UC_Main ..> UC_Inc3 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+UC_Ext3 ..> UC_Main : extend
+UC_Ext4 ..> UC_Main : extend
+
+UC_Inc2 -- C
+UC_Inc1 -- B
 @enduml

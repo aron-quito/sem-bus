@@ -23,7 +23,14 @@
 
 ---
 
-## 2. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
+## 2. Diagrama UML de Casos de Uso (Estructura y Relaciones)
+
+<div align="center">
+  <img src="CU06_Descenso_Desacoplamiento_Geofencing.png" alt="Diagrama UML de Casos de Uso - CU-06: Descenso y Desacoplamiento por Geofencing" style="max-width: 100%; height: auto; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);" />
+  <p><em>Figura: Diagrama UML 2.5 del Caso de Uso con Actores, Caso Base, relaciones &laquo;include&raquo; y &laquo;extend&raquo;.</em></p>
+</div>
+
+## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
 ### 2.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-06.1` (Evaluar Distancia Relativa Bus vs Celular):** Cálculo geométrico continuo en el backend usando la fórmula de Haversine:
@@ -48,8 +55,8 @@
 
 ## 3. Diagrama de Actividades UML
 
-### Diagrama de Actividades UML (Renderizado en Alta Resolución 300 DPI)
-![CU06_Descenso_Desacoplamiento_Geofencing](CU06_Descenso_Desacoplamiento_Geofencing.png)
+
+
 
  (Flujo de Decisiones)
 

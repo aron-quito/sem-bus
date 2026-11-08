@@ -23,7 +23,14 @@
 
 ---
 
-## 2. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
+## 2. Diagrama UML de Casos de Uso (Estructura y Relaciones)
+
+<div align="center">
+  <img src="CU03_Acreditacion_Carnet_SUNEDU.png" alt="Diagrama UML de Casos de Uso - CU-03: Acreditación de Carnet Universitario (SUNEDU)" style="max-width: 100%; height: auto; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);" />
+  <p><em>Figura: Diagrama UML 2.5 del Caso de Uso con Actores, Caso Base, relaciones &laquo;include&raquo; y &laquo;extend&raquo;.</em></p>
+</div>
+
+## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
 ### 2.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-03.1` (Decodificar y Validar QR Oficial SUNEDU):** Lectura del formato criptográfico oficial impreso en el carnet, extrayendo DNI, universidad y fecha de caducidad.
@@ -47,8 +54,8 @@
 
 ## 3. Diagrama de Actividades UML
 
-### Diagrama de Actividades UML (Renderizado en Alta Resolución 300 DPI)
-![CU03_Acreditacion_Carnet_SUNEDU](CU03_Acreditacion_Carnet_SUNEDU.png)
+
+
 
  (Flujo de Decisiones)
 
