@@ -1,0 +1,53 @@
+@startuml CU07_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
+
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
+
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
+
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
+
+actor "Pasajero (Invitado o Registrado)" as P
+actor "Módulo POS (Nodo GPS)" as POS
+actor "Backend BC" as B
+
+rectangle "Módulo de Exploración y Telemetría en Vivo" {
+  usecase "CU-07: Consultar Rutas y\nBuses en Tiempo Real" as UC_Main
+  
+  usecase "CU-07.1: Cargar Polígono de\nRutas y Paraderos" as UC_Inc1
+  usecase "CU-07.2: Transmitir Telemetría\nGPS en Vivo (WebSocket)" as UC_Inc2
+  usecase "CU-07.3: Desplegar Semáforo\nde Aforo por Unidad" as UC_Inc3
+
+  usecase "CU-07.A: Calcular Tiempo Estimado\nde Llegada (ETA)" as UC_Ext1
+  usecase "CU-07.B: Notificar Desvío o\nRetraso de la Línea" as UC_Ext2
+  usecase "CU-07.C: Filtrar Unidades por\nRuta o Cercanía" as UC_Ext3
+}
+
+P -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+UC_Main ..> UC_Inc3 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+UC_Ext3 ..> UC_Main : extend
+
+UC_Inc2 -- POS
+UC_Inc2 -- B
+@enduml

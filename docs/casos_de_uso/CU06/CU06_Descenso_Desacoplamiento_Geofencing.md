@@ -116,11 +116,14 @@ flowchart TD
 4. **[Punto de Extensión PE-ALARMA-DESTINO]:**
    * Si el usuario pre-seleccionó una parada de bajada (ej. *"Paradero Plaza Zela"*), cuando el GPS del bus se aproxima a menos de 400 metros de la geocerca de ese paradero, el backend despacha una notificación prioritaria:
      * La app suena con un tono de campanilla: 🔔 *"¡Atención: Tu parada está próxima! Alístate para descender por la puerta trasera"*.
-5. **[Descenso Físico y Desacoplamiento]:**
+5. **[Descenso Físico y Filtro Anti-Ruido de Desacoplamiento (Anti-Jitter)]:**
    * El usuario desciende en el paradero.
    * El bus reanuda su marcha hacia el siguiente paradero a una velocidad de 30-40 km/h.
-   * En el siguiente latido (a los 45 segundos), el bus ya ha avanzado más de 300 metros por la avenida, mientras que el usuario está caminando o quieto en la vereda.
-   * El backend detecta: $\Delta D = 320\text{ metros} > 150\text{ metros (Umbral de Desacoplamiento)}$.
+   * **Regla Anti-Jitter para QA:** Para evitar falsos positivos por rebote de señal GPS entre edificios altos:
+     * Si una sola lectura da $\Delta D > 150\text{m}$, el sistema pasa a estado provisional `VERIFICANDO_BAJADA`.
+     * El sistema confirma el descenso si se cumple cualquiera de estas dos condiciones:
+       1. **Condición A:** Dos latidos consecutivos separados por 45 segundos registran $\Delta D > 150\text{ metros}$.
+       2. **Condición B:** La velocidad del bus es $> 25\text{ km/h}$ y la distancia se incrementa monótonamente ($\Delta D_2 > \Delta D_1$).
 6. **[Cierre de Sesión - Inclusión CU-06.2]:**
    * El backend asienta el fin del viaje:
      * `trips.status = 'COMPLETED'`
@@ -129,3 +132,34 @@ flowchart TD
    * Desvincula al usuario del canal telemático del bus.
    * Envía notificación push: *"Has descendido en Plaza Zela. ¡Gracias por viajar con BC!"*.
    * La app apaga el servicio de segundo plano y regresa a la vista de mapa principal en modo reposo.
+
+---
+
+## 5. Criterios de Aceptación para QA (Escenarios BDD / Cucumber)
+
+```gherkin
+Feature: Desacoplamiento y Cierre Autónomo de Viaje
+
+  Scenario: Detección exitosa de descenso con filtro anti-rebote
+    Given que el usuario "U20" viaja en el "BUS_01" con viaje en estado "ACTIVO"
+    When el usuario desciende del bus y el bus avanza
+    And el primer latido GPS registra una distancia de 170 metros
+    And el segundo latido GPS a los 45 segundos confirma una distancia de 350 metros
+    Then el backend actualiza el estado del viaje a "COMPLETED"
+    And desuscribe la sesión del bus
+    And envía la notificación push de fin de viaje
+
+  Scenario: Ignorar rebote espurio de GPS (Falso Positivo)
+    Given que el usuario "U20" continúa físicamente dentro del bus
+    When un rebote momentáneo de señal entre edificios reporta distancia de 160 metros
+    And el siguiente latido a los 45 segundos reporta una distancia de 12 metros
+    Then el backend descarta la anomalía
+    And el viaje permanece en estado "ACTIVO" sin interrupciones
+
+  Scenario: Cierre forzoso de viaje por llegada a terminal
+    Given que un usuario tiene viaje "ACTIVO" y se queda dormido
+    When el bus ingresa a la geocerca del paradero final de la línea
+    And el chofer presiona "Cerrar Vuelta"
+    Then el sistema finaliza automáticamente el viaje del usuario
+    And asigna como parada de descenso el Terminal Final
+```
