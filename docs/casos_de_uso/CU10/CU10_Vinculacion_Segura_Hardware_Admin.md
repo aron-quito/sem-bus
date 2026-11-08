@@ -79,10 +79,11 @@
    * Se repite el escaneo en la tablet de cabina.
    * La tablet queda asociada al mismo `bus_id`.
 6. **[Asiento en Base de Datos - Inclusión CU-10.3]:**
-   * La base de datos actualiza la tabla `buses`:
-     * `buses.pos_device_id = 'POS-SN-88412'`
-     * `buses.tablet_device_id = 'TAB-SN-10294'`
-     * `buses.pairing_status = 'PAIRED_ACTIVE'`
+   * La base de datos actualiza la tabla `buses` e inserta en `hardware_pairings`:
+     * `buses.pos_device_serial = 'POS-SN-88412'`
+     * `buses.tablet_device_serial = 'TAB-SN-10294'`
+     * `buses.pairing_status = 'PAIRED'`
+     * `hardware_pairings`: inserta los registros de tipo `'POS'` y `'TABLET'` con estado `'ACTIVE'`.
 7. **[Confirmación en Cabina]:**
    * La pantalla del POS y la Tablet emiten un tono de éxito y despliegan: *"Unidad Vinculada con Éxito a BUS 01 - Tacna"*.
    * Desde ese momento, cualquier transacción enviada por ese POS es firmada y reconocida automáticamente por el sistema.

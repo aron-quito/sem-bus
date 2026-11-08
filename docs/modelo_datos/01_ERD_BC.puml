@@ -1,0 +1,322 @@
+@startuml BC_ERD
+
+left to right direction
+
+hide circle
+skinparam linetype ortho
+skinparam entity {
+  BackgroundColor #FAFAFA
+  BorderColor #1565C0
+  ArrowColor #1565C0
+}
+skinparam note {
+  BackgroundColor #FFF9C4
+  BorderColor #F9A825
+}
+
+title BC (Bus Conectado) - Modelo Entidad-Relacion v1.0
+
+' ============================================================
+' ENTIDADES
+' ============================================================
+
+entity "users" as users {
+  * id : UUID <<PK>>
+  --
+  * phone : VARCHAR(15) <<UNIQUE>>
+  name : VARCHAR(100)
+  role : user_role
+  current_device_id : VARCHAR(200)
+  otp_hash : VARCHAR(255)
+  otp_expires_at : TIMESTAMP
+  is_active : BOOLEAN
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+}
+
+entity "user_sessions" as user_sessions {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * device_id : VARCHAR(200)
+  device_name : VARCHAR(100)
+  * jwt_jti : VARCHAR(255) <<UNIQUE>>
+  ip_address : INET
+  is_active : BOOLEAN
+  created_at : TIMESTAMP
+  revoked_at : TIMESTAMP
+}
+
+entity "student_verifications" as student_verif {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK,UNIQUE>>
+  * dni : VARCHAR(8)
+  university : VARCHAR(150)
+  university_code : VARCHAR(20)
+  career : VARCHAR(100)
+  academic_cycle : VARCHAR(20)
+  photo_url : VARCHAR(500)
+  status : sv_status
+  sunedu_verified_at : TIMESTAMP
+  expires_at : TIMESTAMP
+  extension_grace_days : INTEGER
+  rejection_reason : TEXT
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+}
+
+entity "wallets" as wallets {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK,UNIQUE>>
+  * points_balance : INTEGER >= 0
+  last_transaction_id : UUID
+  updated_at : TIMESTAMP
+}
+
+entity "ledger_transactions" as ledger {
+  * id : UUID <<PK>>
+  --
+  * wallet_id : UUID <<FK>>
+  * user_id : UUID <<FK>>
+  * type : tx_type
+  * amount_points : INTEGER
+  amount_pen : NUMERIC(10,2)
+  reference_id : UUID
+  reference_type : VARCHAR(20)
+  * balance_before : INTEGER
+  * balance_after : INTEGER
+  description : VARCHAR(255)
+  created_at : TIMESTAMP
+}
+
+entity "recharges" as recharges {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * wallet_id : UUID <<FK>>
+  * amount_pen : NUMERIC(10,2)
+  * points_credited : INTEGER
+  gateway : recharge_gw
+  gateway_tx_id : VARCHAR(255) <<UNIQUE>>
+  status : recharge_status
+  metadata : JSONB
+  created_at : TIMESTAMP
+  completed_at : TIMESTAMP
+}
+
+entity "fare_config" as fare_config {
+  * id : UUID <<PK>>
+  --
+  * fare_type : fare_type <<UNIQUE>>
+  * amount_pen : NUMERIC(10,2)
+  * points_cost : INTEGER
+  student_cooldown_seconds : INTEGER
+  effective_from : TIMESTAMP
+  updated_by : UUID <<FK>>
+  updated_at : TIMESTAMP
+}
+
+entity "app_config" as app_config {
+  * id : UUID <<PK>>
+  --
+  * key : VARCHAR(100) <<UNIQUE>>
+  * value : TEXT
+  description : VARCHAR(255)
+  updated_by : UUID <<FK>>
+  updated_at : TIMESTAMP
+}
+
+entity "routes" as routes {
+  * id : UUID <<PK>>
+  --
+  * name : VARCHAR(100)
+  * line_number : VARCHAR(10) <<UNIQUE>>
+  description : TEXT
+  geometry_up : JSONB
+  geometry_down : JSONB
+  color_hex : VARCHAR(7)
+  is_active : BOOLEAN
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+}
+
+entity "stops" as stops {
+  * id : UUID <<PK>>
+  --
+  * route_id : UUID <<FK>>
+  * name : VARCHAR(100)
+  * lat : NUMERIC(10,8)
+  * lng : NUMERIC(11,8)
+  sequence_up : INTEGER
+  sequence_down : INTEGER
+  geofence_radius_m : INTEGER
+  is_terminal : BOOLEAN
+  created_at : TIMESTAMP
+}
+
+entity "buses" as buses {
+  * id : UUID <<PK>>
+  --
+  * plate : VARCHAR(10) <<UNIQUE>>
+  route_id : UUID <<FK>>
+  pos_device_serial : VARCHAR(100)
+  tablet_device_serial : VARCHAR(100)
+  gps_lat : NUMERIC(10,8)
+  gps_lng : NUMERIC(11,8)
+  gps_heading : NUMERIC(5,2)
+  gps_speed : NUMERIC(5,2)
+  last_telemetry_at : TIMESTAMP
+  current_direction : direction_type
+  is_visible_public : BOOLEAN
+  pause_reason : VARCHAR(255)
+  pairing_status : bus_pairing_st
+  is_active : BOOLEAN
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+}
+
+entity "drivers" as drivers {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK,UNIQUE>>
+  * name : VARCHAR(100)
+  * license_number : VARCHAR(20) <<UNIQUE>>
+  * pin_hash : VARCHAR(255)
+  is_active : BOOLEAN
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+}
+
+entity "shifts" as shifts {
+  * id : UUID <<PK>>
+  --
+  * driver_id : UUID <<FK>>
+  * bus_id : UUID <<FK>>
+  * route_id : UUID <<FK>>
+  direction : direction_type
+  * qr_nonce : VARCHAR(255) <<UNIQUE>>
+  * started_at : TIMESTAMP
+  ended_at : TIMESTAMP
+  initial_odometer_km : NUMERIC(8,2)
+  total_app_revenue_pen : NUMERIC(10,2)
+  total_yape_revenue_pen : NUMERIC(10,2)
+  total_conadis_count : INTEGER
+  total_trips : INTEGER
+  status : shift_status
+  created_at : TIMESTAMP
+}
+
+entity "trips" as trips {
+  * id : UUID <<PK>>
+  --
+  * user_id : UUID <<FK>>
+  * shift_id : UUID <<FK>>
+  * bus_id : UUID <<FK>>
+  fare_type : fare_type
+  points_debited : INTEGER
+  boarded_stop_id : UUID <<FK>>
+  alighted_stop_id : UUID <<FK>>
+  boarded_lat : NUMERIC(10,8)
+  boarded_lng : NUMERIC(11,8)
+  alighted_lat : NUMERIC(10,8)
+  alighted_lng : NUMERIC(11,8)
+  status : trip_status
+  qr_nonce_used : VARCHAR(255)
+  companion_count : INTEGER
+  started_at : TIMESTAMP
+  ended_at : TIMESTAMP
+  created_at : TIMESTAMP
+}
+
+entity "hardware_pairings" as hw_pairings {
+  * id : UUID <<PK>>
+  --
+  * bus_id : UUID <<FK>>
+  device_type : device_type
+  * device_serial : VARCHAR(100)
+  mac_address : VARCHAR(17)
+  pairing_token_hash : VARCHAR(255)
+  certificate_pem : TEXT
+  status : pairing_status
+  paired_at : TIMESTAMP
+  revoked_at : TIMESTAMP
+  revoked_by_admin_id : UUID <<FK>>
+  created_at : TIMESTAMP
+}
+
+entity "support_tickets" as tickets {
+  * id : UUID <<PK>>
+  --
+  user_id : UUID <<FK,nullable>>
+  trip_id : UUID <<FK,nullable>>
+  category : ticket_category
+  * subject : VARCHAR(255)
+  * description : TEXT
+  attachment_url : VARCHAR(500)
+  status : ticket_status
+  resolution_notes : TEXT
+  assigned_to_admin_id : UUID <<FK>>
+  created_at : TIMESTAMP
+  updated_at : TIMESTAMP
+  resolved_at : TIMESTAMP
+}
+
+entity "webhook_idempotency" as webhook {
+  * id : UUID <<PK>>
+  --
+  * gateway : VARCHAR(50)
+  * gateway_tx_id : VARCHAR(255)
+  * processed_at : TIMESTAMP
+  response_snapshot : JSONB
+}
+
+note bottom of webhook
+  UNIQUE(gateway, gateway_tx_id)
+  Anti-replay para webhooks bancarios
+end note
+
+note right of buses
+  GPS en POS (12V/24V del bus)
+  NO en tablet del chofer
+  is_visible_public = false oculta
+  el bus a pasajeros (Admin only)
+end note
+
+note right of wallets
+  points_balance >= 0 (CHECK)
+  1 PEN = 10 Puntos BC
+  Adulto: 15 pts | Student: 7 pts
+  CONADIS: 0 pts
+end note
+
+' ============================================================
+' RELACIONES
+' ============================================================
+
+users          ||--o{ user_sessions    : "tiene sesiones"
+users          ||--o| student_verif    : "posee verificacion"
+users          ||--||  wallets         : "tiene monedero"
+wallets        ||--o{ ledger           : "registra movimientos"
+users          ||--o{ ledger           : "afecta"
+users          ||--o{ recharges        : "realiza recargas"
+wallets        ||--o{ recharges        : "acredita puntos"
+users          ||--o| drivers          : "es conductor"
+routes         ||--o{ stops            : "contiene paraderos"
+routes         ||--o{ buses            : "asignado a"
+buses          ||--o{ shifts           : "opera en turnos"
+drivers        ||--o{ shifts           : "conduce turnos"
+routes         ||--o{ shifts           : "recorre ruta"
+shifts         ||--o{ trips            : "genera viajes"
+buses          ||--o{ trips            : "transporta"
+users          ||--o{ trips            : "realiza viajes"
+stops          |o--o{ trips            : "punto abordaje/bajada"
+buses          ||--o{ hw_pairings      : "vincula hardware"
+users          ||--o{ tickets          : "envia tickets"
+trips          |o--o{ tickets          : "referencia viaje"
+users          ||--o{ fare_config      : "admin actualiza"
+users          ||--o{ app_config       : "admin configura"
+users          ||--o{ hw_pairings      : "admin revoca"
+
+@enduml

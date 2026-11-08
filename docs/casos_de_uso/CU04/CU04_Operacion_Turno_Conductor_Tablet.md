@@ -1,6 +1,6 @@
 # Especificación Detallada de Caso de Uso: CU-04
 ## Operación de Turno y Control en Tablet del Conductor
-**Documento UML:** `docs/casos_de_uso/CU04_Operacion_Turno_Conductor_Tablet.md`  
+**Documento UML:** `docs/casos_de_uso/CU04/CU04_Operacion_Turno_Conductor_Tablet.md`  
 **Referencia UML:** `CU04` en [diagrama_casos_de_uso.puml](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/diagrama_casos_de_uso.puml)  
 **Versión:** 2.0 (Análisis Riguroso)
 
@@ -32,16 +32,16 @@
 
 ## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
-### 2.1. Casos de Uso Incluidos (`<<include>>`)
+### 3.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-04.1` (Autenticar Chofer por PIN):** Validación de identidad del conductor y vinculación al `bus_id` asignado para la jornada.
 * **`<<include>> CU-04.2` (Liquidar y Generar Reporte de Arqueo):** Consolidación contable al cierre de turno, desglosando recaudación por App, Yape directo y gratuidad CONADIS.
 
-### 2.2. Puntos de Extensión (`<<extend>>`)
+### 3.2. Puntos de Extensión (`<<extend>>`)
 
 ```
 +---------------------------------------------------------------------------------------------------+
 | PUNTO DE EXTENSIÓN 1: [PE-CONADIS] (Abordaje de Pasajero con Discapacidad)                        |
-|   Extendido por: CU-08 (Registrar Abordaje Gratuito CONADIS S/. 0.00)                             |
+|   Extendido por: CU-04.C (Registrar Abordaje Gratuito CONADIS S/. 0.00)                           |
 |   Condición de Activación: Pasajero exhibe carnet amarillo oficial de CONADIS al subir.          |
 +---------------------------------------------------------------------------------------------------+
 | PUNTO DE EXTENSIÓN 2: [PE-EMERGENCIA] (Desperfecto Mecánico o Accidente en Ruta)                  |
@@ -66,7 +66,7 @@
 ```mermaid
 flowchart TD
     subgraph Chofer["👨‍✈️ Chofer"]
-        A1([Inicio: Sube a Cabina]) --> A2[Digita PIN de 4 dígitos en Tablet]
+        A1([Inicio: Sube a Cabina]) --> A2[Digita PIN de 6 dígitos en Tablet]
         A2 --> A3[Presiona 'Iniciar Turno']
         A3 --> A4{Operación en Ruta}
         
@@ -80,7 +80,7 @@ flowchart TD
         A2 --> B1[CU-04.1: POST /api/v1/shifts/start]
         B1 --> B2[Despliega Tablero: Semáforo Aforo, Feed de Cobros, Botones Acción]
         
-        A_CON --> B3[CU-08: POST /api/v1/trips/conadis]
+        A_CON --> B3[CU-04.C: POST /api/v1/trips/conadis]
         B3 --> B4[Emite Tono Corto + Suma Aforo +1]
         
         A_ADJ --> B5[CU-04.B: Calibra Semáforo a VERDE]
@@ -116,7 +116,7 @@ flowchart TD
 
 ### 4.1. Apertura de Turno (CU-04.1)
 1. El chofer enciende la tablet montada en el tablero.
-2. Ingresa su PIN de 4 dígitos.
+2. Ingresa su PIN de 6 dígitos.
 3. La tablet envía la solicitud al backend:
    ```json
    POST /api/v1/shifts/start
@@ -147,13 +147,13 @@ flowchart TD
   3. La unidad **sigue 100% visible y monitoreada en tiempo real para el Administrador** en el Panel Web de Gestión de Flota.
   4. Una vez reparada la incidencia, el chofer reactiva el interruptor y el bus reaparece en el mapa público de los pasajeros.
 
-### 4.4. Extensión CU-08: Registro de Pasajero CONADIS ([PE-CONADIS])
+### 4.4. Extensión CU-04.C: Registro de Pasajero CONADIS ([PE-CONADIS])
 1. Un pasajero con discapacidad muestra su carnet amarillo físico de CONADIS al chofer.
 2. El chofer pulsa el botón táctil de gran tamaño: **`[+1 CONADIS]`**.
 3. La tablet emite un tono corto de registro y envía la transacción a tarifa **S/. 0.00**.
 4. El aforo se incrementa en $+1$ para mantener la exactitud de pasajeros a bordo.
 
-### 4.4. Extensión CU-04.A: Declaración de Avería Mecánica ([PE-EMERGENCIA])
+### 4.5. Extensión CU-04.A: Declaración de Avería Mecánica ([PE-EMERGENCIA])
 1. Ocurre una falla crítica (neumático reventado, sobrecalentamiento).
 2. El chofer presiona el botón rojo **`[Reportar Avería]`** y confirma el pop-up de seguridad.
 3. El backend:
@@ -163,7 +163,7 @@ flowchart TD
    * Despacha notificaciones push a los celulares de los usuarios a bordo: *"Tu bus ha reportado una falla técnica. Tu pasaje ha sido reembolsado íntegramente"*.
 4. El chofer indica a los pasajeros que pueden descender o transbordar.
 
-### 4.5. Cierre de Turno y Liquidación (CU-04.2)
+### 4.6. Cierre de Turno y Liquidación (CU-04.2)
 1. Al terminar la jornada en el terminal de la empresa, el chofer presiona **`[Cerrar Turno]`**.
 2. La tablet solicita el kilometraje final y confirma el cierre.
 3. El backend genera el comprobante digital de liquidación:
@@ -172,4 +172,41 @@ flowchart TD
    * **Pagos con Yape Directo:** 112 pasajes (S/. 168.00 bancarizados).
    * **Pasajeros CONADIS:** 15 personas (S/. 0.00).
    * **Total Recaudado:** S/. 466.50.
-4. El chofer firma digitalmente el arqueo y cierra su sesión.
+4. El chofer confirma el arqueo e ingresa su PIN de 6 dígitos para finalizar el turno y cerrar su sesión.
+
+---
+
+## 5. Criterios de Aceptación para QA (Escenarios BDD / Cucumber)
+
+```gherkin
+Feature: Operación de Turno en Tablet del Conductor
+  Como chofer del transporte urbano
+  Quiero operar mi turno de conducción desde la tablet de cabina
+  Para supervisar los cobros de pasajeros, registrar gratuidades y liquidar mi jornada
+
+  Scenario: Inicio de turno exitoso con PIN de 6 dígitos
+    Given que el chofer "DRV-10" sube a la cabina del "BUS_01"
+    When digita su PIN de 6 dígitos e inicia turno con kilometraje 145200 km
+    Then el backend valida las credenciales y crea un registro en "shifts" con estado "ACTIVE"
+    And la tablet despliega la interfaz de cabina con el semáforo de aforo y sentido inicial "SUBIDA"
+
+  Scenario: Registro de pasajero con carnet CONADIS (Pase Gratuito S/. 0.00)
+    Given que un pasajero con discapacidad muestra su carnet amarillo físico de CONADIS
+    When el chofer presiona el botón táctil grande "+1 CONADIS"
+    Then la tablet emite un tono corto de confirmación
+    And registra la transacción a tarifa de S/. 0.00 en "shifts.total_conadis_count"
+    And actualiza el aforo sumando +1 persona sin debitar dinero
+
+  Scenario: Declaración de avería mecánica y reembolso masivo a pasajeros activos
+    Given que el "BUS_01" sufre una falla de neumático con 18 pasajeros a bordo con viaje "ACTIVE"
+    When el chofer presiona "Reportar Avería" y confirma la ventana de seguridad
+    Then el backend marca el bus como "OUT_OF_SERVICE" y lo oculta en el mapa público
+    And ejecuta la devolución automática del 100% de los puntos a los 18 pasajeros en sus monederos
+    And despacha una notificación push de aviso a los smartphones de los usuarios afectados
+
+  Scenario: Cierre de turno y liquidación consolidada
+    Given que el chofer finaliza su recorrido en el paradero terminal
+    When presiona "Cerrar Turno" e ingresa el kilometraje final 145340 km
+    Then el backend calcula el arqueo segregado: recaudación App BC, recaudación Yape y viajes CONADIS
+    And cierra el turno con estado "COMPLETED" en la tabla "shifts"
+```

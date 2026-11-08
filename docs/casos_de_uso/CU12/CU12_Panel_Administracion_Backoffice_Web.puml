@@ -1,0 +1,57 @@
+@startuml CU12_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
+
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
+
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
+
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
+
+actor "Administrador de Transporte\n(Backoffice)" as Admin
+actor "Sistema Backend BC" as Backend
+
+rectangle "Módulo de Administración Central y Backoffice Web" {
+  usecase "CU-12: Administrar Sistema y\nOperación Global de Flota" as UC_Main
+  
+  usecase "CU-12.1: Autenticar Administrador\ncon Segundo Factor (MFA)" as UC_Inc1
+  usecase "CU-12.2: Monitorear Flota y\nTelemetría GPS en Vivo" as UC_Inc2
+  usecase "CU-12.3: Actualizar Tarifario y\nParámetros de Sistema" as UC_Inc3
+  usecase "CU-12.4: Gestionar Asignación\nde Flota y Conductores" as UC_Inc4
+  usecase "CU-12.5: Consolidar Arqueos y\nLiquidaciones Financieras" as UC_Inc5
+
+  usecase "CU-12.A: Atender y Resolver\nTickets de Soporte Pasajero" as UC_Ext1
+  usecase "CU-12.B: Auditar y Aprobar\nCarnets Universitarios" as UC_Ext2
+  usecase "CU-12.C: Inhabilitar Unidad en\nMapa Público por Incidencia" as UC_Ext3
+}
+
+Admin -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+UC_Main ..> UC_Inc3 : include
+UC_Main ..> UC_Inc4 : include
+UC_Main ..> UC_Inc5 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+UC_Ext3 ..> UC_Main : extend
+
+UC_Inc2 -- Backend
+UC_Inc3 -- Backend
+@enduml
+

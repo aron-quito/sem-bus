@@ -69,13 +69,14 @@
 1. **[Ingreso de Número]:** El usuario digita su número de celular (9 dígitos peruanos, ej. `952 123 456`).
 2. **[Validación de Formato]:** La app verifica el regex `^9\d{8}$` y despacha: `POST /api/v1/auth/otp/send { "phone": "952123456" }`.
 3. **[Despacho de OTP - Inclusión CU-00.1]:**
-   * El backend genera un código numérico aleatorio de 6 dígitos con hash almacenado en Redis con TTL de 300 segundos.
+   * El backend genera un código numérico aleatorio de 6 dígitos.
+   * Almacena el hash bcrypt en Redis con TTL de 300 segundos para validación veloz y control anti-fuerza bruta, e impacta `users.otp_hash` y `users.otp_expires_at` en base de datos PostgreSQL como respaldo de auditoría.
    * Invoca a la pasarela (SMS o WhatsApp).
    * **Caché de Estado:** La app almacena en local `PENDING_OTP_PHONE = 952123456` y `PENDING_OTP_EXP = TIMESTAMP`. Si el usuario cierra la app o cambia de pantalla, al regresar se le restaura la pantalla de ingreso con el contador de segundos restante sin reenviar otro SMS (Extensión CU-00.D).
 4. **[Ingreso y Validación - Inclusión CU-00.2]:**
    * El usuario recibe el mensaje e ingresa los 6 dígitos.
    * La app despacha: `POST /api/v1/auth/otp/verify { "phone": "952123456", "code": "849201", "device_id": "DEV-UUID-941" }`.
-   * El backend valida el hash en Redis y elimina el OTP consumido.
+   * El backend valida el hash contra Redis (o PostgreSQL en caso de fallo de cache) y elimina/invalida el OTP consumido (`otp_expires_at = NOW()`).
 5. **[Evaluación de Usuario Nuevo vs. Existente]:**
    * **Rama A (Usuario Nuevo):**
      * Ejecuta **CU-00.3**: Inserta el nuevo usuario con `role = 'ADULT'` y crea su monedero con saldo `0 Puntos BC`.

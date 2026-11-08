@@ -79,9 +79,14 @@ rectangle "Ecosistema de Transporte Urbano BC" {
     usecase "CU-06.2: Finalizar Sesión y Desuscribir" as CU06_2
   }
 
-  package "Módulo 7: Soporte y Administración de Flota" {
+  package "Módulo 7: Soporte, Administración y Backoffice" {
     usecase "CU-09: Enviar Reportes, Sugerencias y Soporte" as CU09
     usecase "CU-10: Vincular Hardware Seguro (POS + Tablet + Bus)" as CU10
+    usecase "CU-12: Administrar Sistema en Backoffice Web" as CU12
+  }
+
+  package "Módulo 8: Perfil, Privacidad y Regulación" {
+    usecase "CU-11: Gestionar Perfil y Eliminación de Cuenta" as CU11
   }
 }
 
@@ -126,6 +131,7 @@ Pasajero --> CU06
 Pasajero --> CU07
 Pasajero --> CU08
 Pasajero --> CU09
+Pasajero --> CU11
 
 Estudiante --> CU03
 
@@ -137,6 +143,7 @@ Chofer --> CU_CONADIS
 Chofer --> CU02_A
 
 Admin --> CU10
+Admin --> CU12
 Admin --> CU09
 
 CU00_1 --> Pasarela
@@ -149,5 +156,6 @@ Backend --> CU01_3
 Backend --> CU04_A
 Backend --> CU06_1
 Backend --> CU07
+Backend --> CU12
 
 @enduml

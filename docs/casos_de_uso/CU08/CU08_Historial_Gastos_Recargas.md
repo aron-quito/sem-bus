@@ -35,7 +35,7 @@
 ## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
 ### 3.1. Casos de Uso Incluidos (`<<include>>`)
-* **`<<include>> CU-08.1` (Cargar Historial de Viajes y Débitos):** Consulta paginada a la tabla `trips` y `ledger_transactions` (tipo `FARE_PAYMENT`), extrayendo fecha, placa del bus, paradero de subida, paradero de bajada y puntos debitados.
+* **`<<include>> CU-08.1` (Cargar Historial de Viajes y Débitos):** Consulta paginada a la tabla `trips` y `ledger_transactions` (tipo `TRIP_DEBIT`), extrayendo fecha, placa del bus, paradero de subida, paradero de bajada y puntos debitados.
 * **`<<include>> CU-08.2` (Cargar Historial de Recargas en Soles):** Consulta paginada a `recharges` y `ledger_transactions` (tipo `RECHARGE_CREDIT`), extrayendo importe en PEN, puntos abonados y pasarela utilizada (Yape/Tarjeta).
 
 ### 3.2. Puntos de Extensión (`<<extend>>`)

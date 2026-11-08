@@ -1,6 +1,6 @@
 # Especificación Detallada de Caso de Uso: CU-01
 ## Abordaje y Pago con App en Módulo POS (Flujo Core)
-**Documento UML:** `docs/casos_de_uso/CU01_Abordaje_Pago_App.md`  
+**Documento UML:** `docs/casos_de_uso/CU01/CU01_Abordaje_Pago_App.md`  
 **Referencia UML:** `CU01` en [diagrama_casos_de_uso.puml](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/diagrama_casos_de_uso.puml)  
 **Versión:** 2.0 (Análisis Riguroso)
 
@@ -32,12 +32,12 @@
 
 ## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
-### 2.1. Casos de Uso Incluidos (`<<include>>`)
+### 3.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-01.1` (Validar y Debitar Puntos de Monedero):** Bloqueo transaccional de saldo, verificación de fondos, débito atómico y asiento contable en base de datos.
 * **`<<include>> CU-01.2` (Emitir Feedback en POS y Tablet):** Orquestación síncrona de señales de hardware (Audio `BEEP`, pantalla verde en POS y tarjeta visual en tablet del chofer).
 * **`<<include>> CU-01.3` (Suscribir Sesión a Unidad de Transporte):** Vinculación telemática del `user_id` con el `bus_id` para iniciar el monitoreo de ruta y desacoplamiento GPS.
 
-### 2.2. Puntos de Extensión (`<<extend>>`)
+### 3.2. Puntos de Extensión (`<<extend>>`)
 
 ```
 +---------------------------------------------------------------------------------------------------+
@@ -49,6 +49,8 @@
 |   Extendido por: CU-01.B (Agregar Pasajes de Acompañantes)                                        |
 |   Condición de Activación: request.cantidad_adicionales > 0                                       |
 |   Regla de Negocio: Todos los acompañantes adicionales se liquidan a tarifa regular de 15 puntos. |
+|   El cooldown de 120s aplica exclusivamente a la tarifa universitaria del titular y no impide     |
+|   liquidar acompañantes a tarifa general en la misma o subsiguiente transacción.                  |
 +---------------------------------------------------------------------------------------------------+
 | PUNTO DE EXTENSIÓN 3: [PE-FONDOS] (Insuficiencia de Saldo)                                       |
 |   Extendido por: CU-01.C (Notificar y Rechazar por Saldo Insuficiente)                            |
@@ -214,3 +216,55 @@ flowchart TD
 ## 6. Requerimientos de Rendimiento y Seguridad
 * **RNF-LATENCIA:** El tiempo total desde que el backend recibe `POST /pay` hasta que el POS emite el `BEEP` no debe superar **los 650 milisegundos** bajo cobertura 4G normal.
 * **RNF-IDEMPOTENCIA:** Cada petición de pago incluye una clave de idempotencia (`nonce`) para garantizar que bajo ninguna circunstancia de reintento de red se cobre dos veces a un pasajero.
+
+
+---
+
+## 7. Criterios de Aceptación para QA (Escenarios BDD / Cucumber)
+
+```gherkin
+Feature: Abordaje y Pago con App en Módulo POS
+  Como pasajero registrado
+  Quiero pagar mi pasaje escaneando el QR del POS en el bus
+  Para acceder rápidamente al transporte sin efectivo ni monedas
+
+  Scenario: Pago exitoso de pasaje adulto con débito atómico
+    Given que el usuario "U1" tiene rol "ADULT" y saldo de 30 Puntos BC
+    And el POS del "BUS_01" muestra un código QR dinámico con nonce "NONCE-100"
+    When el usuario escanea el código y envía la solicitud de cobro
+    Then el backend aplica un bloqueo pesimista sobre la fila del monedero del usuario
+    And debita exactamente 15 Puntos BC dejando un saldo de 15 Puntos BC
+    And registra el movimiento "TRIP_DEBIT" en "ledger_transactions"
+    And crea un viaje en "trips" con estado "ACTIVE"
+    And el POS emite tono "BEEP" verde de 800 ms y regenera nuevo QR en menos de 500 ms
+    And la tablet del chofer despliega la tarjeta "Pasaje Adulto: S/. 1.50" y suma +1 al aforo
+
+  Scenario: Aplicación de tarifa universitaria y activación de cooldown
+    Given que el estudiante "U2" tiene acreditación activa con rol "STUDENT"
+    And no ha realizado pagos en los últimos 150 segundos
+    When escanea el QR dinámico del POS
+    Then el backend liquida el pasaje por 7 Puntos BC
+    And actualiza el cooldown de la cuenta a 120 segundos
+    And la tablet del chofer despliega la tarjeta amarilla "Pasaje Universitario: S/. 0.70"
+
+  Scenario: Bloqueo antifraude por intento de reutilización de tarifa universitaria en cooldown
+    Given que el estudiante "U2" pagó su pasaje universitario hace 40 segundos
+    When intenta escanear el QR para pagar por otra persona
+    Then el sistema detecta que el cooldown de 120 segundos sigue activo
+    And liquida el nuevo pasaje a tarifa regular de 15 Puntos BC
+
+  Scenario: Pago de pasaje titular más dos acompañantes
+    Given que el usuario "U1" viaja con 2 amigos y selecciona "+2 acompañantes"
+    When confirma el pago en su app móvil
+    Then el backend debita 15 puntos por el titular más 30 puntos por los acompañantes (total 45 Puntos BC)
+    And registra "companion_count = 2" en la tabla "trips"
+    And la tablet del chofer incrementa el aforo en +3 personas
+
+  Scenario: Rechazo sonoro y visual en puerta por saldo insuficiente
+    Given que el usuario "U3" posee un saldo de 5 Puntos BC
+    When intenta pagar un pasaje de 15 Puntos BC
+    Then el backend rechaza la transacción con HTTP 402 "INSUFFICIENT_FUNDS"
+    And el monedero del usuario permanece inalterado en 5 Puntos BC
+    And el POS emite doble tono grave "BEEP-BEEP" e ilumina su pantalla en rojo con "Saldo Insuficiente"
+    And la tablet del chofer muestra la tarjeta roja "NO PASA"
+```

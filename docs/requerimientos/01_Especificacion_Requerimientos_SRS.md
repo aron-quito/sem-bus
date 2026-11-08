@@ -77,8 +77,8 @@
   * Tras pagar un pasaje universitario (7 puntos), la tarifa universitaria queda bloqueada para la cuenta por **120 segundos (2 minutos)** para evitar pasar el celular a la persona de atrás.
 * **RF-TAR-05 (Pago Multipersona con Acompañantes):**
   * El usuario puede agregar pasajes adicionales en la misma transacción (`[+]`), los cuales **siempre se liquidan a tarifa regular de 15 puntos**.
-* **RF-TAR-06 (Pasajeros CONADIS):**
-  * Exoneración de pasaje (S/. 0.00). El usuario muestra su carnet amarillo físico al conductor, quien registra el abordaje con el botón `[+1 CONADIS]` en la tablet.
+* **RF-TAR-06 (Pasajeros CONADIS - Ley 29973 y DS 015-2014-MTC):**
+  * Exoneración del 100% de pasaje (S/. 0.00) en cumplimiento de la Ley N.° 29973 y el D.S. N.° 015-2014-MTC. El usuario muestra su carnet amarillo físico oficial al conductor, quien registra el abordaje con el botón táctil `[+1 CONADIS]` en la tablet para conteo de aforo sin generar cargo financiero.
 
 ---
 
@@ -92,8 +92,8 @@
   * El POS muestra el QR institucional de la empresa por S/. 1.50 y cambia a estado *"Verificando pago... ⏳"*.
   * Confirmación automática vía Webhook bancario en 1 a 2.5 segundos.
   * **Failsafe de 5 segundos:** Si la red bancaria demora más de 5 segundos, la tablet del chofer recibe notificación para validación manual visual del comprobante en el celular del usuario.
-* **RF-POS-03 (Telemetría 4G y GPS de Alta Precisión):**
-  * Módem 4G LTE y antena GPS conectada a la alimentación del bus (12V/24V). Envío continuo de coordenadas, rumbo y velocidad cada 3 a 5 segundos al backend central.
+* **RF-POS-03 (Telemetría 4G y GPS de Alta Precisión del Bus):**
+  * Módem 4G LTE y antena GPS dedicada conectada a la alimentación continua del bus (12V/24V). Envío telemático de alta frecuencia: coordenadas (lat, lng), rumbo y velocidad cada **3 a 5 segundos** al backend central para alimentar la visualización en vivo del mapa.
 * **RF-POS-04 (Manejo de Caídas Temporales de Señal 4G):**
   * Si el bus atraviesa una zona ciega de Tacna sin cobertura 4G, el POS muestra un aviso *"Reconectando..."* y la tablet del chofer puede habilitar cobro de contingencia.
 
@@ -125,8 +125,8 @@
 
 * **RF-GEO-01 (Suscripción al Bus en Curso):**
   * Al confirmarse el pago en el POS, el backend asocia la sesión del usuario con el `bus_id` y la ruta activa. La app muestra la trayectoria del bus en tiempo real y paradas restantes.
-* **RF-GEO-02 (Algoritmo de Desacoplamiento por Distancia):**
-  * La app consulta ubicación cada 45 segundos en segundo plano.
+* **RF-GEO-02 (Algoritmo de Desacoplamiento por Distancia y Latidos App Pasajero):**
+  * La app del pasajero en segundo plano opera bajo perfil de ahorro de batería (), transmitiendo latidos GPS cada **45 segundos** (diferenciado de la telemetría del POS de 3-5s).
   * Mientras el usuario está a bordo: $\text{Distancia}(\text{Celular}, \text{Bus}) < 25\text{ metros}$.
   * Al bajar en cualquier paradero y alejarse el bus: Si $\text{Distancia} > 150\text{ metros}$, el viaje se marca automáticamente como `FINALIZADO` y se desuscribe la sesión.
 * **RF-GEO-03 (Failsafe de Fin de Trayecto):**

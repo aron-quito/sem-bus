@@ -1,6 +1,6 @@
 # Especificación Detallada de Caso de Uso: CU-02
 ## Pago Directo con Yape/Plin en POS (Sin App)
-**Documento UML:** `docs/casos_de_uso/CU02_Pago_Yape_Directo_Sin_App.md`  
+**Documento UML:** `docs/casos_de_uso/CU02/CU02_Pago_Yape_Directo_Sin_App.md`  
 **Referencia UML:** `CU02` en [diagrama_casos_de_uso.puml](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/diagrama_casos_de_uso.puml)  
 **Versión:** 2.0 (Análisis Riguroso)
 
@@ -32,11 +32,11 @@
 
 ## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
-### 2.1. Casos de Uso Incluidos (`<<include>>`)
+### 3.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-02.1` (Procesar Transacción Bancaria):** Recepción y verificación criptográfica de la notificación HTTP Webhook proveniente de la pasarela bancaria oficial (Niubiz/BCP).
 * **`<<include>> CU-01.2` (Emitir Feedback en POS y Tablet):** Emisión síncrona del `BEEP` verde en el POS y la tarjeta verde en la tablet del chofer.
 
-### 2.2. Puntos de Extensión (`<<extend>>`)
+### 3.2. Puntos de Extensión (`<<extend>>`)
 
 ```
 +---------------------------------------------------------------------------------------------------+
@@ -149,3 +149,40 @@ flowchart TD
   5. El chofer pulsa `[Validar Manualmente]`.
   6. La tablet asienta el pasaje como `MANUAL_OVERRIDE_PAID`, suma $+1$ al aforo y el POS emite el `BEEP` verde para que el pasajero ingrese de inmediato.
   7. Si el webhook llega más tarde (ej. a los 15 segundos), el backend hace conciliación automática asociando el webhook con el registro manual previo sin duplicar el aforo.
+
+
+---
+
+## 6. Criterios de Aceptación para QA (Escenarios BDD / Cucumber)
+
+```gherkin
+Feature: Pago Directo con Yape en POS sin App
+  Como pasajero ocasional sin la aplicación instalada
+  Quiero pagar mi pasaje con Yape o Plin escaneando el QR del POS
+  Para abordar el bus sin necesidad de registrarme previamente
+
+  Scenario: Pago directo exitoso vía webhook bancario en menos de 3 segundos
+    Given que el pasajero escanea el QR institucional de Yape en el POS del bus
+    And transfiere exactamente S/. 1.50
+    When la pasarela bancaria despacha el webhook firmado con "transaction_id: YP-100"
+    Then el backend valida la firma criptográfica HMAC
+    And registra el ingreso bancarizado de S/. 1.50
+    And el POS emite tono "BEEP" verde con el mensaje "¡Yape Recibido! Pase"
+    And la tablet del chofer despliega la tarjeta verde de cobro y suma +1 al aforo
+
+  Scenario: Idempotencia ante webhook bancario duplicado por reintento de red
+    Given que el webhook con "transaction_id: YP-100" ya fue procesado y asentado
+    When la red bancaria reenvía el mismo webhook 2 segundos después
+    Then el backend consulta la tabla "webhook_idempotency"
+    And detecta la clave única existente "(YAPE, YP-100)"
+    And responde HTTP 200 OK inmediatamente sin duplicar el aforo ni asentar dos veces el dinero
+
+  Scenario: Activación de failsafe de 5 segundos con validación manual del chofer
+    Given que el pasajero realiza la transferencia en Yape pero el webhook demora más de 5 segundos
+    When se agota el temporizador de 5.0 segundos en el POS
+    Then el POS transiciona al estado "Esperando Validación Manual"
+    And la tablet del chofer emite un aviso sonoro y habilita el botón "Validar Manualmente"
+    When el chofer verifica la animación oficial de Yape en el celular del usuario y pulsa el botón
+    Then el sistema registra el pasaje como "MANUAL_OVERRIDE_PAID" y suma +1 al aforo
+    And el POS emite el "BEEP" verde autorizando el paso del pasajero
+```

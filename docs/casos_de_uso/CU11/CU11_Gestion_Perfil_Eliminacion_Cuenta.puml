@@ -1,0 +1,52 @@
+@startuml CU11_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
+
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
+
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
+
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
+
+actor "Pasajero Registrado" as Pasajero
+actor "Sistema Backend BC" as Backend
+
+rectangle "Módulo de Perfil, Privacidad y Cumplimiento Normativo" {
+  usecase "CU-11: Gestionar Perfil y\nEliminación de Cuenta" as UC_Main
+  
+  usecase "CU-11.1: Consultar Datos de\nPerfil y Sesión Activa" as UC_Inc1
+  usecase "CU-11.2: Actualizar Información\nBásica de Usuario" as UC_Inc2
+  usecase "CU-11.3: Solicitar Descarga de\nDatos (Ley 29733)" as UC_Inc3
+  usecase "CU-11.4: Confirmar Baja y\nAnonimización de Cuenta" as UC_Inc4
+
+  usecase "CU-11.A: Advertencia de Saldo\nRestante en Puntos BC" as UC_Ext1
+  usecase "CU-11.B: Revocación de Baja en\nPeríodo de Gracia (15 días)" as UC_Ext2
+}
+
+Pasajero -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+UC_Main ..> UC_Inc3 : include
+UC_Main ..> UC_Inc4 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+
+UC_Inc4 -- Backend
+@enduml
+

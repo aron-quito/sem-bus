@@ -1,6 +1,6 @@
 # Especificación Detallada de Caso de Uso: CU-03
 ## Acreditación de Carnet Universitario (SUNEDU)
-**Documento UML:** `docs/casos_de_uso/CU03_Acreditacion_Carnet_SUNEDU.md`  
+**Documento UML:** `docs/casos_de_uso/CU03/CU03_Acreditacion_Carnet_SUNEDU.md`  
 **Referencia UML:** `CU03` en [diagrama_casos_de_uso.puml](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/diagrama_casos_de_uso.puml)  
 **Versión:** 2.0 (Análisis Riguroso)
 
@@ -32,11 +32,11 @@
 
 ## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
-### 2.1. Casos de Uso Incluidos (`<<include>>`)
+### 3.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-03.1` (Decodificar y Validar QR Oficial SUNEDU):** Lectura del formato criptográfico oficial impreso en el carnet, extrayendo DNI, universidad y fecha de caducidad.
 * **`<<include>> CU-03.2` (Verificar Unicidad de DNI en Sistema):** Consulta a la base de datos para garantizar que ese DNI no esté registrado en otra cuenta activa.
 
-### 2.2. Puntos de Extensión (`<<extend>>`)
+### 3.2. Puntos de Extensión (`<<extend>>`)
 
 ```
 +---------------------------------------------------------------------------------------------------+
@@ -113,23 +113,23 @@ flowchart TD
 
 1. **[Inicio]:** El estudiante accede a la pestaña de perfil en la App BC y selecciona el banner *"Activar Tarifa Universitaria (S/. 0.70)"*.
 2. **[Lectura de QR - Inclusión CU-03.1]:**
-   * La app activa la cámara con un visor específico para el formato QR de SUNEDU.
-   * El estudiante enfoca el código QR ubicado al dorso del carnet.
-   * La app decodifica la cadena oficial:
-     ```
-     SUNEDU|DNI:74819201|UNIV:UNJBG|ALUMNO:QUISPE MAMANI ARON|VENC:30/04/2027
-     ```
-3. **[Captura de Evidencia]:** La app solicita inmediatamente una fotografía nítida del anverso del carnet físico (donde se visualiza el rostro y nombre del estudiante).
-4. **[Envío Seguro al Backend]:** La app empaqueta la información y la fotografía en base64:
+   * La app activa la cámara con un visor específico para el formato QR de carnets universitarios.
+   * El estudiante enfoca el código QR ubicado al dorso del carnet oficial.
+   * El código QR contiene el enlace de verificación oficial SUNEDU con token criptográfico (ej. `https://enlinea.sunedu.gob.pe/verificar?c=74819201&sig=a8f9c2...`).
+   * La app extrae el token y los metadatos correspondientes (DNI, institución, fecha de vencimiento oficial).
+3. **[Captura de Evidencia Fotográfica]:** La app solicita obligatoriamente una fotografía nítida del anverso del carnet físico (mostrando foto, nombre completo y código universitario) para respaldar la auditoría legal.
+4. **[Envío Seguro y Validación Criptográfica en Backend]:** La app despacha la solicitud HTTPS segura:
    ```json
    POST /api/v1/students/verify
    {
      "dni": "74819201",
      "university": "UNJBG",
      "expires_at": "2027-04-30T23:59:59Z",
+     "sunedu_qr_url": "https://enlinea.sunedu.gob.pe/verificar?c=74819201&sig=a8f9c2...",
      "card_photo": "data:image/jpeg;base64,..."
    }
    ```
+   * El backend valida la autenticidad del token contra el endpoint/servicio de consulta SUNEDU o firma digital correspondiente. Si el servicio de consulta responde positivamente, se aprueba de forma automática inmediata. Si no se puede validar automáticamente (servicio no disponible o carnet desgastado), se activa la extensión **CU-03.A** derivando a cola de auditoría manual en el panel de administración.
 5. **[Verificación de Unicidad - Inclusión CU-03.2]:**
    * El backend busca en la base de datos: `SELECT user_id FROM student_verifications WHERE dni = '74819201' AND status = 'ACTIVE'`.
    * Si ya existe un registro con un `user_id` diferente, aborta la operación con `409 Conflict: STUDENT_CARD_ALREADY_REGISTERED`.
@@ -143,3 +143,37 @@ flowchart TD
    * Registra la evidencia en el bucket de almacenamiento seguro.
    * Programa una tarea diferida (cron job) para el día `2027-05-01` a las 00:00 para revertir automáticamente el rol a `ADULT`.
 8. **[Confirmación]:** La app despliega una animación de éxito con la insignia dorada *"Estudiante Verificado"* y en su monedero se actualiza el costo por pasaje a **7 Puntos BC (S/. 0.70)**.
+
+
+---
+
+## 5. Criterios de Aceptación para QA (Escenarios BDD / Cucumber)
+
+```gherkin
+Feature: Acreditación de Carnet Universitario SUNEDU
+  Como estudiante universitario
+  Quiero vincular mi carnet oficial en la App BC
+  Para acceder a la tarifa preferencial legal de S/. 0.70 por pasaje
+
+  Scenario: Acreditación exitosa de carnet universitario vigente
+    Given que el alumno tiene una cuenta con rol "ADULT" y carnet oficial vigente
+    When escanea el QR del carnet y toma la fotografía frontal nítida
+    And el servicio de verificación valida el token y fecha de caducidad futura
+    Then el backend actualiza el rol del usuario a "STUDENT"
+    And registra el vencimiento oficial en "student_verifications"
+    And la app muestra la insignia dorada "Estudiante Verificado" y activa la tarifa de 7 Puntos BC
+
+  Scenario: Rechazo de acreditación por carnet vencido fuera de prórroga
+    Given que la fecha de caducidad del carnet es del año anterior
+    And la fecha actual supera el vencimiento más el margen de gracia "extension_grace_days"
+    When el estudiante envía la solicitud de verificación
+    Then el backend rechaza la solicitud con código "CARD_EXPIRED"
+    And el rol de la cuenta se mantiene en "ADULT" con tarifa de 15 Puntos BC
+
+  Scenario: Detección de intento de clonación o duplicidad de DNI universitario
+    Given que el DNI "74819201" ya se encuentra vinculado a una cuenta activa del usuario "U10"
+    When un usuario diferente "U20" intenta acreditar el mismo carnet con DNI "74819201"
+    Then el backend detecta la infracción de unicidad en "student_verifications"
+    And rechaza la solicitud con HTTP 409 "STUDENT_CARD_ALREADY_REGISTERED"
+    And bloquea el registro duplicado
+```

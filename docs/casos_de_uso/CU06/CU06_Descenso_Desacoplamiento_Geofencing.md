@@ -1,6 +1,6 @@
 # Especificación Detallada de Caso de Uso: CU-06
 ## Descenso y Desacoplamiento por Geofencing
-**Documento UML:** `docs/casos_de_uso/CU06_Descenso_Desacoplamiento_Geofencing.md`  
+**Documento UML:** `docs/casos_de_uso/CU06/CU06_Descenso_Desacoplamiento_Geofencing.md`  
 **Referencia UML:** `CU06` en [diagrama_casos_de_uso.puml](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/diagrama_casos_de_uso.puml)  
 **Versión:** 2.0 (Análisis Riguroso)
 
@@ -32,12 +32,12 @@
 
 ## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
-### 2.1. Casos de Uso Incluidos (`<<include>>`)
+### 3.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-06.1` (Evaluar Distancia Relativa Bus vs Celular):** Cálculo geométrico continuo en el backend usando la fórmula de Haversine:
   $$\Delta D = 2 R \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta \phi}{2}\right) + \cos(\phi_1)\cos(\phi_2)\sin^2\left(\frac{\Delta \lambda}{2}\right)}\right)$$
 * **`<<include>> CU-06.2` (Finalizar Sesión y Desuscribir):** Transición de estado de `trips.status` de `ACTIVO` a `FINALIZADO`, desuscripción de canales WebSocket y despacho de notificación local.
 
-### 2.2. Puntos de Extensión (`<<extend>>`)
+### 3.2. Puntos de Extensión (`<<extend>>`)
 
 ```
 +---------------------------------------------------------------------------------------------------+

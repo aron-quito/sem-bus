@@ -1,6 +1,6 @@
 # Especificación Detallada de Caso de Uso: CU-05
 ## Recarga de Puntos BC mediante Pasarela Digital
-**Documento UML:** `docs/casos_de_uso/CU05_Recarga_Puntos_BC.md`  
+**Documento UML:** `docs/casos_de_uso/CU05/CU05_Recarga_Puntos_BC.md`  
 **Referencia UML:** `CU05` en [diagrama_casos_de_uso.puml](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/diagrama_casos_de_uso.puml)  
 **Versión:** 2.0 (Análisis Riguroso)
 
@@ -32,11 +32,11 @@
 
 ## 3. Puntos de Inclusión (`<<include>>`) y Extensión (`<<extend>>`)
 
-### 2.1. Casos de Uso Incluidos (`<<include>>`)
+### 3.1. Casos de Uso Incluidos (`<<include>>`)
 * **`<<include>> CU-05.1` (Iniciar Intención de Pago Digital):** Creación de la orden transaccional con la pasarela bancaria y obtención del token/referencia de pago.
 * **`<<include>> CU-05.2` (Asentar en Libro Mayor - Ledger):** Registro contable inmutable con `balance_before`, `amount_credit` y `balance_after`.
 
-### 2.2. Puntos de Extensión (`<<extend>>`)
+### 3.2. Puntos de Extensión (`<<extend>>`)
 
 ```
 +---------------------------------------------------------------------------------------------------+
@@ -128,7 +128,41 @@ flowchart TD
    * En una transacción atómica:
      * Cambia el estado de la recarga a `COMPLETED`.
      * Inserta en `ledger_transactions` el tipo `RECHARGE_CREDIT`.
-     * Incrementa `users.wallet_points += 100`.
+     * Incrementa `wallets.points_balance += 100` (mediante función atómica `fn_credit_wallet()`).
 6. **[Notificación]:**
    * El backend emite un mensaje por WebSocket a la sesión del usuario.
    * La app vibra suavemente, reproduce un sonido de monedas y actualiza el saldo en pantalla: *"¡Recarga exitosa! +100 Puntos BC añadidos"*.
+
+
+---
+
+## 5. Criterios de Aceptación para QA (Escenarios BDD / Cucumber)
+
+```gherkin
+Feature: Recarga de Puntos BC mediante Pasarela Digital
+  Como pasajero registrado
+  Quiero recargar Puntos BC en mi monedero digital mediante Yape o tarjeta
+  Para disponer de saldo suficiente y pagar mis pasajes en el bus
+
+  Scenario: Recarga digital exitosa con conversión 1:10 (S/. 10.00 = 100 Puntos)
+    Given que el usuario "U5" tiene un saldo previo de 15 Puntos BC
+    When selecciona recargar S/. 10.00 mediante Yape
+    And completa la autorización bancaria en la pasarela
+    Then la pasarela emite un webhook firmado al backend
+    And el backend asienta un crédito de 100 Puntos BC en "ledger_transactions"
+    And actualiza el saldo en "wallets" a 115 Puntos BC
+    And la app muestra la animación de recarga exitosa y nuevo saldo disponible
+
+  Scenario: Rechazo de intento de recarga por monto inferior al mínimo permitido
+    Given que el usuario intenta ingresar un monto personalizado de S/. 2.00
+    When presiona el botón "Continuar"
+    Then la app valida localmente la regla de negocio y bloquea el avance
+    And muestra el mensaje de error "El monto mínimo de recarga es S/. 5.00 (50 Puntos BC)"
+
+  Scenario: Idempotencia ante webhook de recarga repetido por latencia de pasarela
+    Given que una orden de recarga "REC-849102" ya fue acreditada y marcada como "COMPLETED"
+    When la pasarela de pagos retransmite el mismo webhook de confirmación
+    Then el backend detecta el estado previo completado
+    And no duplica los puntos en el monedero del usuario
+    And responde HTTP 200 OK a la pasarela
+```
