@@ -6,7 +6,7 @@ skinparam roundcorner 10
 skinparam actorStyle awesome
 skinparam shadowing false
 skinparam defaultFontName Arial
-skinparam defaultFontSize 12
+skinparam defaultFontSize 11
 
 title Proyecto BC (Bus Conectado) - Diagrama General de Casos de Uso (UML 2.5)
 
@@ -14,6 +14,7 @@ actor "Pasajero Registrado" as Pasajero
 actor "Pasajero Estudiante" as Estudiante
 actor "Pasajero Sin App" as PasajeroDirecto
 actor "Conductor / Chofer" as Chofer
+actor "Administrador / Backoffice" as Admin
 actor "Sistema Backend BC" as Backend <<System>>
 actor "Pasarela Bancaria / SMS" as Pasarela <<Service>>
 actor "Servicio SUNEDU" as Sunedu <<Service>>
@@ -26,8 +27,7 @@ rectangle "Ecosistema de Transporte Urbano BC" {
     usecase "CU-00: Registrar e Iniciar Sesión con Teléfono" as CU00
     usecase "CU-00.1: Despachar Código OTP (SMS/WhatsApp)" as CU00_1
     usecase "CU-00.2: Validar OTP y Crear Sesión JWT" as CU00_2
-    usecase "CU-00.3: Inicializar Monedero (0 Pts)" as CU00_3
-    usecase "CU-00.A: Reenviar OTP por WhatsApp" as CU00_A
+    usecase "CU-00.4: Sesión Única por Dispositivo (Yape)" as CU00_4
     usecase "CU-00.B: Restaurar Saldo y Perfil" as CU00_B
   }
 
@@ -35,33 +35,31 @@ rectangle "Ecosistema de Transporte Urbano BC" {
     usecase "CU-05: Recargar Puntos BC" as CU05
     usecase "CU-05.1: Iniciar Intención de Pago" as CU05_1
     usecase "CU-05.2: Asentar en Libro Mayor Ledger" as CU05_2
-    usecase "CU-05.A: Manejar Rechazo Bancario" as CU05_A
+    usecase "CU-08: Consultar Historial de Gastos y Recargas" as CU08
   }
 
   package "Módulo 3: Abordaje y Pasajes en Bus" {
     usecase "CU-01: Abordar y Pagar con App en POS" as CU01
-    usecase "CU-01.1: Validar y Debitar Puntos" as CU01_1
+    usecase "CU-01.1: Validar con Bloqueo Pesimista (ACID)" as CU01_1
     usecase "CU-01.2: Emitir Feedback en Hardware" as CU01_2
     usecase "CU-01.3: Suscribir Sesión a Unidad" as CU01_3
     
     usecase "CU-01.A: Aplicar Tarifa Universitaria (7 Pts)" as CU01_A
     usecase "CU-01.B: Agregar Pasajes Acompañantes (+15 Pts)" as CU01_B
     usecase "CU-01.C: Notificar Saldo Insuficiente" as CU01_C
-    usecase "CU-01.D: Manejar QR Expirado / Usado" as CU01_D
 
     usecase "CU-02: Pagar Directo con Yape en POS (Sin App)" as CU02
-    usecase "CU-02.1: Procesar Transacción Bancaria" as CU02_1
+    usecase "CU-02.1: Procesar Transacción con Idempotencia" as CU02_1
     usecase "CU-02.A: Autorizar Manualmente por Timeout (5s)" as CU02_A
     
-    usecase "CU-08: Registrar Abordaje Gratuito CONADIS" as CU08
+    usecase "CU-CONADIS: Registrar Abordaje Gratuito CONADIS" as CU_CONADIS
   }
 
   package "Módulo 4: Acreditaciones y Beneficios" {
     usecase "CU-03: Acreditar Carnet Universitario" as CU03
     usecase "CU-03.1: Decodificar y Validar QR SUNEDU" as CU03_1
     usecase "CU-03.2: Verificar Unicidad de DNI en BD" as CU03_2
-    usecase "CU-03.A: Derivar a Auditoría Manual" as CU03_A
-    usecase "CU-03.B: Rechazar por Caducidad Vencida" as CU03_B
+    usecase "CU-03.P: Aplicar Prórroga Configurable SUNEDU" as CU03_P
   }
 
   package "Módulo 5: Cabina y Operación del Conductor" {
@@ -69,68 +67,56 @@ rectangle "Ecosistema de Transporte Urbano BC" {
     usecase "CU-04.1: Autenticar Chofer por PIN" as CU04_1
     usecase "CU-04.2: Liquidar Turno y Generar Arqueo" as CU04_2
     usecase "CU-04.A: Declarar Avería Mecánica / Reembolso" as CU04_A
-    usecase "CU-04.B: Calibrar Aforo por Desembarque" as CU04_B
+    usecase "CU-04.C: Pausar Bus en Mapa Público por Incidencia" as CU04_C
   }
 
-  package "Módulo 6: Telemetría, Rutas y Desacoplamiento" {
+  package "Módulo 6: Telemetría y Desacoplamiento" {
     usecase "CU-07: Consultar Rutas y Buses (Modo Invitado)" as CU07
-    usecase "CU-07.1: Cargar Polígono de Rutas y Paradas" as CU07_1
-    usecase "CU-07.2: Transmitir Coordenadas en Vivo" as CU07_2
-    usecase "CU-07.A: Calcular ETA a Paradero" as CU07_A
+    usecase "CU-07.C: Filtrar Unidades por Línea Específica" as CU07_C
 
-    usecase "CU-06: Descenso y Desacoplamiento GPS" as CU06
-    usecase "CU-06.1: Evaluar Distancia Bus vs Celular" as CU06_1
+    usecase "CU-06: Descenso y Desacoplamiento GPS (Anti-Jitter)" as CU06
+    usecase "CU-06.1: Doble Verificación de Distancia" as CU06_1
     usecase "CU-06.2: Finalizar Sesión y Desuscribir" as CU06_2
-    usecase "CU-06.A: Alarma Anticipada de Parada (400m)" as CU06_A
+  }
+
+  package "Módulo 7: Soporte y Administración de Flota" {
+    usecase "CU-09: Enviar Reportes, Sugerencias y Soporte" as CU09
+    usecase "CU-10: Vincular Hardware Seguro (POS + Tablet + Bus)" as CU10
   }
 }
 
-' Relaciones CU-00
+' Relaciones Include / Extend clave
 CU00 ..> CU00_1 : <<include>>
 CU00 ..> CU00_2 : <<include>>
-CU00 ..> CU00_3 : <<include>>
-CU00_A ..> CU00 : <<extend>>
+CU00 ..> CU00_4 : <<include>>
 CU00_B ..> CU00 : <<extend>>
 
-' Relaciones CU-01
+CU05 ..> CU05_1 : <<include>>
+CU05 ..> CU05_2 : <<include>>
+
 CU01 ..> CU01_1 : <<include>>
 CU01 ..> CU01_2 : <<include>>
 CU01 ..> CU01_3 : <<include>>
 CU01_A ..> CU01 : <<extend>>
 CU01_B ..> CU01 : <<extend>>
 CU01_C ..> CU01 : <<extend>>
-CU01_D ..> CU01 : <<extend>>
 
-' Relaciones CU-02
 CU02 ..> CU02_1 : <<include>>
 CU02 ..> CU01_2 : <<include>>
 CU02_A ..> CU02 : <<extend>>
 
-' Relaciones CU-03
 CU03 ..> CU03_1 : <<include>>
 CU03 ..> CU03_2 : <<include>>
-CU03_A ..> CU03 : <<extend>>
-CU03_B ..> CU03 : <<extend>>
+CU03_P ..> CU03 : <<extend>>
 
-' Relaciones CU-04
 CU04 ..> CU04_1 : <<include>>
 CU04 ..> CU04_2 : <<include>>
 CU04_A ..> CU04 : <<extend>>
-CU04_B ..> CU04 : <<extend>>
+CU04_C ..> CU04 : <<extend>>
 
-' Relaciones CU-05
-CU05 ..> CU05_1 : <<include>>
-CU05 ..> CU05_2 : <<include>>
-CU05_A ..> CU05 : <<extend>>
-
-' Relaciones CU-06 y CU-07
-CU07 ..> CU07_1 : <<include>>
-CU07 ..> CU07_2 : <<include>>
-CU07_A ..> CU07 : <<extend>>
-
+CU07_C ..> CU07 : <<extend>>
 CU06 ..> CU06_1 : <<include>>
 CU06 ..> CU06_2 : <<include>>
-CU06_A ..> CU06 : <<extend>>
 
 ' Asociaciones de Actores
 Pasajero --> CU00
@@ -138,15 +124,20 @@ Pasajero --> CU01
 Pasajero --> CU05
 Pasajero --> CU06
 Pasajero --> CU07
+Pasajero --> CU08
+Pasajero --> CU09
 
 Estudiante --> CU03
 
 PasajeroDirecto --> CU02
-PasajeroDirecto --> CU08
+PasajeroDirecto --> CU_CONADIS
 
 Chofer --> CU04
-Chofer --> CU08
+Chofer --> CU_CONADIS
 Chofer --> CU02_A
+
+Admin --> CU10
+Admin --> CU09
 
 CU00_1 --> Pasarela
 CU02_1 --> Pasarela
@@ -157,6 +148,6 @@ Backend --> CU01_1
 Backend --> CU01_3
 Backend --> CU04_A
 Backend --> CU06_1
-Backend --> CU07_2
+Backend --> CU07
 
 @enduml

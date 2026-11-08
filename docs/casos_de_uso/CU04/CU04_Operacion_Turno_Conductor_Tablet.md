@@ -129,15 +129,25 @@ flowchart TD
 4. El backend valida el PIN, desactiva turnos anteriores pendientes y responde con la ruta asignada (ej. *"Línea 10: Cono Norte - Terminal Terrestre"*).
 5. La tablet despliega el tablero de mandos en modo nocturno/diurno de alto contraste.
 
-### 4.2. Operación de Monitoreo en Ruta
+### 4.2. Operación de Monitoreo en Ruta y Gestión de Sentido
 * Cada vez que un pasajero paga por el POS (con la App o Yape directo), la tablet reproduce un sonido discreto y muestra un banner gigante durante 3 segundos:
   * 🟢 **"Pasaje Adulto: S/. 1.50"**
   * 🟡 **"Pasaje Universitario: S/. 0.70"**
 * Si un cobro falla, suena una alerta y muestra:
   * 🔴 **"Saldo Insuficiente - NO PASA"**
 * El semáforo de aforo en la esquina superior derecha se actualiza automáticamente.
+* **Cambio Automático de Sentido (Ida ↔ Vuelta):**  
+  Al llegar al paradero de retorno o terminal de cabecera, la tablet invierte automáticamente el sentido de la ruta (*"Sentido Subida"* pasa a *"Sentido Bajada"*), actualizando la secuencia de paraderos y tiempos estimados en los mapas de los usuarios.
 
-### 4.3. Extensión CU-08: Registro de Pasajero CONADIS ([PE-CONADIS])
+### 4.3. Extensión CU-04.C: Inhabilitar Unidad en Mapa Público por Incidencia Menor
+* **Condición de Disparo:** Se pincha una llanta, hay recalentamiento leve o el chofer debe apartarse temporalmente de la ruta.
+* **Comportamiento:**
+  1. El chofer presiona el interruptor en la tablet: **`[Pausar en Mapa Público]`**.
+  2. La unidad se vuelve **invisible para los pasajeros en la app** (así nadie espera un bus varado).
+  3. La unidad **sigue 100% visible y monitoreada en tiempo real para el Administrador** en el Panel Web de Gestión de Flota.
+  4. Una vez reparada la incidencia, el chofer reactiva el interruptor y el bus reaparece en el mapa público de los pasajeros.
+
+### 4.4. Extensión CU-08: Registro de Pasajero CONADIS ([PE-CONADIS])
 1. Un pasajero con discapacidad muestra su carnet amarillo físico de CONADIS al chofer.
 2. El chofer pulsa el botón táctil de gran tamaño: **`[+1 CONADIS]`**.
 3. La tablet emite un tono corto de registro y envía la transacción a tarifa **S/. 0.00**.

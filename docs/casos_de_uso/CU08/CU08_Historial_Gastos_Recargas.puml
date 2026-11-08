@@ -1,0 +1,48 @@
+@startuml CU08_Diagrama_Casos_de_Uso
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundcorner 10
+
+skinparam actor {
+  BorderColor #2C3E50
+  BackgroundColor #FFFFFF
+}
+
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2C3E50
+  ArrowColor #2C3E50
+}
+
+skinparam rectangle {
+  BorderColor #2C3E50
+  BackgroundColor #FAFAFA
+}
+
+actor "Pasajero Registrado" as P
+actor "Backend Central BC" as B
+
+rectangle "Módulo de Monedero y Auditoría" {
+  usecase "CU-08: Consultar Historial\nde Gastos y Recargas" as UC_Main
+  
+  usecase "CU-08.1: Cargar Historial\nde Viajes y Débitos" as UC_Inc1
+  usecase "CU-08.2: Cargar Historial\nde Recargas en Soles" as UC_Inc2
+
+  usecase "CU-08.A: Filtrar por Rango\nde Fechas o Tipo" as UC_Ext1
+  usecase "CU-08.B: Descargar Comprobante\nDigital de Recarga" as UC_Ext2
+}
+
+P -- UC_Main
+
+UC_Main ..> UC_Inc1 : include
+UC_Main ..> UC_Inc2 : include
+
+UC_Ext1 ..> UC_Main : extend
+UC_Ext2 ..> UC_Main : extend
+
+UC_Inc1 -- B
+UC_Inc2 -- B
+@enduml

@@ -121,9 +121,10 @@ flowchart TD
        "status": "COMPLETED"
      }
      ```
-6. **[Backend Central]:**
+6. **[Backend Central e Idempotencia Estricta]:**
    * Valida la firma del banco para evitar inyecciones falsas.
-   * Asocia la referencia con el `BUS_01` y registra la transacción en el libro mayor como `DIRECT_YAPE_PAYMENT`.
+   * **Control de Idempotencia de Webhook:** Consulta si `transaction_id: "YAPE-9481729"` ya fue procesado en `ledger_transactions`. Si ya existe, responde de inmediato `200 OK` sin duplicar el aforo ni asentar dos veces el dinero.
+   * Si es nuevo: Asocia la referencia con el `BUS_01` y registra la transacción en el libro mayor como `DIRECT_YAPE_PAYMENT`.
    * Envía señales síncronas al POS y a la tablet del chofer.
 7. **[Hardware POS e Inclusión CU-01.2]:**
    * Emite el `BEEP` verde y despliega *"¡Yape Recibido! Pase"*.

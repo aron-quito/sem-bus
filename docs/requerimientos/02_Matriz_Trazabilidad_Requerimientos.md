@@ -16,8 +16,14 @@
 | **RN-06** | Cooldown Universitario (120 seg) | RF-TAR-04 | Tras pagar 7 puntos, la tarifa universitaria queda bloqueada para la cuenta por 2 minutos (antifraude de préstamo de cel). |
 | **RN-07** | Pago Acompañante Regular | RF-TAR-05 | Al usar `[+]` para pagar por amigos, todos los pasajes adicionales se liquidan obligatoriamente a tarifa regular (15 pts). |
 | **RN-08** | Unicidad de Carnet Universitario | RF-TAR-02 | Un DNI universitario solo puede asociarse a una cuenta activa a la vez. |
-| **RN-09** | Desacoplamiento de Viaje (>150m) | RF-GEO-02 | Si la distancia entre el bus y el celular supera 150m, el backend cierra el viaje y desuscribe al usuario. |
+| **RN-09** | Desacoplamiento de Viaje (>150m) | RF-GEO-02 | Si la distancia entre el bus y el celular supera 150m en 2 latidos consecutivos, el backend cierra el viaje. |
 | **RN-10** | Reembolso por Avería de Unidad | RF-MON-05 | Si el chofer declara avería en su tablet, todos los pasajeros suscritos reciben la devolución íntegra de sus puntos. |
+| **RN-11** | Sesión Única por Dispositivo (Yape) | RF-PAS-02 | Un usuario solo puede tener 1 sesión activa; el inicio en un nuevo equipo revoca inmediatamente la sesión anterior. |
+| **RN-12** | Bloqueo Pesimista en Débito (ACID) | RF-MON-01 | Durante el cobro, el backend ejecuta `SELECT ... FOR UPDATE` sobre la fila del monedero para evitar doble gasto. |
+| **RN-13** | Idempotencia en Webhooks Bancarios | RF-POS-02 | Comprobación de unicidad sobre `transaction_id` bancario para ignorar reintentos y evitar aforos duplicados. |
+| **RN-14** | Prórroga Flexible de Carnet SUNEDU | RF-TAR-01 | Parámetro `extension_gracia_dias` en base de datos para extender beneficios ante decretos oficiales extraordinarios. |
+| **RN-15** | Sentido Fijo y Pausa en Mapa Público | RF-CON-01 | Inversión automática de sentido al llegar a cabecera y botón de pausa para ocultar bus de pasajeros ante pinchazos. |
+| **RN-16** | Emparejamiento Criptográfico de Hardware | RF-POS-03 | POS y Tablet se vinculan al bus mediante token QR de un solo uso generado por el Administrador en Backoffice. |
 
 ---
 

@@ -152,8 +152,11 @@ flowchart TD
    * El backend evalúa la cuenta del usuario: si posee rol `STUDENT` vigente y `cooldown_until < NOW()`, liquida el pasaje del titular a **7 Puntos BC**.
    * Si es `ADULT` (o tiene cooldown activo), liquida a **15 Puntos BC**.
    * Suma $N \times 15\text{ Puntos}$ por los acompañantes indicados.
-7. **[Backend - Inclusión CU-01.1]:**
-   * Inicia transacción de base de datos con nivel de aislamiento serializable.
+7. **[Backend - Inclusión CU-01.1 y Bloqueo Anti-Doble Gasto (Pessimistic Lock)]:**
+   * El backend valida que la petición provenga del dispositivo activo del usuario (`request.device_id == users.current_device_id`). Si no coincide, rechaza con `401 Unauthorized: SESSION_EXPIRED_ON_ANOTHER_DEVICE`.
+   * Inicia transacción de base de datos con nivel de aislamiento serializable y ejecuta:  
+     `SELECT wallet_points FROM users WHERE id = $user_id FOR UPDATE;`  
+     *(Este bloqueo pesimista congela la fila del usuario en microsegundos, impidiendo que peticiones concurrentes desde dos buses o scripts cobren dos veces el mismo saldo).*
    * Verifica `saldo >= total_requerido`.
    * Ejecuta el débito atómico de los puntos.
    * Inserta el registro contable en `ledger_transactions` y el nuevo viaje en `trips` con estado `ACTIVO`.

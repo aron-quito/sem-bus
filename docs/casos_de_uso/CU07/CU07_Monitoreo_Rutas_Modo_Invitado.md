@@ -62,8 +62,9 @@
 ## 4. Descripción Paso a Paso del Flujo
 
 1. **[Apertura de la App]:** El usuario abre la App BC. El sistema no solicita registro ni tarjeta de crédito, entrando directamente a la vista de mapa centrada en Tacna.
-2. **[Carga de Geometría - Inclusión CU-07.1]:**
-   * La app consulta el catálogo local/remoto de rutas: `GET /api/v1/routes/LINEA_10/geometry`.
+2. **[Carga de Geometría y Filtro de Rutas - Inclusión CU-07.1 y Extensión CU-07.C]:**
+   * En la parte superior del mapa, la app despliega un selector de rutas (*"Todas las Líneas"*, *"Línea 10"*, *"Línea 14"*, etc.).
+   * Si el usuario selecciona *"Línea 10"*, la app limpia las demás trazas y muestra únicamente el recorrido y los buses en circulación de esa línea específica en tiempo real.
    * Renderiza la traza poligonal en color azul (Ida) y naranja (Vuelta) junto con los paraderos oficiales marcados con pines.
 3. **[Suscripción Telemática - Inclusión CU-07.2]:**
    * La app abre un canal WebSocket liviano: `wss://api.bc.pe/ws/routes/LINEA_10/live`.

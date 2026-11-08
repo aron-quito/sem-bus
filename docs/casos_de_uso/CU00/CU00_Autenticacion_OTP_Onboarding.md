@@ -38,6 +38,7 @@
 * **`<<include>> CU-00.1` (Despachar Código OTP de 6 Dígitos):** Generación de token criptográfico temporal (validez 5 minutos) y despacho por SMS o WhatsApp Business API.
 * **`<<include>> CU-00.2` (Validar Token OTP y Crear Sesión JWT):** Verificación de firma del token, generación de par `access_token` (1 hora) y `refresh_token` (90 días).
 * **`<<include>> CU-00.3` (Inicializar Monedero Digital en 0 Puntos):** Creación atómica del monedero en base de datos garantizando unicidad de cuenta.
+* **`<<include>> CU-00.4` (Control de Sesión Única por Dispositivo - Estilo Yape):** Revocación inmediata de cualquier sesión activa previa en otros dispositivos (`single_device_enforcement`).
 
 ### 3.2. Puntos de Extensión (`<<extend>>`)
 
@@ -55,6 +56,10 @@
 |   Extendido por: CU-00.C (Bloquear Teléfono Temporalmente por Seguridad)                          |
 |   Condición de Activación: intentos_fallidos_otp >= 3 intentos en menos de 10 minutos            |
 +---------------------------------------------------------------------------------------------------+
+| PUNTO DE EXTENSIÓN 4: [PE-PENDING-CACHE] (Persistencia de Estado de Verificación)                 |
+|   Extendido por: CU-00.D (Restaurar Pantalla de Ingreso OTP tras Cierre Inesperado de App)       |
+|   Condición de Activación: La app se cierra antes de ingresar el OTP recibido.                    |
++---------------------------------------------------------------------------------------------------+
 ```
 
 ---
@@ -66,20 +71,23 @@
 3. **[Despacho de OTP - Inclusión CU-00.1]:**
    * El backend genera un código numérico aleatorio de 6 dígitos con hash almacenado en Redis con TTL de 300 segundos.
    * Invoca a la pasarela (SMS o WhatsApp).
-   * La app muestra la pantalla de ingreso de código con un contador regresivo de 60 segundos.
+   * **Caché de Estado:** La app almacena en local `PENDING_OTP_PHONE = 952123456` y `PENDING_OTP_EXP = TIMESTAMP`. Si el usuario cierra la app o cambia de pantalla, al regresar se le restaura la pantalla de ingreso con el contador de segundos restante sin reenviar otro SMS (Extensión CU-00.D).
 4. **[Ingreso y Validación - Inclusión CU-00.2]:**
    * El usuario recibe el mensaje e ingresa los 6 dígitos.
-   * La app despacha: `POST /api/v1/auth/otp/verify { "phone": "952123456", "code": "849201" }`.
+   * La app despacha: `POST /api/v1/auth/otp/verify { "phone": "952123456", "code": "849201", "device_id": "DEV-UUID-941" }`.
    * El backend valida el hash en Redis y elimina el OTP consumido.
 5. **[Evaluación de Usuario Nuevo vs. Existente]:**
    * **Rama A (Usuario Nuevo):**
      * Ejecuta **CU-00.3**: Inserta el nuevo usuario con `role = 'ADULT'` y crea su monedero con saldo `0 Puntos BC`.
    * **Rama B (Usuario Existente - Extensión CU-00.B):**
      * Recupera el `user_id` preexistente, su saldo real en el libro mayor y su rol (ej. `STUDENT` con fecha de caducidad).
-6. **[Creación de Sesión]:**
+6. **[Regla Estricta: Sesión Única por Dispositivo - Estilo Yape - Inclusión CU-00.4]:**
+   * El backend actualiza `users.current_device_id = 'DEV-UUID-941'`.
+   * Si existía una sesión activa previa en otro smartphone, el backend **invalida y revoca inmediatamente sus tokens de acceso**. El dispositivo anterior queda cerrado de inmediato con el mensaje: *"Tu sesión se abrió en otro dispositivo"*.
+7. **[Creación de Sesión]:**
    * El backend emite tokens seguros (JWT).
    * La app almacena las credenciales en el almacenamiento seguro nativo (`Keychain` en iOS / `EncryptedSharedPreferences` en Android).
-7. **[Finalización]:** La app transiciona a la pantalla principal con el nombre del usuario y su saldo de Puntos BC disponible.
+8. **[Finalización]:** La app transiciona a la pantalla principal con el nombre del usuario y su saldo de Puntos BC disponible.
 
 ---
 
@@ -88,23 +96,18 @@
 ```gherkin
 Feature: Autenticación de Pasajeros por OTP Telefónico
 
-  Scenario: Registro exitoso de usuario nuevo por SMS
-    Given que el teléfono "952888999" no está registrado en el sistema BC
-    When el usuario solicita código OTP e ingresa el código correcto de 6 dígitos
-    Then el sistema crea una nueva cuenta con rol "ADULT"
-    And inicializa su monedero en 0 Puntos BC
-    And entrega tokens JWT válidos de sesión
+  Scenario: Sesión única por dispositivo (Estilo Yape)
+    Given que el usuario "U10" tiene sesión activa en el Dispositivo A
+    When inicia sesión exitosamente en el Dispositivo B con código OTP
+    Then el sistema autoriza la sesión en el Dispositivo B
+    And cierra y revoca inmediatamente la sesión en el Dispositivo A
+    And el Dispositivo A muestra la alerta "Tu sesión se ha abierto en otro dispositivo"
 
-  Scenario: Recuperación de saldo en nuevo dispositivo
-    Given que el usuario con teléfono "952111222" ya existe con 45 Puntos BC y rol "STUDENT"
-    When valida exitosamente su código OTP en un teléfono recién instalado
-    Then el sistema restaura su sesión con rol "STUDENT"
-    And muestra exactamente su saldo de 45 Puntos BC sin pérdidas
-
-  Scenario: Bloqueo por fuerza bruta tras 3 intentos erróneos
-    Given que se despachó un código OTP al teléfono "952333444"
-    When el usuario ingresa un código erróneo por 3 veces consecutivas
-    Then el sistema bloquea el número por 15 minutos
-    And retorna error 429 "Demasiados intentos fallidos. Intente más tarde"
+  Scenario: Restauración de pantalla de OTP tras cierre accidental
+    Given que se solicitó un código OTP al teléfono "952555666" hace 20 segundos
+    When el usuario cierra la app y la vuelve a abrir a los 40 segundos
+    Then la app detecta el estado "PENDING_OTP_VERIFICATION" en caché local
+    And muestra directamente la pantalla de ingreso con 220 segundos de validez restante
+    And no consume un nuevo envío de SMS
 ```
 

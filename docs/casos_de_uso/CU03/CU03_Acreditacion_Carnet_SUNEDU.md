@@ -133,9 +133,11 @@ flowchart TD
 5. **[Verificación de Unicidad - Inclusión CU-03.2]:**
    * El backend busca en la base de datos: `SELECT user_id FROM student_verifications WHERE dni = '74819201' AND status = 'ACTIVE'`.
    * Si ya existe un registro con un `user_id` diferente, aborta la operación con `409 Conflict: STUDENT_CARD_ALREADY_REGISTERED`.
-6. **[Validación de Caducidad]:**
-   * Verifica que `expires_at > NOW()`.
-   * Si está vencido, activa la extensión **CU-03.B** y rechaza la postulación.
+6. **[Validación de Caducidad con Prórroga Oficial SUNEDU]:**
+   * El backend evalúa la fecha oficial del plástico sumando el parámetro global configurable:  
+     `fecha_limite = expires_at + INTERVAL 'extension_gracia_dias' DAY`.  
+     *(Permite que, ante decretos de prórroga oficial de SUNEDU en Perú, el administrador configure 30 o 60 días adicionales sin que los estudiantes pierdan su beneficio).*
+   * Si `NOW() > fecha_limite`, activa la extensión **CU-03.B** y rechaza la postulación.
 7. **[Activación del Beneficio]:**
    * Actualiza el perfil del usuario: `role = 'STUDENT'`, `student_expires_at = '2027-04-30'`.
    * Registra la evidencia en el bucket de almacenamiento seguro.
