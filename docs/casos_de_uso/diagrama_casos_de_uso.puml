@@ -1,0 +1,139 @@
+@startuml Diagrama_Casos_de_Uso_BC
+!theme plain
+skinparam packageStyle rectangle
+skinparam roundcorner 10
+skinparam actorStyle awesome
+skinparam shadowing false
+
+title Proyecto BC (Bus Conectado) - Diagrama General de Casos de Uso (UML 2.5)
+
+actor "Pasajero Registrado" as Pasajero
+actor "Pasajero Universitario" as Estudiante
+actor "Pasajero Sin App" as PasajeroDirecto
+actor "Conductor / Chofer" as Chofer
+actor "Sistema Backend BC" as Backend <<System>>
+actor "Pasarela Bancaria Externa\n(Yape/Niubiz)" as Pasarela <<Service>>
+actor "Servicio SUNEDU" as Sunedu <<Service>>
+
+' Generalización de actores
+Pasajero <|-- Estudiante
+
+rectangle "Ecosistema de Transporte Urbano BC" {
+
+  ' --- PAQUETE ABORDAJE Y PAGOS ---
+  package "Gestión de Abordaje y Pasajes" {
+    usecase "CU-01: Abordar y Pagar Pasaje con App" as CU01
+    usecase "CU-01.1: Validar y Debitar Puntos de Monedero" as CU01_1
+    usecase "CU-01.2: Emitir Feedback en POS y Tablet" as CU01_2
+    usecase "CU-01.3: Suscribir Sesión a Unidad de Transporte" as CU01_3
+    
+    usecase "CU-01.A: Aplicar Tarifa Universitaria\n(7 Puntos)" as CU01_A
+    usecase "CU-01.B: Agregar Pasajes de Acompañantes\n(+15 Pts c/u)" as CU01_B
+    usecase "CU-01.C: Notificar Saldo Insuficiente" as CU01_C
+    usecase "CU-01.D: Manejar QR Expirado o Usado" as CU01_D
+
+    usecase "CU-02: Pagar Directo con Yape/Plin (Sin App)" as CU02
+    usecase "CU-02.1: Procesar Transacción Bancaria" as CU02_1
+    usecase "CU-02.A: Autorizar Manualmente por Timeout\n(Failsafe 5s)" as CU02_A
+    
+    usecase "CU-08: Registrar Abordaje Gratuito CONADIS" as CU08
+  }
+
+  ' Relaciones CU-01
+  CU01 ..> CU01_1 : <<include>>
+  CU01 ..> CU01_2 : <<include>>
+  CU01 ..> CU01_3 : <<include>>
+  
+  CU01_A ..> CU01 : <<extend>>\n(Punto de Extensión:\nTarifa Preferencial,\nCondición: Rol=STUDENT y Cooldown=0)
+  CU01_B ..> CU01 : <<extend>>\n(Punto de Extensión:\nSelección Acompañantes,\nCondición: Cantidad Extras > 0)
+  CU01_C ..> CU01 : <<extend>>\n(Punto de Extensión:\nVerificación Fondos,\nCondición: Saldo < Tarifa)
+  CU01_D ..> CU01 : <<extend>>\n(Punto de Extensión:\nValidación Payload,\nCondición: Nonce duplicado/caducado)
+
+  ' Relaciones CU-02
+  CU02 ..> CU02_1 : <<include>>
+  CU02 ..> CU01_2 : <<include>>
+  CU02_A ..> CU02 : <<extend>>\n(Punto de Extensión:\nEspera Webhook,\nCondición: Tiempo > 5 seg)
+
+  ' --- PAQUETE MONEDERO Y RECARGAS ---
+  package "Monedero Digital (Puntos BC)" {
+    usecase "CU-05: Recargar Puntos BC" as CU05
+    usecase "CU-05.1: Iniciar Intención de Pago Digital" as CU05_1
+    usecase "CU-05.2: Asentar en Libro Mayor (Ledger)" as CU05_2
+    usecase "CU-05.A: Manejar Rechazo de Fondos Bancarios" as CU05_A
+  }
+
+  CU05 ..> CU05_1 : <<include>>
+  CU05 ..> CU05_2 : <<include>>
+  CU05_A ..> CU05 : <<extend>>\n(Condición: Banco rechaza débito)
+
+  ' --- PAQUETE ACREDITACIONES ---
+  package "Acreditaciones y Beneficios" {
+    usecase "CU-03: Acreditar Carnet Universitario" as CU03
+    usecase "CU-03.1: Decodificar y Validar QR SUNEDU" as CU03_1
+    usecase "CU-03.2: Verificar Unicidad de DNI en BD" as CU03_2
+    usecase "CU-03.A: Derivar a Cola de Auditoría Manual" as CU03_A
+    usecase "CU-03.B: Rechazar por Caducidad Vencida" as CU03_B
+  }
+
+  CU03 ..> CU03_1 : <<include>>
+  CU03 ..> CU03_2 : <<include>>
+  CU03_A ..> CU03 : <<extend>>\n(Condición: QR ilegible o dañado)
+  CU03_B ..> CU03 : <<extend>>\n(Condición: Fecha caducidad < Hoy)
+
+  ' --- PAQUETE OPERACIÓN DE FLOTA (TABLET CHOFER) ---
+  package "Operación y Control de Cabina" {
+    usecase "CU-04: Operar Turno de Conducción en Tablet" as CU04
+    usecase "CU-04.1: Autenticar Chofer por PIN" as CU04_1
+    usecase "CU-04.2: Liquidar y Generar Reporte de Arqueo" as CU04_2
+    usecase "CU-04.A: Declarar Avería Mecánica / Reembolso" as CU04_A
+    usecase "CU-04.B: Calibrar Aforo por Desembarque Masivo" as CU04_B
+  }
+
+  CU04 ..> CU04_1 : <<include>>
+  CU04 ..> CU04_2 : <<include>>
+  CU04_A ..> CU04 : <<extend>>\n(Condición: Falla mecánica en ruta)
+  CU04_B ..> CU04 : <<extend>>\n(Condición: Parada de alta afluencia)
+
+  ' --- PAQUETE TELEMETRÍA Y DESCENSO ---
+  package "Geofencing y Telemetría de Viaje" {
+    usecase "CU-06: Descenso y Desacoplamiento por Distancia" as CU06
+    usecase "CU-06.1: Evaluar Distancia Relativa (Bus vs Celular)" as CU06_1
+    usecase "CU-06.2: Finalizar Sesión y Desuscribir" as CU06_2
+    usecase "CU-06.A: Emitir Alarma Anticipada de Bajada" as CU06_A
+    usecase "CU-06.B: Cierre Forzoso por Llegada a Terminal" as CU06_B
+
+    usecase "CU-07: Consultar Rutas y Flota en Vivo (Modo Invitado)" as CU07
+  }
+
+  CU06 ..> CU06_1 : <<include>>
+  CU06 ..> CU06_2 : <<include>>
+  CU06_A ..> CU06 : <<extend>>\n(Condición: Parada pre-marcada y Distancia < 400m)
+  CU06_B ..> CU06 : <<extend>>\n(Condición: Bus entra a geocerca de Terminal)
+}
+
+' Asociaciones de Actores a Casos de Uso
+Pasajero --> CU01
+Pasajero --> CU05
+Pasajero --> CU06
+Pasajero --> CU07
+
+Estudiante --> CU03
+
+PasajeroDirecto --> CU02
+PasajeroDirecto --> CU08
+
+Chofer --> CU04
+Chofer --> CU08
+Chofer --> CU02_A
+
+CU02_1 --> Pasarela
+CU05_1 --> Pasarela
+CU03_1 --> Sunedu
+
+Backend --> CU01_1
+Backend --> CU01_3
+Backend --> CU04_A
+Backend --> CU06_1
+Backend --> CU06_2
+
+@enduml
