@@ -1,0 +1,69 @@
+@startuml CU03_Acreditacion_Carnet_SUNEDU
+skinparam dpi 300
+skinparam defaultFontName Arial
+skinparam shadowing false
+skinparam RoundCorner 10
+
+|#E8F4F8|Estudiante|
+start
+:Ingresa a Perfil en App BC;
+:Selecciona 'Activar Tarifa Universitaria';
+
+|#FFF2CC|App Movil Pasajero|
+:Abre camara con marco para QR SUNEDU;
+
+|#E8F4F8|Estudiante|
+:Enfoca QR oficial impreso en carnet fisico;
+
+|#FFF2CC|App Movil Pasajero|
+if (Camara decodifica QR tras 2 intentos?) then (No)
+  :<<extend>> CU-03.A (Cola de Auditoria Manual);
+  :Solicita fotos de anverso y reverso;
+  |#E8F4F8|Estudiante|
+  :Adjunta fotografias nitidas;
+  |#E8EAF6|Panel Web Administrador|
+  :Pasa a cola 'Auditoria Manual Pendiente';
+  :Auditor revisa y aprueba/rechaza en < 24h;
+  if (Aprobado por Auditor?) then (Si)
+    :Activa rol STUDENT;
+  else (No)
+    :Notifica motivo de rechazo;
+    stop
+  endif
+else (Si)
+  :<<include>> CU-03.1 (Decodificar Payload SUNEDU);
+  :Extrae DNI, Universidad, Nombres, Caducidad;
+  :Solicita foto del anverso (selfie/rostro);
+  |#E8F4F8|Estudiante|
+  :Captura foto de respaldo;
+  |#FFF2CC|App Movil Pasajero|
+  :Envia POST /api/v1/students/verify;
+  
+  |#E2EFDA|Backend Central BC|
+  :<<include>> CU-03.2 (Verificar Unicidad de DNI);
+  if (DNI ya registrado en otra cuenta activa?) then (Si)
+    :Retorna error 409 STUDENT_ID_ALREADY_IN_USE;
+    |#FFF2CC|App Movil Pasajero|
+    :Muestra 'Carnet ya vinculado a otra cuenta';
+    stop
+  else (No)
+    if (Fecha Caducidad SUNEDU >= Fecha Actual?) then (No)
+      :<<extend>> CU-03.B (Rechazo por Caducidad Vencida);
+      :Retorna error 422 STUDENT_CARD_EXPIRED;
+      |#FFF2CC|App Movil Pasajero|
+      :Muestra 'Carnet vencido ante SUNEDU';
+      stop
+    else (Si)
+      :Guarda evidencia en almacenamiento seguro;
+      :Actualiza Users: rol='STUDENT', expires_at=caducidad;
+      :Programa Cron Job de revocacion automatica;
+      :Retorna 200 OK con insignia de estudiante;
+    endif
+  endif
+endif
+
+|#FFF2CC|App Movil Pasajero|
+:Despliega insignia dorada 'Estudiante Verificado';
+:Actualiza costo de viaje a 7 Puntos (S/. 0.70);
+stop
+@enduml

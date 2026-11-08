@@ -46,7 +46,12 @@
 
 ---
 
-## 3. Diagrama de Actividades UML (Flujo de Decisiones)
+## 3. Diagrama de Actividades UML
+
+### Diagrama de Actividades UML (Renderizado en Alta Resolución 300 DPI)
+![CU06_Descenso_Desacoplamiento_Geofencing](CU06_Descenso_Desacoplamiento_Geofencing.png)
+
+ (Flujo de Decisiones)
 
 ```mermaid
 flowchart TD

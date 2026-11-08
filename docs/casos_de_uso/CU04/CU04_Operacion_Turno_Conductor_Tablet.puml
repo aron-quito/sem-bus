@@ -1,0 +1,83 @@
+@startuml CU04_Operacion_Turno_Conductor_Tablet
+skinparam dpi 300
+skinparam defaultFontName Arial
+skinparam shadowing false
+skinparam RoundCorner 10
+
+|#E8F4F8|Chofer|
+start
+:Ingresa a la cabina del bus;
+:Digita PIN personal en la Tablet;
+
+|#E8EAF6|Tablet Chofer|
+:<<include>> CU-04.1 (Autenticar Chofer por PIN);
+:Envia POST /api/v1/shifts/start;
+
+|#E2EFDA|Backend Central BC|
+:Valida PIN, asocia Chofer al bus_id y abre Turno;
+:Retorna ruta asignada y configuracion;
+
+|#E8EAF6|Tablet Chofer|
+:Despliega Tablero Operativo:
+- Semaforo de Aforo
+- Feed de Cobros en Vivo
+- Boton [+1 CONADIS]
+- Boton [Ajustar Bajada]
+- Boton [Averia de Unidad];
+
+repeat
+  |#E8F4F8|Chofer|
+  if (Evento en ruta?) then (Pasajero paga en POS)
+    |#E2EFDA|Backend Central BC|
+    :Procesa cobro (CU-01 / CU-02);
+    :Envia WebSocket FARE_PAID;
+    |#E8EAF6|Tablet Chofer|
+    :Sonido de confirmacion;
+    :Muestra Tarjeta Verde/Amarilla (3 seg);
+    :Suma aforo en tiempo real;
+  else if (Sube Pasajero con Carnet CONADIS) then
+    |#E8F4F8|Chofer|
+    :Revisa carnet fisico amarillo;
+    :Presiona boton tactil grande '[+1 CONADIS]';
+    note right: <<extend>> CU-08 (Abordaje Gratuito)
+    |#E8EAF6|Tablet Chofer|
+    :Envia POST /api/v1/trips/conadis (S/. 0.00);
+    :Emite tono corto y suma aforo +1;
+  else if (Paradero de Desembarque Masivo) then
+    |#E8F4F8|Chofer|
+    :Presiona '[Ajustar Bajada]';
+    note right: <<extend>> CU-04.B (Calibrar Aforo)
+    |#E8EAF6|Tablet Chofer|
+    :Calibra semaforo a 'Asientos Libres';
+  else if (Ocurre Falla Mecanica / Accidente) then
+    |#E8F4F8|Chofer|
+    :Presiona boton rojo '[Reportar Averia]';
+    note right: <<extend>> CU-04.A (Reembolso por Averia)
+    |#E8EAF6|Tablet Chofer|
+    :Envia POST /api/v1/buses/breakdown;
+    |#E2EFDA|Backend Central BC|
+    :Marca bus como OUT_OF_SERVICE;
+    :Reembolsa Puntos BC a todos los pasajeros a bordo;
+    :Despacha Push Notification de transbordo;
+    |#E8EAF6|Tablet Chofer|
+    :Pantalla en Rojo 'UNIDAD FUERA DE SERVICIO';
+    stop
+  endif
+repeat while (Continua en jornada laboral?) is (Si)
+->No (Llegada a Terminal);
+
+|#E8F4F8|Chofer|
+:Presiona '[Cerrar Turno]';
+
+|#E8EAF6|Tablet Chofer|
+:<<include>> CU-04.2 (Liquidar y Generar Arqueo);
+:Envia POST /api/v1/shifts/close;
+
+|#E2EFDA|Backend Central BC|
+:Consolida ingresos: App vs Yape vs CONADIS;
+:Genera reporte inmutable de liquidacion;
+
+|#E8EAF6|Tablet Chofer|
+:Despliega Reporte de Liquidacion de Turno;
+stop
+@enduml

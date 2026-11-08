@@ -1,0 +1,61 @@
+@startuml CU05_Recarga_Puntos_BC
+skinparam dpi 300
+skinparam defaultFontName Arial
+skinparam shadowing false
+skinparam RoundCorner 10
+
+|#E8F4F8|Pasajero|
+start
+:Abre monedero en App BC;
+:Presiona 'Recargar Puntos';
+:Selecciona importe en Soles (min S/. 5, max S/. 100);
+:Elige metodo de pago (Yape / Tarjeta Debito);
+
+|#FFF2CC|App Movil Pasajero|
+:<<include>> CU-05.1 (Iniciar Intencion de Pago);
+:Envia POST /api/v1/wallet/recharge/intent;
+
+|#E2EFDA|Backend Central BC|
+:Crea registro de recarga en estado PENDING;
+:Invoca API de Pasarela de Pagos (Niubiz/Yape);
+
+|#E8EAF6|Pasarela de Pagos (Yape/Niubiz)|
+:Genera sesion de pago seguro;
+|#FFF2CC|App Movil Pasajero|
+:Despliega modal de pago de la pasarela;
+
+|#E8F4F8|Pasajero|
+:Confirma el pago en la pasarela;
+
+|#E8EAF6|Pasarela de Pagos (Yape/Niubiz)|
+if (Cobro bancario autorizado?) then (No)
+  :<<extend>> CU-05.A (Manejar Rechazo Bancario);
+  :Envia Webhook PAYMENT_DECLINED;
+  |#E2EFDA|Backend Central BC|
+  :Marca recarga como FAILED;
+  |#FFF2CC|App Movil Pasajero|
+  :Muestra 'Pago declinado por su banco';
+  stop
+else (Si)
+  :Debita fondos bancarios en Soles;
+  :Envia Webhook firmado PAYMENT_APPROVED;
+  
+  |#E2EFDA|Backend Central BC|
+  :Valida firma criptografica HMAC-SHA256;
+  :Calcula Puntos = Monto_PEN * 10;
+  :<<include>> CU-05.2 (Asentar en Libro Mayor Ledger);
+  :Transaccion ACID:
+  - Marca recarga como COMPLETED
+  - Inserta RECHARGE_CREDIT en ledger_transactions
+  - Incrementa users.wallet_points;
+  :Emite notificacion Push / WebSocket al usuario;
+  
+  |#FFF2CC|App Movil Pasajero|
+  :Sonido de monedas y vibracion haptica;
+  :Actualiza saldo en vivo en pantalla;
+endif
+
+|#E8F4F8|Pasajero|
+:Visualiza nuevo saldo listo para viajar;
+stop
+@enduml

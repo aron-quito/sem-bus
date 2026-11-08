@@ -1,0 +1,84 @@
+@startuml CU01_Abordaje_Pago_App
+skinparam dpi 300
+skinparam defaultFontName Arial
+skinparam shadowing false
+skinparam RoundCorner 10
+
+|#E8F4F8|Pasajero|
+start
+:Sube por puerta delantera del bus;
+:Abre App Movil BC y activa escaner;
+if (Viaja con acompanantes?) then (Si)
+  :Presiona [+] y agrega N pasajes extra;
+  note right: <<extend>> CU-01.B (Pasajes Acompanantes)
+else (No)
+endif
+:Enfoca codigo QR dinamico en pantalla del POS;
+
+|#FFF2CC|App Movil Pasajero|
+:Decodifica payload QR (bus_id, nonce, timestamp);
+:Envia solicitud POST /api/v1/trips/pay;
+
+|#E2EFDA|Backend Central BC|
+if (Nonce valido y no utilizado previamente?) then (No)
+  :Retorna error 409 QR_EXPIRED;
+  note right: <<extend>> CU-01.D (Manejo QR Expirado)
+  |#FFF2CC|App Movil Pasajero|
+  :Muestra "QR actualizado, reintente";
+  stop
+else (Si)
+  if (Usuario posee rol STUDENT activo?) then (Si)
+    if (Cooldown de 120s superado?) then (Si)
+      :Tarifa Titular = 7 Puntos (S/. 0.70);
+      note right: <<extend>> CU-01.A (Tarifa Universitaria)
+    else (No)
+      :Tarifa Titular = 15 Puntos (S/. 1.50);
+    endif
+  else (No)
+    :Tarifa Titular = 15 Puntos (S/. 1.50);
+  endif
+  :Total Puntos = Tarifa Titular + (N * 15 Puntos);
+  if (Saldo en Puntos >= Total Puntos?) then (No)
+    :Retorna error 402 INSUFFICIENT_FUNDS;
+    note right: <<extend>> CU-01.C (Notificar Saldo Insuficiente)
+    |#FCE4D6|POS en Puerta|
+    :Emite BEEP-BEEP Rojo "Saldo Insuficiente";
+    |#E8EAF6|Tablet Chofer|
+    :Despliega Tarjeta Roja "NO PASA";
+    |#FFF2CC|App Movil Pasajero|
+    :Muestra modal con opcion de recargar o Yape directo;
+    stop
+  else (Si)
+    :<<include>> CU-01.1 (Debitar Puntos de Monedero);
+    :Transaccion ACID en Libro Mayor (Ledger);
+    :Registra viaje ACTIVO en tabla trips;
+    :Marca Nonce como CONSUMIDO;
+    if (Aplico tarifa estudiante?) then (Si)
+      :Activa cooldown de 120s para el usuario;
+    endif
+    :<<include>> CU-01.2 (Emitir Feedback en Hardware);
+    fork
+      |#FCE4D6|POS en Puerta|
+      :Recibe evento WebSocket;
+      :Emite BEEP Verde agudo (800ms);
+      :Pantalla verde "PAGO EXITOSO";
+      :Genera nuevo QR dinamico con nuevo nonce;
+    fork again
+      |#E8EAF6|Tablet Chofer|
+      :Recibe evento WebSocket;
+      :Emite sonido discreto de confirmacion;
+      :Despliega Tarjeta Verde/Amarilla con monto cobrado;
+      :Incrementa aforo en +(1 + N);
+    fork again
+      |#FFF2CC|App Movil Pasajero|
+      :<<include>> CU-01.3 (Suscribir Sesion a Unidad);
+      :Cambia interfaz a "Viaje en Curso";
+      :Inicia monitoreo de desacoplamiento GPS cada 45s;
+    end fork
+  endif
+endif
+
+|#E8F4F8|Pasajero|
+:Escucha BEEP verde y avanza hacia los asientos;
+stop
+@enduml

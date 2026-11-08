@@ -43,7 +43,12 @@
 
 ---
 
-## 3. Diagrama de Actividades UML (Flujo de Decisiones)
+## 3. Diagrama de Actividades UML
+
+### Diagrama de Actividades UML (Renderizado en Alta Resolución 300 DPI)
+![CU02_Pago_Yape_Directo_Sin_App](CU02_Pago_Yape_Directo_Sin_App.png)
+
+ (Flujo de Decisiones)
 
 ```mermaid
 flowchart TD

@@ -49,7 +49,12 @@
 
 ---
 
-## 3. Diagrama de Actividades UML (Flujo de Decisiones)
+## 3. Diagrama de Actividades UML
+
+### Diagrama de Actividades UML (Renderizado en Alta Resolución 300 DPI)
+![CU04_Operacion_Turno_Conductor_Tablet](CU04_Operacion_Turno_Conductor_Tablet.png)
+
+ (Flujo de Decisiones)
 
 ```mermaid
 flowchart TD

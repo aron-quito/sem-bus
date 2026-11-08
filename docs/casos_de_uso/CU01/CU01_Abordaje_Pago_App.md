@@ -55,7 +55,12 @@
 
 ---
 
-## 3. Diagrama de Actividades UML (Flujo de Decisiones con Swimlanes)
+## 3. Diagrama de Actividades UML
+
+### Diagrama de Actividades UML (Renderizado en Alta Resolución 300 DPI)
+![CU01_Abordaje_Pago_App](CU01_Abordaje_Pago_App.png)
+
+ (Flujo de Decisiones con Swimlanes)
 
 ```mermaid
 flowchart TD

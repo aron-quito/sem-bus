@@ -1,0 +1,57 @@
+@startuml CU06_Descenso_Desacoplamiento_Geofencing
+skinparam dpi 300
+skinparam defaultFontName Arial
+skinparam shadowing false
+skinparam RoundCorner 10
+
+|#FCE4D6|POS Bus (Nodo GPS)|
+start
+:Transmite telemetria continua cada 3-5s (Lat_B, Lng_B, Rumbo);
+
+|#FFF2CC|App Movil (Segundo Plano)|
+:Servicio en background despierta cada 45s;
+:Captura GPS de baja energia (Lat_U, Lng_U);
+:Envia POST /api/v1/trips/heartbeat;
+
+|#E2EFDA|Backend Central BC|
+:<<include>> CU-06.1 (Evaluar Distancia Relativa);
+:Calcula Delta_D = Distancia_Haversine(Bus, Celular);
+
+if (Usuario pre-marco parada de destino?) then (Si)
+  if (Distancia Bus a Parada Destino < 400m?) then (Si)
+    :<<extend>> CU-06.A (Alarma Anticipada de Bajada);
+    |#FFF2CC|App Movil (Segundo Plano)|
+    :Emite campanilla sonora y vibracion;
+    :Notifica: 'Tu parada esta proxima! Alistate';
+  else (No)
+  endif
+else (No)
+endif
+
+|#E2EFDA|Backend Central BC|
+if (Delta_D > 150 metros?) then (No: Delta_D < 25m)
+  :Mantiene estado EN_BUS;
+  stop
+else (Si: Usuario descendio fisicamente)
+  :<<include>> CU-06.2 (Finalizar Sesion y Desuscribir);
+  :Asocia paradero mas cercano al punto de bajada;
+  :Actualiza trips: status='COMPLETED', ended_at=NOW();
+  :Desuscribe socket del bus;
+  :Despacha Push Notification de despedida;
+  |#FFF2CC|App Movil (Segundo Plano)|
+  :Detiene servicio de segundo plano;
+  :Cierra vista 'Viaje en Curso' y regresa a mapa libre;
+  |#E8F4F8|Pasajero|
+  :Recibe notificacion de fin de viaje;
+  stop
+endif
+
+|#FCE4D6|POS Bus (Nodo GPS)|
+if (Bus entra a geocerca de Terminal Final?) then (Si)
+  |#E2EFDA|Backend Central BC|
+  :<<extend>> CU-06.B (Cierre Forzoso por Fin de Ruta);
+  :Cierra automaticamente todos los viajes activos del bus;
+else (No)
+endif
+stop
+@enduml
