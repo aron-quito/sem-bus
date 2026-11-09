@@ -35,31 +35,25 @@ El prototipo incorpora las especificaciones clave de navegación e interacción 
    * La vinculación al viaje es **100% automática**: ocurre al escanear el QR en puerta o cuando el GPS del móvil detecta que el usuario está dentro del vehículo siguiendo la misma ruta.
    * Se incluye un botón de **`[📡 Detectar Bus]`** en la cabecera del mapa para forzar la sincronización si la app no lo detectó previamente.
 
-2. **Paraderos en el Mapa con Alertas de 2 Temporizadores:**  
-   * En el mapa figuran claramente los paraderos de la Línea 10 (*Cono Norte*, *Plaza Zela*, *Paseo Cívico*, *Mercado Central*, *UNJBG*).
-   * Al pulsar un paradero, se despliegan los buses próximos (ej. BUS 01 en ~3 min, BUS 04 en ~10 min) y el botón para programar la alerta con **2 temporizadores**:
+2. **Paraderos Oficiales en el Mapa (3 Paraderos Clave):**  
+   * En el mapa figuran exactamente los 3 paraderos estratégicos de la Línea 10: **Plaza Zela**, **P. Mercado** y **P. UNJBG**.
+   * Al pulsar un paradero, se despliegan los buses próximos (ej. BUS 01 en ~3 min, BUS 07 en ~11 min) y el botón para programar la alerta con **2 temporizadores**:
      * **Temporizador 1 (Anticipación configurable):** Alerta previa a los $n = 5$, $10$ o $15$ minutos antes de que el bus alcance el paradero.
      * **Temporizador 2 (Inminente / Llegada):** Segunda alerta háptica y acústica cuando el bus está a escasos metros o segundos de arribar.
 
 3. **Buscador de Destinos al estilo Google Maps con Botón Circular "Ir":**  
-   * Al escribir o hacer clic en la barra de búsqueda, se despliega una lista de lugares e hitos de Tacna (*Mercado Central*, *Paseo Cívico*, *UNJBG*, *Plaza Zela*, *Terminal Terrestre*).
+   * Al hacer clic en la barra de búsqueda, se despliega una lista sólida `#0F172A` de lugares e hitos de Tacna (*Mercadillo Bolognesi*, *Estadio Jorge Basadre*, *Plaza Zela*, *P. Mercado*, *P. UNJBG*).
    * Al lado de cada sugerencia se ubica un **botón circular azul con la flecha de "Ir"**:
-     * **Si se pulsa el elemento:** La cámara del mapa se traslada al lugar y coloca un pin de ubicación. Si es un paradero, abre su ficha con ETAs y alertas; si es un hito general, muestra su tarjeta informativa con botón para cómo llegar.
-     * **Si se pulsa el botón circular "Ir":** Activa directamente el **Modo de Trazado de Ruta Automático** calculando el paradero de origen, el bus a tomar y el paradero de desembarque.
+     * **Si se pulsa el elemento:** La cámara del mapa se traslada al lugar y coloca un pin de ubicación. Si es un paradero, abre su ficha con ETAs y alertas.
+     * **Si se pulsa el botón circular "Ir":** Activa directamente el **Escenario Pantalla Completa Google Maps** para calcular la ruta.
 
-4. **Botón Flotante Circular de Direcciones (FAB Inferior Derecho):**  
-   * En la esquina inferior derecha del mapa flota el botón circular azul con flecha de navegación (idéntico a Google Maps).
-   * Al pulsarlo, se abre la vista completa de navegación con dos campos en la cabecera:
-     * **Origen:** Pre-llenado automáticamente con *"📍 Tu ubicación actual"*.
-     * **Destino:** Campo para elegir el punto de llegada.
-     * **Botón de Invertir (⇅):** Permite conmutar origen y destino instantáneamente.
-
-5. **Múltiples Opciones de Ruta y Comparativa de Itinerarios:**  
-   * Al calcular una ruta, se presentan tarjetas con alternativas:
-     * **Opción 1 (Más rápida):** Línea 10 (BUS 01) • ~12 min • Próximo bus en ~3 min • Tarifa S/. 0.70 / S/. 1.40.
-     * **Opción 2 (Siguiente / Menos concurrida):** Línea 10 (BUS 04) • ~18 min • Asientos libres garantizados.
-     * **Opción 3 (Caminata directa):** A pie directo • ~22 min (1.5 km).
-   * Incluye desglose visual paso a paso (caminar al paradero ➔ subir al bus ➔ viajar $X$ paradas ➔ bajar y caminar al destino final).
+4. **Escenario Pantalla Completa Estilo Google Maps con Hoja de 3 Niveles:**  
+   * Al pulsar el botón de cómo llegar (FAB cian `[↱]` o el botón circular `[Ir]`), la pantalla cambia completamente al modo navegación de **pantalla completa** (100% del iPhone 16):
+     * **Cabecera Nativa:** Origen (*Tu ubicación*), Destino (*Mercadillo Bolognesi*), selector de modo (Auto, Moto, Bus, A pie) e inversión rápida `[⇅]`.
+     * **Hoja Inferior Interactiva de 3 Alturas (Bottom Sheet Snaps):**
+       - **Nivel 1: Compacto (Peek, ~140px):** Muestra la mejor opción (`12 min • 6 km`), botones `[Iniciar]`, `[Agregar paradas]` y `[Seguir ETA]`.
+       - **Nivel 2: Detalle (Medium, ~340px):** Muestra el desglose de la mejor opción, hora de llegada (`Llegada: 12:10 a.m.`) y ahorro ecológico de combustible/tiempo.
+       - **Nivel 3: Completo (Full, 90% altura):** Despliega el catálogo con **todas las formas posibles de llegar al destino** (BUS 01 12 min, BUS 07 18 min, Caminata 22 min), tarjeta fotográfica de destino y el acordeón con el **itinerario paso a paso**.
 
 6. **Contención Estricta en el Marco Móvil (Cero Solapamientos en Pantalla):**  
    * Todos los popups, hojas flotantes (*bottom sheets*), diálogos modales (alertas de paradero, baja de cuenta) y notificaciones toast están **confinados estrictamente dentro del contenedor del smartphone** (`position: absolute; overflow: hidden`), evitando desbordes o solapamientos sobre el fondo de escritorio.
