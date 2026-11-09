@@ -39,3 +39,7 @@ El proyecto **BC** moderniza el transporte urbano en Tacna mediante un ecosistem
 * [01_ERD_BC.puml](file:///Users/aron/githubRepo/sem-bus/docs/modelo_datos/01_ERD_BC.puml): Fuente Mermaid erDiagram del ERD
 * [01_ERD_BC.png](file:///Users/aron/githubRepo/sem-bus/docs/modelo_datos/01_ERD_BC.png): Diagrama compilado (alta resolución, 689 KB)
 * [02_Script_SQL_DDL.sql](file:///Users/aron/githubRepo/sem-bus/docs/modelo_datos/02_Script_SQL_DDL.sql): Script DDL completo PostgreSQL 15+ con ENUMs, índices, triggers, funciones atómicas (fn_debit_wallet, fn_credit_wallet, fn_revoke_previous_sessions) y vistas
+
+### 5. Plano de Diseño UI/UX y Prototipo Interactivo (Figma Player)
+* [mockup/index.html](file:///Users/aron/githubRepo/sem-bus/mockup/index.html): **Prototipo Figma Ejecutable** con marcos interactivos de iPhone 16 Pro, Tablet Android de Conductor (Cabina), Validador POS en Puerta y Consola Backoffice con simulador de sonido de cobros real (Web Audio API).
+* [mockup/README.md](file:///Users/aron/githubRepo/sem-bus/mockup/README.md): Documento de mapeo a componentes 100% nativos (SwiftUI en iOS y Jetpack Compose en Android).

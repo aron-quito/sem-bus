@@ -1,0 +1,2079 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BC (Bus Conectado) — Mockup Interactivo / Prototipo Ejecutable</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            bc: {
+              blue: '#0D47A1',
+              accent: '#1976D2',
+              light: '#E3F2FD',
+              green: '#2E7D32',
+              yellow: '#F57F17',
+              red: '#C62828',
+              dark: '#121212',
+              card: '#1E1E1E',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* iOS Frame Stylings */
+    .iphone-frame {
+      width: 390px;
+      height: 844px;
+      border-radius: 54px;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.5), 0 0 0 12px #2A2A2E, 0 0 0 14px #1A1A1D;
+      position: relative;
+      overflow: hidden;
+      contain: paint;
+    }
+    .dynamic-island {
+      width: 120px;
+      height: 32px;
+      background: #000;
+      border-radius: 20px;
+      position: absolute;
+      top: 11px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .dynamic-island.expanded {
+      width: 270px;
+      height: 60px;
+      border-radius: 28px;
+    }
+    .home-indicator {
+      width: 134px;
+      height: 5px;
+      background: #FFFFFF;
+      border-radius: 3px;
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 55;
+      opacity: 0.8;
+      pointer-events: none;
+    }
+
+    /* Tablet Frame (Driver Cabin) */
+    .tablet-frame {
+      width: 960px;
+      height: 600px;
+      border-radius: 28px;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.6), 0 0 0 14px #1F2937, 0 0 0 16px #111827;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* POS Module Frame */
+    .pos-frame {
+      width: 340px;
+      height: 580px;
+      border-radius: 36px;
+      box-shadow: 0 25px 60px -15px rgba(0,0,0,0.6), 0 0 0 10px #374151, 0 0 0 12px #1F2937;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Laser line animation */
+    @keyframes scanMove {
+      0% { top: 10%; opacity: 0.2; }
+      50% { top: 85%; opacity: 1; }
+      100% { top: 10%; opacity: 0.2; }
+    }
+    .scanner-laser {
+      animation: scanMove 2s infinite ease-in-out;
+    }
+
+    /* Pulse animation for live active bus */
+    @keyframes busPulse {
+      0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); }
+      70% { box-shadow: 0 0 0 14px rgba(37, 99, 235, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+    }
+    .pulse-bus {
+      animation: busPulse 2s infinite;
+    }
+
+    /* Custom scrollbars */
+    .custom-scroll::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    .custom-scroll::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans select-none antialiased">
+
+  <!-- ============================================================ -->
+  <!-- TOP GLOBAL HEADER & DEVICE SWITCHER -->
+  <!-- ============================================================ -->
+  <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-50 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-md">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-500 flex items-center justify-center font-black text-white text-base shadow-lg shadow-blue-500/20">
+        BC
+      </div>
+      <div>
+        <h1 class="font-extrabold text-sm tracking-tight text-white flex items-center gap-2">
+          Sistema Bus Conectado (BC)
+          <span class="text-[10px] font-mono font-bold bg-blue-950 text-blue-300 border border-blue-800 px-1.5 py-0.2 rounded">Línea 10 • Tacna</span>
+        </h1>
+        <p class="text-[11px] text-slate-400">Blueprint UI/UX Nativo • Simulador Interactivo de Flota y Rutas</p>
+      </div>
+    </div>
+
+    <!-- Device switcher tabs -->
+    <div class="flex items-center bg-slate-950 p-1 rounded-2xl border border-slate-800 text-xs">
+      <button onclick="switchDevice('passenger')" id="btn-passenger" class="device-tab px-3 py-1.5 rounded-xl font-bold transition flex items-center gap-1.5 bg-blue-600 text-white shadow">
+        <i data-lucide="smartphone" class="w-3.5 h-3.5"></i> App Pasajero (iOS)
+      </button>
+      <button onclick="switchDevice('driver')" id="btn-driver" class="device-tab px-3 py-1.5 rounded-xl font-medium text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5">
+        <i data-lucide="tablet" class="w-3.5 h-3.5"></i> Tablet Chofer
+      </button>
+      <button onclick="switchDevice('pos')" id="btn-pos" class="device-tab px-3 py-1.5 rounded-xl font-medium text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5">
+        <i data-lucide="scan" class="w-3.5 h-3.5"></i> Módulo POS Puerta
+      </button>
+      <button onclick="switchDevice('backoffice')" id="btn-backoffice" class="device-tab px-3 py-1.5 rounded-xl font-medium text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5">
+        <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i> Backoffice Web
+      </button>
+      <button onclick="switchDevice('all')" id="btn-all" class="device-tab px-3 py-1.5 rounded-xl font-medium text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5">
+        <i data-lucide="grid" class="w-3.5 h-3.5"></i> Ver Todo (Canvas)
+      </button>
+    </div>
+
+    <!-- Quick Telemetry & State Controls -->
+    <div class="flex items-center gap-2">
+      <!-- Proximity simulation state indicator -->
+      <div class="flex items-center gap-1.5 bg-slate-800/80 border border-slate-700/60 px-2.5 py-1 rounded-xl text-xs">
+        <span class="text-slate-400 text-[10px]">Posición GPS:</span>
+        <button onclick="toggleUserProximitySim()" id="badge-proximity" class="font-bold text-[10px] px-2 py-0.5 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-700 transition" title="Haz clic para alternar si estás dentro del bus o en la calle">
+          📍 A bordo (<25m)
+        </button>
+      </div>
+
+      <button onclick="resetMockupState()" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1 transition" title="Restablecer simulación">
+        <i data-lucide="rotate-ccw" class="w-3 h-3"></i> Reiniciar
+      </button>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- MAIN WORKSPACE / CANVAS -->
+  <!-- ============================================================ -->
+  <main class="flex-1 overflow-x-auto overflow-y-auto flex items-center justify-center p-4 md:p-8 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px]">
+
+    <!-- ========================================================================= -->
+    <!-- VIEW 1: IPHONE 16 PRO (APP PASAJERO - SWIFTUI PROTOTYPE) -->
+    <!-- ========================================================================= -->
+    <div id="view-passenger" class="device-container flex flex-col items-center">
+      
+      <!-- iPhone Frame Container -->
+      <div class="iphone-frame bg-slate-900 text-slate-900 flex flex-col select-none relative">
+        
+        <!-- Dynamic Island -->
+        <div id="dynamic-island" class="dynamic-island">
+          <div class="w-2.5 h-2.5 rounded-full bg-slate-800"></div>
+          <div id="island-content" class="hidden text-[10px] text-emerald-400 font-semibold items-center gap-1.5">
+            <i data-lucide="bus" class="w-3 h-3 text-emerald-400 animate-pulse"></i>
+            <span id="island-text">BUS 01 • En viaje</span>
+          </div>
+          <div class="w-3 h-3 rounded-full bg-slate-900 border border-slate-700/60"></div>
+        </div>
+
+        <!-- iOS Status Bar -->
+        <div class="h-11 pt-3 px-7 flex items-center justify-between text-xs font-semibold text-slate-100 shrink-0 z-30 pointer-events-none">
+          <span>9:41</span>
+          <div class="flex items-center gap-1.5 text-slate-100">
+            <i data-lucide="signal" class="w-3.5 h-3.5"></i>
+            <span class="text-[10px] font-bold">5G</span>
+            <i data-lucide="battery" class="w-4 h-4"></i>
+          </div>
+        </div>
+
+        <!-- In-App Toast Notification (Constrained inside phone frame!) -->
+        <div id="toast-notif" class="absolute top-12 left-3 right-3 bg-slate-900/98 backdrop-blur-md border border-slate-700 text-white px-3.5 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2.5 -translate-y-20 opacity-0 transition-all duration-300 z-50 text-xs">
+          <div id="toast-icon" class="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shrink-0">✓</div>
+          <span id="toast-msg" class="leading-tight text-[11px] font-medium flex-1">Notificación</span>
+        </div>
+
+        <!-- ================================================================= -->
+        <!-- SCREEN CONTENT CONTAINER -->
+        <!-- ================================================================= -->
+        <div class="flex-1 overflow-hidden relative flex flex-col bg-slate-950 text-slate-100">
+
+          <!-- ------------------------------------------------------------- -->
+          <!-- TAB 1: EXPLORAR / MAPA EN VIVO LÍNEA 10 (CU-07) -->
+          <!-- ------------------------------------------------------------- -->
+          <div id="screen-map" class="screen-tab flex-1 flex flex-col relative overflow-hidden">
+            
+            <!-- Top Search & Line Header Bar -->
+            <div class="p-3 bg-slate-900/95 backdrop-blur-md border-b border-slate-800 shrink-0 z-20 space-y-2">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="w-6 h-6 rounded-lg bg-blue-600 text-white font-extrabold flex items-center justify-center text-xs shadow">
+                    10
+                  </div>
+                  <div>
+                    <h4 class="font-bold text-xs text-white leading-tight">Línea 10 • Cono Norte ➔ Cono Sur</h4>
+                    <p class="text-[10px] text-slate-400 font-medium">4 unidades en circulación • Tacna</p>
+                  </div>
+                </div>
+
+                <!-- Auto-detect Bus Button (Feature #1) -->
+                <button onclick="triggerAutoDetectBus()" class="flex items-center gap-1 bg-gradient-to-r from-blue-700 to-indigo-600 hover:from-blue-600 hover:to-indigo-500 text-white border border-blue-400/40 text-[10px] font-bold px-2.5 py-1 rounded-xl shadow-md transition active:scale-95">
+                  <i data-lucide="radio" class="w-3 h-3 text-cyan-300 animate-pulse"></i>
+                  <span>Detectar Bus</span>
+                </button>
+              </div>
+
+              <!-- Search Bar with Google Maps Style Places & "Ir" Button (Feature #3) -->
+              <div class="relative">
+                <div class="flex items-center bg-slate-950 border border-slate-800 rounded-2xl px-3 py-2 gap-2 text-xs shadow-inner">
+                  <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 shrink-0"></i>
+                  <input type="text" id="destination-search-input" placeholder="Buscar lugar o paradero en Tacna..." 
+                    onfocus="showDestinationSuggestions(true)"
+                    oninput="filterDestinations(this.value)"
+                    class="bg-transparent text-white placeholder-slate-500 text-xs focus:outline-none flex-1">
+                  <button onclick="clearDestinationSearch()" id="btn-clear-dest" class="text-slate-500 hover:text-white hidden text-xs">✕</button>
+                </div>
+
+                <!-- Google Maps-style Suggestions Dropdown (Feature #3) -->
+                <div id="destination-suggestions" class="absolute top-full left-0 right-0 mt-1.5 bg-slate-900/98 backdrop-blur-xl border border-slate-800 rounded-2xl shadow-2xl p-1.5 z-30 hidden space-y-1 max-h-64 overflow-y-auto custom-scroll">
+                  <div class="text-[9px] text-slate-400 font-bold px-2 py-1 uppercase tracking-wider">Destinos y Paraderos en Tacna</div>
+                  
+                  <!-- Suggestion Item 1: Mercado Central -->
+                  <div onclick="selectPlaceFromSearch('Mercado Central', false)" class="group p-2 hover:bg-slate-800/90 rounded-xl cursor-pointer flex items-center justify-between text-xs transition">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-7 h-7 rounded-lg bg-blue-950/80 text-blue-400 flex items-center justify-center border border-blue-800/40">
+                        <i data-lucide="store" class="w-3.5 h-3.5"></i>
+                      </div>
+                      <div>
+                        <span class="font-bold text-white block text-xs">Mercado Central</span>
+                        <span class="text-[10px] text-slate-400">Av. Bolognesi #450 • Paradero L10</span>
+                      </div>
+                    </div>
+                    <!-- Circular "Ir" Button -->
+                    <button onclick="selectPlaceFromSearch('Mercado Central', true); event.stopPropagation();" title="Trazar ruta inmediata" class="w-7 h-7 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow transition active:scale-90">
+                      <i data-lucide="corner-up-right" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+
+                  <!-- Suggestion Item 2: Paseo Cívico -->
+                  <div onclick="selectPlaceFromSearch('Paseo Cívico', false)" class="group p-2 hover:bg-slate-800/90 rounded-xl cursor-pointer flex items-center justify-between text-xs transition">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-7 h-7 rounded-lg bg-indigo-950/80 text-indigo-400 flex items-center justify-center border border-indigo-800/40">
+                        <i data-lucide="monument" class="w-3.5 h-3.5"></i>
+                      </div>
+                      <div>
+                        <span class="font-bold text-white block text-xs">Paseo Cívico (Arco Parabólico)</span>
+                        <span class="text-[10px] text-slate-400">Av. San Martín • Paradero Central L10</span>
+                      </div>
+                    </div>
+                    <button onclick="selectPlaceFromSearch('Paseo Cívico', true); event.stopPropagation();" title="Trazar ruta inmediata" class="w-7 h-7 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow transition active:scale-90">
+                      <i data-lucide="corner-up-right" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+
+                  <!-- Suggestion Item 3: UNJBG Campus -->
+                  <div onclick="selectPlaceFromSearch('UNJBG (Campus)', false)" class="group p-2 hover:bg-slate-800/90 rounded-xl cursor-pointer flex items-center justify-between text-xs transition">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-7 h-7 rounded-lg bg-amber-950/80 text-amber-400 flex items-center justify-center border border-amber-800/40">
+                        <i data-lucide="graduation-cap" class="w-3.5 h-3.5"></i>
+                      </div>
+                      <div>
+                        <span class="font-bold text-white block text-xs">UNJBG (Campus Capanique)</span>
+                        <span class="text-[10px] text-slate-400">Av. Miraflores • Paradero Universitario</span>
+                      </div>
+                    </div>
+                    <button onclick="selectPlaceFromSearch('UNJBG (Campus)', true); event.stopPropagation();" title="Trazar ruta inmediata" class="w-7 h-7 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow transition active:scale-90">
+                      <i data-lucide="corner-up-right" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+
+                  <!-- Suggestion Item 4: Plaza Zela -->
+                  <div onclick="selectPlaceFromSearch('Plaza Zela', false)" class="group p-2 hover:bg-slate-800/90 rounded-xl cursor-pointer flex items-center justify-between text-xs transition">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-7 h-7 rounded-lg bg-emerald-950/80 text-emerald-400 flex items-center justify-center border border-emerald-800/40">
+                        <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                      </div>
+                      <div>
+                        <span class="font-bold text-white block text-xs">Plaza Zela</span>
+                        <span class="text-[10px] text-slate-400">Calle Zela • Paradero Histórico</span>
+                      </div>
+                    </div>
+                    <button onclick="selectPlaceFromSearch('Plaza Zela', true); event.stopPropagation();" title="Trazar ruta inmediata" class="w-7 h-7 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow transition active:scale-90">
+                      <i data-lucide="corner-up-right" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+
+                  <!-- Suggestion Item 5: Terminal Terrestre (Destino General) -->
+                  <div onclick="selectPlaceFromSearch('Terminal Terrestre Manuel A. Odría', false)" class="group p-2 hover:bg-slate-800/90 rounded-xl cursor-pointer flex items-center justify-between text-xs transition">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-7 h-7 rounded-lg bg-rose-950/80 text-rose-400 flex items-center justify-center border border-rose-800/40">
+                        <i data-lucide="bus-front" class="w-3.5 h-3.5"></i>
+                      </div>
+                      <div>
+                        <span class="font-bold text-white block text-xs">Terminal Terrestre Tacna</span>
+                        <span class="text-[10px] text-slate-400">Prol. Hipólito Unanue • Hito Comercial</span>
+                      </div>
+                    </div>
+                    <button onclick="selectPlaceFromSearch('Terminal Terrestre Manuel A. Odría', true); event.stopPropagation();" title="Trazar ruta inmediata" class="w-7 h-7 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow transition active:scale-90">
+                      <i data-lucide="corner-up-right" class="w-3.5 h-3.5"></i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Vector Simulated Map of Tacna (Focused on Línea 10) -->
+            <div id="tacna-map-viewport" onclick="handleMapCanvasClick(event)" class="flex-1 relative bg-slate-900 overflow-hidden cursor-grab active:cursor-grabbing select-none">
+              
+              <!-- Road Grid & Route Vector -->
+              <svg class="absolute inset-0 w-full h-full stroke-slate-800/80" stroke-width="2">
+                <!-- Main Avenues in Tacna -->
+                <line x1="40" y1="0" x2="40" y2="700" stroke-width="6" stroke="#1E293B" />
+                <line x1="160" y1="0" x2="160" y2="700" stroke-width="12" stroke="#334155" /> <!-- Av. Bolognesi -->
+                <line x1="290" y1="0" x2="290" y2="700" stroke-width="6" stroke="#1E293B" />
+                <line x1="0" y1="90" x2="400" y2="90" stroke-width="5" stroke="#1E293B" />
+                <line x1="0" y1="230" x2="400" y2="230" stroke-width="10" stroke="#334155" /> <!-- Calle San Martín -->
+                <line x1="0" y1="380" x2="400" y2="380" stroke-width="7" stroke="#1E293B" />
+                <line x1="0" y1="520" x2="400" y2="520" stroke-width="6" stroke="#1E293B" />
+
+                <!-- Línea 10 Base Route Polyline (Blue) -->
+                <path d="M 160 25 L 160 230 L 290 230 L 290 560" fill="none" stroke="#2563EB" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 5" opacity="0.8" />
+
+                <!-- Planned Active Route Polyline (Drawn dynamically when routing) -->
+                <path id="svg-active-route" d="M 160 230 L 160 300 L 290 300 L 290 372" fill="none" stroke="#00E5FF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="hidden" opacity="0.95" />
+              </svg>
+
+              <!-- Landmarks in Tacna -->
+              <div class="absolute top-6 left-5 text-[9px] text-slate-400 font-bold bg-slate-950/80 px-1.5 py-0.5 rounded border border-slate-800">Cono Norte</div>
+              <div class="absolute top-[208px] left-10 text-[9px] text-blue-300 font-extrabold bg-slate-950/90 px-2 py-0.5 rounded border border-blue-600/60 shadow">Paseo Cívico</div>
+              <div class="absolute top-[395px] left-[170px] text-[9px] text-slate-300 font-bold bg-slate-950/80 px-1.5 py-0.5 rounded border border-slate-800">Mercado Central</div>
+              <div class="absolute bottom-28 left-6 text-[9px] text-amber-300 font-bold bg-slate-950/80 px-1.5 py-0.5 rounded border border-amber-600/60">UNJBG (Campus)</div>
+
+              <!-- ================= STOPS (PARADEROS) PINS (Feature #2) ================= -->
+              
+              <!-- Stop 1: Cono Norte -->
+              <div onclick="selectStop('Cono Norte (Terminal)', event)" class="stop-marker absolute top-[20px] left-[151px] cursor-pointer group z-20" data-name="Cono Norte">
+                <div class="relative flex flex-col items-center">
+                  <div class="w-5 h-5 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center hover:scale-125 transition">
+                    <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  </div>
+                  <span class="text-[8px] bg-slate-950/90 text-slate-300 font-bold px-1 rounded mt-0.5 shadow border border-slate-700">P. Cono Norte</span>
+                </div>
+              </div>
+
+              <!-- Stop 2: Plaza Zela -->
+              <div onclick="selectStop('Plaza Zela', event)" class="stop-marker absolute top-[90px] left-[151px] cursor-pointer group z-20" data-name="Plaza Zela">
+                <div class="relative flex flex-col items-center">
+                  <div class="w-5 h-5 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center hover:scale-125 transition">
+                    <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  </div>
+                  <span class="text-[8px] bg-slate-950/90 text-slate-300 font-bold px-1 rounded mt-0.5 shadow border border-slate-700">P. Plaza Zela</span>
+                </div>
+              </div>
+
+              <!-- Stop 3: Paseo Cívico -->
+              <div onclick="selectStop('Paseo Cívico', event)" class="stop-marker absolute top-[222px] left-[151px] cursor-pointer group z-20" data-name="Paseo Cívico">
+                <div class="relative flex flex-col items-center">
+                  <div class="w-6 h-6 rounded-full bg-blue-500 border-2 border-white shadow-xl flex items-center justify-center hover:scale-125 transition animate-bounce">
+                    <i data-lucide="map-pin" class="w-3.5 h-3.5 text-white"></i>
+                  </div>
+                  <span class="text-[8px] bg-blue-950 text-blue-200 font-extrabold px-1.5 py-0.2 rounded mt-0.5 shadow border border-blue-600">Paseo Cívico</span>
+                </div>
+              </div>
+
+              <!-- Stop 4: Mercado Central -->
+              <div onclick="selectStop('Mercado Central', event)" class="stop-marker absolute top-[365px] left-[281px] cursor-pointer group z-20" data-name="Mercado Central">
+                <div class="relative flex flex-col items-center">
+                  <div class="w-5 h-5 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center hover:scale-125 transition">
+                    <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  </div>
+                  <span class="text-[8px] bg-slate-950/90 text-slate-300 font-bold px-1 rounded mt-0.5 shadow border border-slate-700">P. Mercado</span>
+                </div>
+              </div>
+
+              <!-- Stop 5: UNJBG Campus -->
+              <div onclick="selectStop('UNJBG (Campus)', event)" class="stop-marker absolute top-[515px] left-[281px] cursor-pointer group z-20" data-name="UNJBG (Campus)">
+                <div class="relative flex flex-col items-center">
+                  <div class="w-5 h-5 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center hover:scale-125 transition">
+                    <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+                  </div>
+                  <span class="text-[8px] bg-slate-950/90 text-slate-300 font-bold px-1 rounded mt-0.5 shadow border border-slate-700">P. UNJBG</span>
+                </div>
+              </div>
+
+              <!-- General Searched Destination Pin (Dropped dynamically) -->
+              <div id="dynamic-searched-pin" class="absolute top-[310px] left-[80px] z-25 hidden pointer-events-none transition-all duration-500">
+                <div class="flex flex-col items-center -translate-x-1/2 -translate-y-full">
+                  <div class="bg-rose-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-lg shadow-xl border border-rose-400 whitespace-nowrap" id="searched-pin-label">
+                    Terminal Terrestre
+                  </div>
+                  <div class="w-8 h-8 rounded-full bg-rose-600 border-2 border-white shadow-2xl flex items-center justify-center text-white mt-0.5">
+                    <i data-lucide="map-pin" class="w-4 h-4"></i>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ================= 4 BUSES OF LÍNEA 10 ================= -->
+              
+              <!-- BUS 01 (Línea 10 - Z1A-780) -->
+              <div id="bus-node-1" onclick="selectBus(1, event)" class="bus-marker absolute top-[140px] left-[142px] cursor-pointer transition-all duration-700 ease-out z-20 group">
+                <div class="relative flex flex-col items-center">
+                  <div class="bg-slate-900/95 border border-slate-700 rounded-lg px-2 py-0.5 shadow-lg flex items-center gap-1 mb-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span class="text-[9px] font-bold text-white">BUS 01 • 68%</span>
+                  </div>
+                  <div class="marker-pin w-9 h-9 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center text-white pulse-bus transition">
+                    <i data-lucide="bus" class="w-4 h-4"></i>
+                  </div>
+                  <div class="text-[8px] font-mono text-slate-300 font-bold bg-slate-950 px-1 rounded mt-0.5 shadow">Z1A-780</div>
+                </div>
+              </div>
+
+              <!-- BUS 04 (Línea 10 - Z2B-104 - Ocupación Alta) -->
+              <div id="bus-node-4" onclick="selectBus(4, event)" class="bus-marker absolute top-[290px] left-[272px] cursor-pointer transition-all duration-700 ease-out z-20 group">
+                <div class="relative flex flex-col items-center">
+                  <div class="bg-slate-900/95 border border-slate-700 rounded-lg px-2 py-0.5 shadow-lg flex items-center gap-1 mb-1">
+                    <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span class="text-[9px] font-bold text-white">BUS 04 • 87%</span>
+                  </div>
+                  <div class="marker-pin w-9 h-9 rounded-full bg-blue-700 border-2 border-white shadow-xl flex items-center justify-center text-white transition">
+                    <i data-lucide="bus" class="w-4 h-4"></i>
+                  </div>
+                  <div class="text-[8px] font-mono text-slate-300 font-bold bg-slate-950 px-1 rounded mt-0.5 shadow">Z2B-104</div>
+                </div>
+              </div>
+
+              <!-- BUS 07 (Línea 10 - Z3C-550 - Asientos Libres) -->
+              <div id="bus-node-7" onclick="selectBus(7, event)" class="bus-marker absolute top-[450px] left-[272px] cursor-pointer transition-all duration-700 ease-out z-20 group">
+                <div class="relative flex flex-col items-center">
+                  <div class="bg-slate-900/95 border border-slate-700 rounded-lg px-2 py-0.5 shadow-lg flex items-center gap-1 mb-1">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span class="text-[9px] font-bold text-white">BUS 07 • 43%</span>
+                  </div>
+                  <div class="marker-pin w-9 h-9 rounded-full bg-indigo-600 border-2 border-white shadow-xl flex items-center justify-center text-white transition">
+                    <i data-lucide="bus" class="w-4 h-4"></i>
+                  </div>
+                  <div class="text-[8px] font-mono text-slate-300 font-bold bg-slate-950 px-1 rounded mt-0.5 shadow">Z3C-550</div>
+                </div>
+              </div>
+
+              <!-- BUS 12 (Línea 10 - Z4D-990 - Bus Lleno) -->
+              <div id="bus-node-12" onclick="selectBus(12, event)" class="bus-marker absolute top-[40px] left-[142px] cursor-pointer transition-all duration-700 ease-out z-20 group">
+                <div class="relative flex flex-col items-center">
+                  <div class="bg-slate-900/95 border border-slate-700 rounded-lg px-2 py-0.5 shadow-lg flex items-center gap-1 mb-1">
+                    <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+                    <span class="text-[9px] font-bold text-white">BUS 12 • 96%</span>
+                  </div>
+                  <div class="marker-pin w-9 h-9 rounded-full bg-slate-700 border-2 border-white shadow-xl flex items-center justify-center text-white transition">
+                    <i data-lucide="bus" class="w-4 h-4"></i>
+                  </div>
+                  <div class="text-[8px] font-mono text-slate-300 font-bold bg-slate-950 px-1 rounded mt-0.5 shadow">Z4D-990</div>
+                </div>
+              </div>
+
+              <!-- ================= FLOATING ACTION BUTTON (DIRECTIONS FAB - Feature #4) ================= -->
+              <button onclick="openRouteNavigation()" id="fab-directions" class="absolute bottom-6 right-4 w-12 h-12 rounded-full bg-blue-600 hover:bg-blue-500 text-white shadow-2xl flex items-center justify-center border-2 border-white/20 z-25 active:scale-95 transition" title="Trazar ruta como en Google Maps">
+                <i data-lucide="corner-up-right" class="w-6 h-6"></i>
+              </button>
+
+              <!-- ================= POPUP 1: DETALLE DE BUS SELECCIONADO (Feature #1) ================= -->
+              <!-- NOTE: NO "Pagar" or "Suscribirse" button! Subscription is 100% automatic per Rule 1 -->
+              <div id="bus-detail-popup" class="absolute bottom-3 left-3 right-3 bg-slate-900/98 backdrop-blur-xl border border-slate-800 rounded-3xl p-4 shadow-2xl z-30 hidden transition-all duration-300">
+                <div class="flex items-start justify-between">
+                  <div class="flex items-center gap-3">
+                    <!-- Photo Badge of the Bus -->
+                    <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-700 to-indigo-600 border border-blue-400/40 flex items-center justify-center text-white relative shadow overflow-hidden shrink-0">
+                      <i data-lucide="bus" class="w-7 h-7"></i>
+                      <span class="absolute bottom-0 inset-x-0 bg-black/70 text-[8px] font-mono text-center font-bold" id="bdetail-plate">Z1A-780</span>
+                    </div>
+                    <div>
+                      <div class="flex items-center gap-1.5">
+                        <span class="bg-blue-600 text-white font-black text-[10px] px-1.5 py-0.2 rounded font-mono" id="bdetail-line">L10</span>
+                        <h4 class="font-extrabold text-sm text-white" id="bdetail-name">BUS 01 • Línea 10</h4>
+                      </div>
+                      <p class="text-[11px] text-slate-400 mt-0.5" id="bdetail-driver">Chofer: Juan Mamani Quispe (4.9 ★)</p>
+                      <p class="text-[10px] text-blue-400 font-medium" id="bdetail-nextstop">Próxima parada: Paseo Cívico • ~2 min</p>
+                    </div>
+                  </div>
+                  <!-- Close Deselect Button -->
+                  <button onclick="deselectBus()" class="w-6 h-6 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition">
+                    ✕
+                  </button>
+                </div>
+
+                <!-- Occupancy Bar in Bus Detail -->
+                <div class="mt-3 pt-2.5 border-t border-slate-800">
+                  <div class="flex items-center justify-between text-xs mb-1">
+                    <span class="text-slate-400 text-[11px]">Aforo en vivo:</span>
+                    <span class="font-mono font-bold text-emerald-400 text-xs" id="bdetail-occupancy">22 / 32 pasajeros (68%)</span>
+                  </div>
+                  <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div id="bdetail-bar" class="bg-emerald-500 h-full w-[68%] rounded-full transition-all"></div>
+                  </div>
+                </div>
+
+                <!-- Automatic Subscription Explanation Banner (Feature #1) -->
+                <div class="mt-3 p-2.5 rounded-2xl bg-blue-950/40 border border-blue-800/40 flex items-center gap-2.5">
+                  <i data-lucide="radio" class="w-4 h-4 text-emerald-400 animate-pulse shrink-0"></i>
+                  <p class="text-[10px] text-slate-300 leading-tight">
+                    <strong class="text-white">Suscripción Automática:</strong> Tu app se vinculará a este bus en cuanto abordes (por telemetría GPS sincronizada) o al escanear tu QR en la puerta.
+                  </p>
+                </div>
+              </div>
+
+              <!-- ================= POPUP 2: PARADERO SELECCIONADO & NOTIFICACIONES (Feature #2) ================= -->
+              <div id="stop-card" class="absolute bottom-3 left-3 right-3 bg-slate-900/98 backdrop-blur-xl border border-slate-800 rounded-3xl p-4 shadow-2xl z-30 hidden transition-all duration-300">
+                <div class="flex items-start justify-between">
+                  <div>
+                    <span class="text-[10px] text-blue-400 font-bold uppercase tracking-wider">Paradero Seleccionado</span>
+                    <h4 id="stop-title" class="font-bold text-sm text-white">Paseo Cívico (Arco Parabólico)</h4>
+                    <p class="text-[11px] text-slate-400">Línea 10 (Sentido Cono Norte ➔ Cono Sur)</p>
+                  </div>
+                  <button onclick="deselectStop()" class="w-6 h-6 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition">
+                    ✕
+                  </button>
+                </div>
+
+                <!-- Approaching Buses ETA List for this stop -->
+                <div class="mt-3 bg-slate-950 rounded-2xl p-2.5 border border-slate-800 text-xs space-y-1.5">
+                  <div class="flex items-center justify-between text-slate-300">
+                    <span class="flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                      <strong class="text-white">BUS 01</strong> (Z1A-780)
+                    </span>
+                    <span class="font-mono font-bold text-emerald-400" id="stop-eta-bus1">~3 min</span>
+                  </div>
+                  <div class="flex items-center justify-between text-slate-400 text-[11px]">
+                    <span class="flex items-center gap-1.5">
+                      <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                      <span>BUS 04</span> (Z2B-104)
+                    </span>
+                    <span class="font-mono" id="stop-eta-bus4">~10 min</span>
+                  </div>
+                </div>
+
+                <div class="mt-3 flex gap-2">
+                  <!-- Button to setup Arrival Alerts with 2 timers -->
+                  <button onclick="openStopAlertModal()" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow transition">
+                    <i data-lucide="bell" class="w-3.5 h-3.5 text-blue-200"></i> Alerta de Llegada (2 Timers)
+                  </button>
+                  <button onclick="planRouteToSelectedStop()" class="px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1 transition" title="Trazar ruta a este paradero">
+                    <i data-lucide="corner-up-right" class="w-3.5 h-3.5 text-blue-400"></i> Ir
+                  </button>
+                </div>
+              </div>
+
+              <!-- ================= POPUP 2B: LUGAR / DESTINO GENERAL SELECCIONADO ================= -->
+              <div id="place-card" class="absolute bottom-3 left-3 right-3 bg-slate-900/98 backdrop-blur-xl border border-slate-800 rounded-3xl p-4 shadow-2xl z-30 hidden transition-all duration-300">
+                <div class="flex items-start justify-between">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-10 h-10 rounded-2xl bg-rose-950 border border-rose-800/60 text-rose-400 flex items-center justify-center shrink-0">
+                      <i data-lucide="map-pin" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                      <h4 id="place-card-title" class="font-bold text-sm text-white">Terminal Terrestre</h4>
+                      <p id="place-card-subtitle" class="text-[11px] text-slate-400">Tacna • A ~1.4 km de tu ubicación</p>
+                    </div>
+                  </div>
+                  <button onclick="deselectPlace()" class="w-6 h-6 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition">
+                    ✕
+                  </button>
+                </div>
+                <div class="mt-3 flex gap-2">
+                  <button onclick="startRoutePlanningToCurrentPlace()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow transition">
+                    <i data-lucide="corner-up-right" class="w-3.5 h-3.5"></i> Cómo llegar (Trazar Ruta)
+                  </button>
+                </div>
+              </div>
+
+              <!-- ================= POPUP 3: VIAJE EN CURSO A BORDO (FLOATING / MINIMIZABLE) ================= -->
+              
+              <!-- Minimized Pill (Visible when minimized) -->
+              <div id="trip-minimized-pill" onclick="expandTripSheet()" class="absolute bottom-3 left-3 right-3 bg-blue-900/95 backdrop-blur-md border border-blue-500/60 rounded-2xl p-3 shadow-2xl z-30 hidden flex items-center justify-between cursor-pointer hover:bg-blue-850 transition">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></div>
+                  <div>
+                    <span class="text-xs font-bold text-white flex items-center gap-1">
+                      Viajando en BUS 01 • Línea 10
+                    </span>
+                    <p class="text-[10px] text-blue-200" id="pill-next-stop">Próxima: Paseo Cívico (~2 min)</p>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1 text-xs text-blue-200 font-semibold">
+                  <span>Ver viaje</span>
+                  <i data-lucide="chevron-up" class="w-4 h-4"></i>
+                </div>
+              </div>
+
+              <!-- Expanded Bottom Sheet (CU-06 Active Trip) -->
+              <div id="trip-expanded-sheet" class="absolute bottom-0 inset-x-0 bg-slate-900/98 backdrop-blur-2xl border-t border-slate-800 rounded-t-[32px] p-4 shadow-2xl z-30 hidden flex flex-col max-h-[80%] overflow-y-auto custom-scroll transition-all duration-300">
+                
+                <!-- Sheet Drag Header / Minimize Button -->
+                <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                  <div class="flex items-center gap-2">
+                    <span class="bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> A Bordo
+                    </span>
+                    <h4 class="font-extrabold text-sm text-white">Línea 10 • BUS 01 (Z1A-780)</h4>
+                  </div>
+                  <!-- Minimize Button to see the map -->
+                  <button onclick="minimizeTripSheet()" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1 transition" title="Ocultar para ver el mapa">
+                    <i data-lucide="minimize-2" class="w-3 h-3"></i> Minimizar
+                  </button>
+                </div>
+
+                <!-- Driver & Live Capacity Info -->
+                <div class="mt-3 flex items-center justify-between text-xs">
+                  <div>
+                    <span class="text-slate-400 text-[11px]">Conductor:</span>
+                    <p class="font-bold text-white">Juan Mamani Quispe (DRV-102)</p>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-slate-400 text-[11px]">Aforo a bordo:</span>
+                    <p class="font-bold text-emerald-400 font-mono" id="sheet-occupancy">22 / 32 pasajeros</p>
+                  </div>
+                </div>
+
+                <!-- Next Stop & Progress Bar -->
+                <div class="mt-3 bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                  <div class="flex items-center justify-between text-xs mb-1">
+                    <span class="text-slate-400 text-[11px]">Próxima Parada:</span>
+                    <span class="font-bold text-blue-400">Paseo Cívico</span>
+                  </div>
+                  <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                    <div class="bg-gradient-to-r from-blue-600 to-cyan-400 h-full w-2/5 rounded-full"></div>
+                  </div>
+                  <div class="flex justify-between text-[9px] text-slate-500 mt-1">
+                    <span>Plaza Zela</span>
+                    <span class="text-blue-300 font-bold">Paseo Cívico</span>
+                    <span>Mercado Central</span>
+                    <span>UNJBG</span>
+                  </div>
+                </div>
+
+                <!-- Destination Selector (Punto de Llegada - Feature #8) -->
+                <div class="mt-3 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-white flex items-center gap-1.5">
+                      <i data-lucide="flag" class="w-3.5 h-3.5 text-blue-400"></i> Punto de Llegada (Opcional)
+                    </span>
+                    <span class="text-[10px] text-slate-400">Alarma de bajada</span>
+                  </div>
+
+                  <select id="select-destination-stop" onchange="updateDestinationChoice(this.value)" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500">
+                    <option value="">-- Sin paradero fijado (Bajo cuando quiera) --</option>
+                    <option value="Mercado Central">Mercado Central (a 2 paraderos)</option>
+                    <option value="Plaza Bolognesi">Plaza Bolognesi (a 3 paraderos)</option>
+                    <option value="UNJBG (Campus)">UNJBG - Campus Universitario (a 4 paraderos)</option>
+                  </select>
+
+                  <div id="destination-alert-box" class="hidden text-[11px] text-emerald-400 bg-emerald-950/40 border border-emerald-800/60 p-2 rounded-xl flex items-center justify-between">
+                    <span>🔔 Te avisaremos 400m antes de tu bajada</span>
+                    <span class="text-[10px] font-bold underline cursor-pointer" onclick="testArrivalChime()">Probar</span>
+                  </div>
+                </div>
+
+                <!-- Geofencing & Egress Actions -->
+                <div class="mt-4 pt-3 border-t border-slate-800 flex gap-2">
+                  <button onclick="simulateDropoff()" class="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow transition">
+                    <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Simular Descenso (>150m)
+                  </button>
+                  <button onclick="promptReportIssue()" class="px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl text-xs transition">
+                    Reportar
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- ------------------------------------------------------------- -->
+          <!-- FULL OVERLAY: GOOGLE MAPS STYLE ROUTE NAVIGATION (Features #4 & #5) -->
+          <!-- ------------------------------------------------------------- -->
+          <div id="route-navigation-overlay" class="absolute inset-0 bg-slate-950 z-40 hidden flex flex-col overflow-y-auto custom-scroll">
+            
+            <!-- Top Google Maps Navigation Header -->
+            <div class="p-3 bg-slate-900 border-b border-slate-800 shrink-0 space-y-2.5">
+              <div class="flex items-center gap-2">
+                <button onclick="closeRouteNavigation()" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center text-sm transition">
+                  <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                </button>
+                <h3 class="font-extrabold text-sm text-white">Cómo Llegar (Ruta Óptima)</h3>
+              </div>
+
+              <!-- Origin & Destination Inputs with Swap Button -->
+              <div class="flex items-center gap-2">
+                <div class="flex-1 space-y-1.5">
+                  <!-- Origin input -->
+                  <div class="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 gap-2 text-xs">
+                    <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                    <input type="text" id="route-origin-input" value="📍 Tu ubicación actual (Paseo Cívico)" class="bg-transparent text-slate-200 text-xs focus:outline-none flex-1 font-medium">
+                  </div>
+                  <!-- Destination input -->
+                  <div class="flex items-center bg-slate-950 border border-slate-800 rounded-xl px-2.5 py-1.5 gap-2 text-xs">
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                    <input type="text" id="route-dest-input" value="🏁 Mercado Central" class="bg-transparent text-white text-xs focus:outline-none flex-1 font-bold">
+                  </div>
+                </div>
+
+                <!-- Swap Button -->
+                <button onclick="swapRouteEndpoints()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition shrink-0" title="Invertir origen y destino">
+                  <i data-lucide="arrow-up-down" class="w-4 h-4"></i>
+                </button>
+              </div>
+
+              <!-- Transport Mode Selector -->
+              <div class="flex items-center gap-2 pt-1 border-t border-slate-800/80 text-xs">
+                <button onclick="setRouteTransportMode('bus')" id="mode-btn-bus" class="flex-1 py-1.5 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center gap-1.5 shadow transition">
+                  <i data-lucide="bus" class="w-3.5 h-3.5"></i> Transporte (L10)
+                </button>
+                <button onclick="setRouteTransportMode('walk')" id="mode-btn-walk" class="flex-1 py-1.5 rounded-xl bg-slate-800 text-slate-400 font-semibold flex items-center justify-center gap-1.5 hover:text-white transition">
+                  <i data-lucide="footprints" class="w-3.5 h-3.5"></i> A pie (22 min)
+                </button>
+              </div>
+            </div>
+
+            <!-- Route Alternatives Options List (Feature #5) -->
+            <div class="p-3 space-y-2.5 flex-1">
+              <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Opciones de Ruta Disponibles</span>
+
+              <!-- Route Option 1 (Recommended - Fastest via BUS 01) -->
+              <div onclick="selectRouteOption(1)" id="route-opt-1" class="route-option-card p-3 rounded-2xl bg-slate-900 border-2 border-blue-500 shadow-lg cursor-pointer transition">
+                <div class="flex items-start justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded">L10</span>
+                    <h4 class="font-bold text-xs text-white">Línea 10 (BUS 01)</h4>
+                    <span class="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1 rounded font-bold">Más rápida</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-extrabold text-sm text-emerald-400 font-mono">12 min</span>
+                    <p class="text-[9px] text-slate-400">Tarifa: S/. 0.70</p>
+                  </div>
+                </div>
+
+                <div class="mt-2 text-[11px] text-slate-300 space-y-1">
+                  <div class="flex items-center gap-1.5 text-blue-300 font-semibold">
+                    <i data-lucide="clock" class="w-3 h-3 text-emerald-400"></i> Próximo bus llega en ~3 min al Paradero Paseo Cívico
+                  </div>
+                  <p class="text-[10px] text-slate-400">2 min a pie + 8 min en bus (3 paradas) + 2 min a pie</p>
+                </div>
+              </div>
+
+              <!-- Route Option 2 (Less crowded via BUS 04) -->
+              <div onclick="selectRouteOption(2)" id="route-opt-2" class="route-option-card p-3 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer transition">
+                <div class="flex items-start justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="bg-blue-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded">L10</span>
+                    <h4 class="font-bold text-xs text-white">Línea 10 (BUS 04)</h4>
+                    <span class="text-[9px] bg-slate-800 text-slate-300 px-1 rounded">Siguiente</span>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-bold text-xs text-slate-200 font-mono">18 min</span>
+                    <p class="text-[9px] text-slate-400">Tarifa: S/. 0.70</p>
+                  </div>
+                </div>
+                <div class="mt-2 text-[11px] text-slate-400">
+                  <span>Próximo bus en ~10 min • Asientos libres disponibles</span>
+                </div>
+              </div>
+
+              <!-- Route Option 3 (Walking direct) -->
+              <div onclick="selectRouteOption(3)" id="route-opt-3" class="route-option-card p-3 rounded-2xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 cursor-pointer transition">
+                <div class="flex items-start justify-between">
+                  <div class="flex items-center gap-2">
+                    <i data-lucide="footprints" class="w-4 h-4 text-slate-400"></i>
+                    <h4 class="font-bold text-xs text-white">A pie directo</h4>
+                  </div>
+                  <div class="text-right">
+                    <span class="font-bold text-xs text-slate-200 font-mono">22 min</span>
+                    <p class="text-[9px] text-slate-400">1.5 km • Gratis</p>
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-1">Caminata por Calle San Martín y Av. Bolognesi.</p>
+              </div>
+
+              <!-- Itinerary Steps Accordion for Selected Route -->
+              <div class="mt-3 bg-slate-900 rounded-2xl p-3 border border-slate-800 space-y-2.5">
+                <span class="text-[10px] text-blue-400 font-bold uppercase tracking-wider block">Itinerario Paso a Paso</span>
+                
+                <div class="space-y-3 text-xs pl-2 border-l-2 border-blue-500/60 ml-2">
+                  <div class="relative pl-3">
+                    <span class="absolute -left-[19px] top-0.5 w-3 h-3 rounded-full bg-blue-500 border-2 border-slate-900"></span>
+                    <strong class="text-white block">1. Camina al Paradero Paseo Cívico</strong>
+                    <span class="text-[10px] text-slate-400">Aproximadamente 120 metros (2 min)</span>
+                  </div>
+
+                  <div class="relative pl-3">
+                    <span class="absolute -left-[19px] top-0.5 w-3 h-3 rounded-full bg-emerald-400 border-2 border-slate-900"></span>
+                    <strong class="text-emerald-300 block">2. Sube al BUS 01 de Línea 10</strong>
+                    <span class="text-[10px] text-slate-400">Placa Z1A-780 • Enfoque QR o subida automática</span>
+                  </div>
+
+                  <div class="relative pl-3">
+                    <span class="absolute -left-[19px] top-0.5 w-3 h-3 rounded-full bg-blue-600 border-2 border-slate-900"></span>
+                    <strong class="text-white block">3. Viaja 3 paradas (~8 min)</strong>
+                    <span class="text-[10px] text-slate-400">Pasa por Calle San Martín ➔ Av. Patricio Meléndez</span>
+                  </div>
+
+                  <div class="relative pl-3">
+                    <span class="absolute -left-[19px] top-0.5 w-3 h-3 rounded-full bg-rose-500 border-2 border-slate-900"></span>
+                    <strong class="text-rose-400 block">4. Baja en Paradero Mercado Central</strong>
+                    <span class="text-[10px] text-slate-400">Camina 50m a tu destino final (1 min)</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Action button: Start navigation or view on map -->
+              <button onclick="applyRouteAndReturnToMap()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-xl transition active:scale-98">
+                <i data-lucide="navigation" class="w-4 h-4"></i> Iniciar Ruta en el Mapa
+              </button>
+            </div>
+          </div>
+
+          <!-- ------------------------------------------------------------- -->
+          <!-- TAB 2: ESCÁNER QR EN PUERTA (CU-01) -->
+          <!-- ------------------------------------------------------------- -->
+          <div id="screen-scan" class="screen-tab flex-1 flex flex-col hidden bg-black relative">
+            <div class="relative flex-1 flex flex-col items-center justify-center overflow-hidden">
+              <div class="absolute inset-0 bg-gradient-to-b from-slate-900 via-slate-950 to-black opacity-90"></div>
+
+              <div class="absolute top-4 left-4 right-4 bg-slate-900/80 backdrop-blur border border-slate-700/60 rounded-2xl p-3 z-20">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-semibold text-white flex items-center gap-1.5">
+                    <i data-lucide="scan-line" class="w-4 h-4 text-blue-400"></i> Escanear QR en POS
+                  </span>
+                  <span id="user-fare-badge" class="bg-amber-950 text-amber-300 border border-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    🎓 Universitario (7 pts)
+                  </span>
+                </div>
+                <p class="text-[11px] text-slate-300 mt-1">Apunta la cámara a la pantalla del validador del bus.</p>
+              </div>
+
+              <!-- Reticle -->
+              <div class="relative w-64 h-64 border-2 border-blue-500/40 rounded-3xl z-10 flex items-center justify-center shadow-[0_0_50px_rgba(37,99,235,0.2)]">
+                <div class="absolute -top-1 -left-1 w-6 h-6 border-t-4 border-l-4 border-blue-500 rounded-tl-lg"></div>
+                <div class="absolute -top-1 -right-1 w-6 h-6 border-t-4 border-r-4 border-blue-500 rounded-tr-lg"></div>
+                <div class="absolute -bottom-1 -left-1 w-6 h-6 border-b-4 border-l-4 border-blue-500 rounded-bl-lg"></div>
+                <div class="absolute -bottom-1 -right-1 w-6 h-6 border-b-4 border-r-4 border-blue-500 rounded-br-lg"></div>
+                <div class="scanner-laser absolute left-4 right-4 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_#22d3ee]"></div>
+                <div class="text-[11px] text-slate-400 font-medium">Enfocando QR dinámico de L10...</div>
+              </div>
+
+              <!-- Companions Selector -->
+              <div class="absolute bottom-20 left-4 right-4 bg-slate-900/90 backdrop-blur border border-slate-800 rounded-2xl p-3 z-20">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <h5 class="text-xs font-bold text-white flex items-center gap-1">
+                      <i data-lucide="users" class="w-3.5 h-3.5 text-blue-400"></i> ¿Viajas con amigos?
+                    </h5>
+                    <p class="text-[10px] text-slate-400">+15 pts (S/. 1.50) por acompañante extra</p>
+                  </div>
+                  <div class="flex items-center gap-2 bg-slate-950 px-2.5 py-1 rounded-xl border border-slate-800">
+                    <button onclick="adjustCompanion(-1)" class="w-6 h-6 rounded-lg bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm flex items-center justify-center">-</button>
+                    <span id="companion-count" class="font-mono text-sm font-bold w-4 text-center text-white">0</span>
+                    <button onclick="adjustCompanion(1)" class="w-6 h-6 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm flex items-center justify-center">+</button>
+                  </div>
+                </div>
+
+                <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <span class="text-slate-400 text-[11px]">Total a debitar:</span>
+                  <span id="total-pay-points" class="font-bold text-sm text-blue-400 font-mono">7 Puntos BC (S/. 0.70)</span>
+                </div>
+              </div>
+
+              <button onclick="simulateScanPayment()" class="absolute bottom-4 left-4 right-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-2xl shadow-xl text-xs flex items-center justify-center gap-2 z-20 transition active:scale-98">
+                <i data-lucide="zap" class="w-4 h-4"></i> Pagar y Suscribirse al Bus (CU-01)
+              </button>
+            </div>
+          </div>
+
+          <!-- ------------------------------------------------------------- -->
+          <!-- TAB 3: MONEDERO Y RECARGAS (CU-05, CU-08) -->
+          <!-- ------------------------------------------------------------- -->
+          <div id="screen-wallet" class="screen-tab flex-1 flex flex-col hidden bg-slate-950 overflow-y-auto custom-scroll p-4">
+            <div class="bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-800 rounded-3xl p-5 text-white shadow-xl relative overflow-hidden shrink-0">
+              <div class="flex items-center justify-between text-blue-100 text-xs font-medium">
+                <span>Monedero Prepago BC</span>
+                <span class="bg-white/20 backdrop-blur px-2 py-0.5 rounded-full text-[10px] font-bold">1 PEN = 10 Pts</span>
+              </div>
+              <div class="mt-3">
+                <div class="flex items-baseline gap-2">
+                  <span id="wallet-balance-pts" class="text-4xl font-extrabold font-mono tracking-tight">85</span>
+                  <span class="text-sm font-bold text-blue-200">Puntos BC</span>
+                </div>
+                <p id="wallet-balance-pen" class="text-xs text-blue-100/90 font-medium mt-0.5">Equivalente a S/. 8.50 Soles</p>
+              </div>
+              <div class="mt-4 pt-3 border-t border-white/20 flex items-center justify-between text-xs">
+                <span class="text-blue-100/80 text-[11px]">Tarifa activa: Universitario (7 pts)</span>
+                <span class="text-[11px] font-bold text-emerald-300 flex items-center gap-1">
+                  <i data-lucide="check-circle-2" class="w-3 h-3"></i> Listo para viajar
+                </span>
+              </div>
+            </div>
+
+            <!-- Quick Recharges -->
+            <div class="mt-4">
+              <span class="text-xs font-bold text-slate-300 uppercase tracking-wider">Recarga Instantánea con Yape / Plin</span>
+              <div class="grid grid-cols-4 gap-2 mt-2">
+                <button onclick="rechargePoints(5)" class="p-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-center transition">
+                  <div class="text-sm font-bold text-white font-mono">S/. 5</div>
+                  <div class="text-[10px] text-blue-400 font-semibold">+50 pts</div>
+                </button>
+                <button onclick="rechargePoints(10)" class="p-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-center transition">
+                  <div class="text-sm font-bold text-white font-mono">S/. 10</div>
+                  <div class="text-[10px] text-blue-400 font-semibold">+100 pts</div>
+                </button>
+                <button onclick="rechargePoints(20)" class="p-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-center transition">
+                  <div class="text-sm font-bold text-white font-mono">S/. 20</div>
+                  <div class="text-[10px] text-blue-400 font-semibold">+200 pts</div>
+                </button>
+                <button onclick="rechargePoints(50)" class="p-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-center transition">
+                  <div class="text-sm font-bold text-white font-mono">S/. 50</div>
+                  <div class="text-[10px] text-blue-400 font-semibold">+500 pts</div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Student Card Banner -->
+            <div class="mt-4 bg-amber-950/40 border border-amber-700/50 rounded-2xl p-3 flex items-start gap-3">
+              <div class="w-8 h-8 rounded-xl bg-amber-600/30 text-amber-400 flex items-center justify-center shrink-0">
+                <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <h5 class="text-xs font-bold text-amber-300">Carné Universitario SUNEDU Vigente</h5>
+                <p class="text-[11px] text-amber-200/80 mt-0.5">Válido hasta el 31 de Diciembre del 2026. Tu beneficio se aplica automáticamente al pagar.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ------------------------------------------------------------- -->
+          <!-- TAB 4: PERFIL Y AJUSTES (CU-11 BAJA DE CUENTA) -->
+          <!-- ------------------------------------------------------------- -->
+          <div id="screen-profile" class="screen-tab flex-1 flex flex-col hidden bg-slate-950 overflow-y-auto custom-scroll p-4">
+            <div class="flex items-center gap-3 p-3 bg-slate-900 rounded-3xl border border-slate-800">
+              <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-extrabold text-base">
+                AM
+              </div>
+              <div>
+                <h3 class="font-extrabold text-sm text-white">Aron Mamani Quispe</h3>
+                <p class="text-[11px] text-slate-400 font-mono">+51 952 ••• 819</p>
+                <span class="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-bold">Perfil Verificado</span>
+              </div>
+            </div>
+
+            <div class="mt-4 space-y-2 text-xs">
+              <button class="w-full p-3 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-between text-slate-200 hover:bg-slate-850">
+                <span class="flex items-center gap-2"><i data-lucide="history" class="w-4 h-4 text-blue-400"></i> Historial de Viajes</span>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+              </button>
+              <button class="w-full p-3 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-between text-slate-200 hover:bg-slate-850">
+                <span class="flex items-center gap-2"><i data-lucide="bell" class="w-4 h-4 text-blue-400"></i> Notificaciones de Paradero</span>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+              </button>
+              <button class="w-full p-3 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-between text-slate-200 hover:bg-slate-850">
+                <span class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-blue-400"></i> Términos y Privacidad</span>
+                <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+              </button>
+            </div>
+
+            <!-- Delete Account Button (CU-11) -->
+            <div class="mt-6 pt-4 border-t border-slate-800">
+              <button onclick="promptDeleteAccount()" class="w-full p-3 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-800/60 rounded-2xl text-rose-300 text-xs font-bold flex items-center justify-center gap-2 transition">
+                <i data-lucide="trash-2" class="w-4 h-4 text-rose-400"></i>
+                Eliminar mi cuenta definitivamente (CU-11)
+              </button>
+            </div>
+          </div>
+
+          <!-- ============================================================= -->
+          <!-- MODALS CONSTRAINED INSIDE PHONE FRAME! (Requirement #6) -->
+          <!-- ============================================================= -->
+
+          <!-- Modal 1: 2-Timer Arrival Alert Configuration (Feature #2 / CU-07) -->
+          <div id="modal-stop-alert" class="absolute inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full p-4 shadow-2xl space-y-3.5">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+                <div class="flex items-center gap-2">
+                  <div class="w-8 h-8 rounded-xl bg-blue-950 text-blue-400 flex items-center justify-center">
+                    <i data-lucide="bell-ring" class="w-4 h-4"></i>
+                  </div>
+                  <div>
+                    <h4 class="font-bold text-xs text-white">Alerta de Paradero</h4>
+                    <p class="text-[10px] text-slate-400" id="alert-modal-stopname">Paseo Cívico</p>
+                  </div>
+                </div>
+                <button onclick="closeStopAlertModal()" class="text-slate-400 hover:text-white text-xs">✕</button>
+              </div>
+
+              <!-- Timer 1: Configurable Advance Timer -->
+              <div>
+                <label class="text-[11px] font-semibold text-slate-200 block mb-1.5">
+                  1. Alerta anticipada (¿Cuánto tiempo antes avisarte?):
+                </label>
+                <div class="grid grid-cols-3 gap-2">
+                  <button onclick="setAlertAdvanceMinutes(5)" id="btn-adv-5" class="advance-min-btn p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 text-center transition">
+                    5 min
+                  </button>
+                  <button onclick="setAlertAdvanceMinutes(10)" id="btn-adv-10" class="advance-min-btn p-2 rounded-xl bg-blue-600 text-xs font-bold text-white text-center transition">
+                    10 min
+                  </button>
+                  <button onclick="setAlertAdvanceMinutes(15)" id="btn-adv-15" class="advance-min-btn p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 text-center transition">
+                    15 min
+                  </button>
+                </div>
+                <p class="text-[9px] text-slate-400 mt-1">Te avisaremos cuando el bus esté a <span id="lbl-adv-min" class="font-bold text-blue-300">10 minutos</span> del paradero.</p>
+              </div>
+
+              <!-- Timer 2: Imminent Arrival Notification -->
+              <div class="p-2.5 bg-slate-950 rounded-2xl border border-slate-800">
+                <label class="flex items-start gap-2 cursor-pointer">
+                  <input type="checkbox" id="chk-imminent-alert" checked class="mt-0.5 rounded text-blue-600 focus:ring-0">
+                  <div>
+                    <span class="text-[11px] font-semibold text-white block">2. Notificación inminente (A segundos de llegar)</span>
+                    <p class="text-[9px] text-slate-400 mt-0.5">Segunda alarma háptica y sonora cuando el bus esté frenando a 50m.</p>
+                  </div>
+                </label>
+              </div>
+
+              <div class="flex gap-2 pt-1">
+                <button onclick="closeStopAlertModal()" class="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition">
+                  Cancelar
+                </button>
+                <button onclick="saveStopArrivalAlert()" class="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition flex items-center justify-center gap-1">
+                  <i data-lucide="check" class="w-3.5 h-3.5"></i> Activar Alerta
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal 2: Delete Account Confirmation (CU-11) -->
+          <div id="modal-delete" class="absolute inset-0 bg-black/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full p-4 shadow-2xl space-y-3">
+              <div class="w-10 h-10 rounded-2xl bg-rose-950 text-rose-400 border border-rose-800 flex items-center justify-center">
+                <i data-lucide="alert-octagon" class="w-5 h-5"></i>
+              </div>
+              <h3 class="text-sm font-bold text-white">¿Eliminar cuenta definitivamente?</h3>
+              <p class="text-[11px] text-slate-300 leading-relaxed">
+                Tienes <strong class="text-blue-400 font-mono">85 Puntos BC</strong> (S/. 8.50). Al confirmar, este saldo se perderá y tus sesiones se revocarán.
+              </p>
+              <div class="p-2.5 bg-slate-950 rounded-xl border border-slate-800 text-[10px] text-slate-400">
+                Gracia: 15 días para cancelar la baja volviendo a ingresar con tu celular.
+              </div>
+              <div class="flex gap-2">
+                <button onclick="closeDeleteModal()" class="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">Cancelar</button>
+                <button onclick="confirmAccountDeletion()" class="flex-1 py-2 rounded-xl bg-rose-600 text-white text-xs font-bold">Sí, eliminar</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ============================================================= -->
+        <!-- BOTTOM 4-TAB NAVIGATION BAR (CU-07 / iOS TabView) -->
+        <!-- ============================================================= -->
+        <nav class="h-16 bg-slate-900/98 backdrop-blur-xl border-t border-slate-800/80 px-4 flex items-center justify-around shrink-0 z-30">
+          <button onclick="switchPassengerTab('map')" id="ptab-map" class="pass-tab flex flex-col items-center gap-1 text-blue-500 font-bold transition">
+            <i data-lucide="compass" class="w-5 h-5"></i>
+            <span class="text-[10px]">Explorar</span>
+          </button>
+          <button onclick="switchPassengerTab('scan')" id="ptab-scan" class="pass-tab flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+            <div class="w-10 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center -mt-1 shadow-lg shadow-blue-600/30">
+              <i data-lucide="qr-code" class="w-4 h-4"></i>
+            </div>
+            <span class="text-[10px]">Pagar QR</span>
+          </button>
+          <button onclick="switchPassengerTab('wallet')" id="ptab-wallet" class="pass-tab flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+            <i data-lucide="wallet" class="w-5 h-5"></i>
+            <span class="text-[10px]">Monedero</span>
+          </button>
+          <button onclick="switchPassengerTab('profile')" id="ptab-profile" class="pass-tab flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 transition">
+            <i data-lucide="user" class="w-5 h-5"></i>
+            <span class="text-[10px]">Perfil</span>
+          </button>
+        </nav>
+
+        <!-- Home Indicator Bar -->
+        <div class="home-indicator"></div>
+
+      </div>
+
+      <!-- Caption for App Pasajero -->
+      <div class="mt-4 text-center">
+        <span class="text-xs font-bold text-slate-300">App Pasajero (iPhone 16 Pro)</span>
+        <p class="text-[11px] text-slate-500">SwiftUI Puro • MapKit • 4 Pestañas • Alertas de 2 Temporizadores</p>
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- VIEW 2: TABLET ANDROID 10" (CABINA DEL CONDUCTOR) -->
+    <!-- ========================================================================= -->
+    <div id="view-driver" class="device-container hidden flex-col items-center">
+      <div class="tablet-frame bg-slate-950 flex flex-col border border-slate-800">
+        <!-- Tablet Top Bar -->
+        <div class="h-14 bg-slate-900 border-b border-slate-800 px-6 flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-sm">
+              10
+            </div>
+            <div>
+              <h3 class="font-extrabold text-sm text-white">LÍNEA 10 • UNIDAD BUS 01</h3>
+              <p class="text-xs text-slate-400">Placa: Z1A-780 • Chofer: Juan Mamani Quispe</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-4">
+            <span id="route-direction-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-blue-950 text-blue-300 border border-blue-800">
+              IDA (SUBIDA)
+            </span>
+            <button onclick="toggleRouteDirection()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200">
+              Cambiar Sentido
+            </button>
+          </div>
+        </div>
+
+        <!-- Tablet Main Content Grid -->
+        <div class="flex-1 p-6 grid grid-cols-12 gap-6 overflow-hidden">
+          
+          <!-- Column Left (7 cols): Cobro Reciente & Acciones Rápidas -->
+          <div class="col-span-7 flex flex-col gap-4">
+            <!-- 3-Second Confirmation Card (CU-02) -->
+            <div id="driver-confirm-card" class="flex-1 rounded-3xl bg-slate-900/90 border-2 border-emerald-500/80 p-6 flex flex-col justify-between shadow-2xl relative overflow-hidden">
+              <div class="flex items-start justify-between">
+                <div>
+                  <span class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping"></span>
+                    ÚLTIMO PASAJE VALIDADO
+                  </span>
+                  <h2 id="driver-last-fare-type" class="text-2xl font-black text-white mt-1">UNIVERSITARIO</h2>
+                  <p id="driver-last-fare-passenger" class="text-sm text-slate-300">Aron Mamani Quispe • 1 Pasajero</p>
+                </div>
+                <div class="text-right">
+                  <span id="driver-last-amount" class="text-4xl font-extrabold text-emerald-400 font-mono">S/. 0.70</span>
+                  <p class="text-xs text-slate-400">7 Puntos BC debitados</p>
+                </div>
+              </div>
+
+              <!-- Visual countdown bar for the 3 seconds -->
+              <div>
+                <div class="flex items-center justify-between text-xs text-slate-400 mb-1">
+                  <span>Pantalla en cabina</span>
+                  <span class="text-emerald-400 font-bold">Cobro confirmado</span>
+                </div>
+                <div class="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                  <div id="driver-timer-bar" class="bg-emerald-500 h-full w-full rounded-full transition-all duration-3000 ease-linear"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Big Action Buttons (Touch friendly) -->
+            <div class="grid grid-cols-2 gap-4 h-28">
+              <!-- CONADIS Button (S/. 0.00) -->
+              <button onclick="driverRecordConadis()" class="rounded-3xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-lg flex flex-col items-center justify-center gap-1 shadow-xl transition active:scale-98">
+                <span class="flex items-center gap-2"><i data-lucide="accessibility" class="w-6 h-6"></i> +1 CONADIS</span>
+                <span class="text-xs font-normal opacity-90">Gratuito (Ley 29973 • S/. 0.00)</span>
+              </button>
+
+              <!-- Out of Service / Breakdown Report -->
+              <button onclick="driverReportBreakdown()" class="rounded-3xl bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 font-bold text-sm flex flex-col items-center justify-center gap-1 shadow-lg transition active:scale-98">
+                <span class="flex items-center gap-1.5"><i data-lucide="alert-triangle" class="w-5 h-5"></i> Avería de Unidad</span>
+                <span class="text-[11px] text-rose-400/80">Reembolso masivo automático</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Column Right (5 cols): Aforo & Turno -->
+          <div class="col-span-5 flex flex-col gap-4">
+            
+            <!-- Live Occupancy Semaphore Card (CU-03) -->
+            <div class="p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-400 uppercase">Aforo del Bus</span>
+                <span id="occupancy-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                  ASIENTOS DISPONIBLES
+                </span>
+              </div>
+              <div class="flex items-baseline justify-between">
+                <span id="occupancy-number" class="text-4xl font-extrabold text-white font-mono">22 <span class="text-xl text-slate-500 font-normal">/ 32</span></span>
+                <span class="text-xs text-slate-400">Capacidad Máx</span>
+              </div>
+              <div class="w-full bg-slate-800 h-3 rounded-full overflow-hidden">
+                <div id="occupancy-progress" class="bg-emerald-500 h-full w-[68%] rounded-full transition-all"></div>
+              </div>
+              <!-- Manual calibration buttons -->
+              <div class="flex gap-2 pt-2 border-t border-slate-800 text-xs">
+                <button onclick="adjustOccupancy(-1)" class="flex-1 py-1.5 bg-slate-800 rounded-xl hover:bg-slate-700 font-semibold">-1 Pasajero</button>
+                <button onclick="adjustOccupancy(1)" class="flex-1 py-1.5 bg-slate-800 rounded-xl hover:bg-slate-700 font-semibold">+1 Pasajero</button>
+              </div>
+            </div>
+
+            <!-- Shift Summary -->
+            <div class="flex-1 p-5 rounded-3xl bg-slate-900 border border-slate-800 flex flex-col justify-between">
+              <div>
+                <span class="text-xs font-bold text-slate-400 uppercase">Liquidación de Turno</span>
+                <div class="mt-2 space-y-1.5 text-xs">
+                  <div class="flex justify-between"><span class="text-slate-400">Cobros App BC:</span> <span id="drv-app-trips" class="font-bold text-white">48 viajes</span></div>
+                  <div class="flex justify-between"><span class="text-slate-400">Total CONADIS:</span> <span id="drv-conadis-count" class="font-bold text-amber-400">3 personas</span></div>
+                  <div class="flex justify-between text-sm pt-2 border-t border-slate-800 font-bold"><span class="text-white">Total Recaudado:</span> <span id="drv-total-revenue" class="text-emerald-400 font-mono">S/. 58.40</span></div>
+                </div>
+              </div>
+              <button onclick="driverCloseShift()" class="w-full py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition">
+                Cerrar Turno (Liquidación)
+              </button>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+      <div class="mt-4 text-center">
+        <span class="text-xs font-bold text-slate-300">Tablet Conductor (Android 10" Horizontal)</span>
+        <p class="text-[11px] text-slate-500">Jetpack Compose • Anti-reflejo Cabina • Tarjeta de 3 Segundos • Botón CONADIS</p>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- VIEW 3: MÓDULO POS (VALIDADOR DE PUERTA DELANTERA) -->
+    <!-- ========================================================================= -->
+    <div id="view-pos" class="device-container hidden flex-col items-center">
+      <div class="pos-frame bg-slate-950 flex flex-col border border-slate-800">
+        <!-- Top POS status -->
+        <div class="p-4 bg-slate-900 border-b border-slate-800 text-center">
+          <span class="text-[10px] font-bold text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded-full border border-emerald-800">
+            VALIDADOR ONLINE • POS-01
+          </span>
+          <h4 class="font-black text-sm text-white mt-1">LÍNEA 10 (BUS 01)</h4>
+        </div>
+
+        <!-- Dynamic QR Screen (30s TTL Refresh - RN-01) -->
+        <div class="flex-1 p-6 flex flex-col items-center justify-center text-center">
+          <div class="p-4 bg-white rounded-3xl shadow-2xl relative">
+            <!-- Simulated QR Pattern with Logo -->
+            <div class="w-48 h-48 bg-slate-900 rounded-2xl p-2 flex flex-col items-center justify-center relative overflow-hidden">
+              <div class="grid grid-cols-6 gap-1 w-full h-full opacity-80">
+                <div class="bg-white rounded-sm col-span-2 row-span-2"></div>
+                <div class="bg-white rounded-sm col-span-2"></div>
+                <div class="bg-white rounded-sm col-span-2 row-span-2"></div>
+                <div class="bg-white rounded-sm col-span-1"></div>
+                <div class="bg-white rounded-sm col-span-1"></div>
+                <div class="bg-white rounded-sm col-span-2"></div>
+                <div class="bg-white rounded-sm col-span-2"></div>
+                <div class="bg-white rounded-sm col-span-2"></div>
+                <div class="bg-white rounded-sm col-span-2 row-span-2"></div>
+                <div class="bg-white rounded-sm col-span-2"></div>
+                <div class="bg-white rounded-sm col-span-2 row-span-2"></div>
+              </div>
+              <div class="absolute inset-0 flex items-center justify-center">
+                <div class="w-10 h-10 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center text-sm shadow border-2 border-white">
+                  BC
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 space-y-1">
+            <span class="text-xs font-bold text-slate-300">Escanee con App Bus Conectado</span>
+            <div class="flex items-center justify-center gap-1.5 text-xs text-blue-400 font-mono">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5 animate-spin"></i>
+              <span>Refresco en: <strong id="qr-refresh-seconds" class="text-white">18s</strong> (30s TTL)</span>
+            </div>
+          </div>
+
+          <!-- Beep Test Buttons -->
+          <div class="mt-6 flex gap-2 w-full">
+            <button onclick="playBeep(true)" class="flex-1 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1">
+              <i data-lucide="volume-2" class="w-3.5 h-3.5"></i> Beep Verde (880Hz)
+            </button>
+            <button onclick="playBeep(false)" class="flex-1 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center justify-center gap-1">
+              <i data-lucide="volume-x" class="w-3.5 h-3.5"></i> Beep Rojo (280Hz)
+            </button>
+          </div>
+        </div>
+
+        <!-- POS Bottom Status -->
+        <div class="p-3 bg-slate-900 border-t border-slate-800 text-center text-[10px] text-slate-500">
+          Hardware Embedded • Cifrado AES-256 • Modo Offline Activo
+        </div>
+      </div>
+      <div class="mt-4 text-center">
+        <span class="text-xs font-bold text-slate-300">Módulo Validador POS (Puerta Delantera)</span>
+        <p class="text-[11px] text-slate-500">QR Dinámico Rotativo (30s) • Audio Real Web Audio API • 880Hz Éxito</p>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- VIEW 4: BACKOFFICE WEB (PANEL DE SUPERVISIÓN) -->
+    <!-- ========================================================================= -->
+    <div id="view-backoffice" class="device-container hidden flex-col items-center">
+      <div class="w-[980px] bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl p-6 space-y-5">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-lg font-extrabold text-white">Panel de Control Backoffice — Empresa de Transportes Línea 10</h2>
+            <p class="text-xs text-slate-400">Gestión de Tarifas, Flota y Prórrogas de Identificación Universitaria</p>
+          </div>
+          <span class="text-xs font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 px-3 py-1 rounded-full">
+            Sistema Operativo 100%
+          </span>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4">
+          <!-- Card 1: Config Tarifas -->
+          <div class="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+            <span class="text-xs font-bold text-blue-400 uppercase">Tarifario Vigente (fare_config)</span>
+            <div class="space-y-2 text-xs">
+              <div class="flex justify-between items-center">
+                <span class="text-slate-300">Pasaje Adulto / General:</span>
+                <span class="font-bold text-white font-mono bg-slate-800 px-2 py-0.5 rounded">S/. 1.40 (14 pts)</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-slate-300">Pasaje Universitario:</span>
+                <span class="font-bold text-amber-400 font-mono bg-amber-950/60 px-2 py-0.5 rounded">S/. 0.70 (7 pts)</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-slate-300">Pasaje Escolar:</span>
+                <span class="font-bold text-slate-300 font-mono bg-slate-800 px-2 py-0.5 rounded">S/. 0.50 (5 pts)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: SUNEDU Extension (app_config) -->
+          <div class="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2.5">
+            <span class="text-xs font-bold text-amber-400 uppercase">Prórroga Carné SUNEDU</span>
+            <p class="text-[11px] text-slate-400">Permite diferir la fecha de caducidad si SUNEDU amplía la validez del carné.</p>
+            <div class="flex items-center gap-2">
+              <input type="date" value="2026-12-31" class="bg-slate-900 border border-slate-700 text-white text-xs rounded-xl px-2 py-1 flex-1">
+              <button onclick="showToast('Prórroga SUNEDU actualizada a nivel nacional', 'success')" class="px-3 py-1 bg-blue-600 text-white rounded-xl text-xs font-bold">Guardar</button>
+            </div>
+          </div>
+
+          <!-- Card 3: Métricas Globales -->
+          <div class="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2">
+            <span class="text-xs font-bold text-emerald-400 uppercase">Métricas Hoy</span>
+            <div class="space-y-1 text-xs">
+              <div class="flex justify-between"><span class="text-slate-400">Buses en ruta:</span> <span class="font-bold text-white">4 unidades</span></div>
+              <div class="flex justify-between"><span class="text-slate-400">Pasajeros transportados:</span> <span class="font-bold text-white">1,420</span></div>
+              <div class="flex justify-between"><span class="text-slate-400">Pagos Digitales (QR):</span> <span class="font-bold text-emerald-400">76.4%</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="mt-4 text-center">
+        <span class="text-xs font-bold text-slate-300">Backoffice de Administración Web</span>
+        <p class="text-[11px] text-slate-500">Next.js / React Web • Panel Centralizado de Supervisión y Parámetros</p>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- VIEW 5: ALL IN ONE (CANVAS INTEGRADO) -->
+    <!-- ========================================================================= -->
+    <div id="view-all" class="device-container hidden flex-row flex-wrap items-start justify-center gap-10">
+      <!-- Cloned or simultaneous views handled via switcher -->
+      <div class="text-center text-slate-400 py-12">
+        <p class="text-sm">Para una vista fluida de cada componente, selecciona arriba <strong>App Pasajero</strong>, <strong>Tablet Chofer</strong> o <strong>Módulo POS</strong>.</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- JAVASCRIPT STATE ENGINE & AUDIO SYNTHESIS -->
+  <!-- ============================================================ -->
+  <script>
+    // Web Audio Synthesizer (Zero external dependencies)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playBeep(isSuccess) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      if (isSuccess) {
+        // POS Success Beep: 880 Hz (A5), 800ms
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.8);
+      } else {
+        // POS Error Beep: Double tone 280 Hz, 220ms
+        osc.frequency.setValueAtTime(280, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.22);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.22);
+      }
+    }
+
+    function playCoinSound() {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.frequency.setValueAtTime(987, audioCtx.currentTime); // B5
+      osc.frequency.exponentialRampToValueAtTime(1318, audioCtx.currentTime + 0.15); // E6
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.35);
+    }
+
+    function playArrivalMelodicChime() {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      notes.forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        const startTime = audioCtx.currentTime + (idx * 0.12);
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(0.25, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.4);
+        osc.start(startTime);
+        osc.stop(startTime + 0.4);
+      });
+    }
+
+    // ============================================================
+    // APPLICATION STATE
+    // ============================================================
+    let walletPoints = 85;
+    let companions = 0;
+    let occupancy = 22; // BUS 01 current passengers out of 32
+    let isUserSimulatedOnboard = true; // Proximity simulation: true = <25m, false = 850m
+    let isUserSubscribed = false;
+    let isTripSheetMinimized = false;
+    let selectedBusId = null;
+    let selectedStopName = null;
+    let selectedPlaceName = null;
+    let stopAlertAdvanceMin = 10;
+    let stopAlertImminent = true;
+    let activeRouteDestination = null;
+
+    // Line 10 Fleet Data (Feature #1)
+    const line10Buses = {
+      1: { id: 1, number: 'BUS 01', plate: 'Z1A-780', driver: 'Juan Mamani Quispe', rating: '4.9 ★', brevete: 'Q-74819', passengers: 22, max: 32, pct: 68, status: 'SEATS_AVAILABLE', nextStop: 'Paseo Cívico', etaNext: '2 min', top: 140, left: 142 },
+      4: { id: 4, number: 'BUS 04', plate: 'Z2B-104', driver: 'Carlos Condori Ticona', rating: '4.7 ★', brevete: 'C-91024', passengers: 28, max: 32, pct: 87, status: 'STANDING_ROOM', nextStop: 'Mercado Central', etaNext: '4 min', top: 290, left: 272 },
+      7: { id: 7, number: 'BUS 07', plate: 'Z3C-550', driver: 'Marco Mamani Laura', rating: '4.8 ★', brevete: 'M-55219', passengers: 14, max: 32, pct: 43, status: 'SEATS_AVAILABLE', nextStop: 'Plaza Zela', etaNext: '6 min', top: 450, left: 272 },
+      12: { id: 12, number: 'BUS 12', plate: 'Z4D-990', driver: 'Pedro Flores Nina', rating: '4.6 ★', brevete: 'P-11248', passengers: 31, max: 32, pct: 96, status: 'FULL', nextStop: 'Paseo Cívico', etaNext: '8 min', top: 40, left: 142 }
+    };
+
+    // Driver Shift Metrics
+    let driverAppTrips = 48;
+    let driverConadisCount = 3;
+    let driverRevenue = 58.40;
+
+    // ============================================================
+    // BUS SELECTION & DESELECTION (Feature #1 - NO manual pay/sub buttons!)
+    // ============================================================
+    function selectBus(busId, event) {
+      if (event) event.stopPropagation();
+      deselectStop();
+      deselectPlace();
+
+      selectedBusId = busId;
+      const bus = line10Buses[busId];
+      if (!bus) return;
+
+      // Update popup UI
+      document.getElementById('bdetail-plate').textContent = bus.plate;
+      document.getElementById('bdetail-name').textContent = `${bus.number} • Línea 10`;
+      document.getElementById('bdetail-driver').textContent = `Chofer: ${bus.driver} (${bus.rating})`;
+      document.getElementById('bdetail-nextstop').textContent = `Próxima parada: ${bus.nextStop} • ~${bus.etaNext}`;
+      document.getElementById('bdetail-occupancy').textContent = `${bus.passengers} / ${bus.max} pasajeros (${bus.pct}%)`;
+
+      const bar = document.getElementById('bdetail-bar');
+      bar.style.width = `${bus.pct}%`;
+      if (bus.pct > 90) {
+        bar.className = 'bg-rose-500 h-full rounded-full transition-all';
+      } else if (bus.pct > 75) {
+        bar.className = 'bg-amber-500 h-full rounded-full transition-all';
+      } else {
+        bar.className = 'bg-emerald-500 h-full rounded-full transition-all';
+      }
+
+      // Show popup
+      document.getElementById('bus-detail-popup').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function deselectBus() {
+      selectedBusId = null;
+      document.getElementById('bus-detail-popup').classList.add('hidden');
+    }
+
+    // Handle canvas click to deselect
+    function handleMapCanvasClick(event) {
+      if (event.target.closest('#bus-detail-popup') || 
+          event.target.closest('#stop-card') || 
+          event.target.closest('#place-card') || 
+          event.target.closest('#trip-minimized-pill') || 
+          event.target.closest('#trip-expanded-sheet') || 
+          event.target.closest('.bus-marker') || 
+          event.target.closest('.stop-marker') ||
+          event.target.closest('#fab-directions')) {
+        return;
+      }
+      deselectBus();
+      deselectStop();
+      deselectPlace();
+    }
+
+    // ============================================================
+    // AUTOMATIC BUS DETECTOR (Feature #1)
+    // ============================================================
+    function triggerAutoDetectBus() {
+      showToast('📡 Escaneando telemetría de ruta Línea 10...', 'success');
+      
+      setTimeout(() => {
+        if (isUserSimulatedOnboard) {
+          // Bus matched! Automatically subscribe user to BUS 01
+          isUserSubscribed = true;
+          showToast('¡Bus detectado! A bordo de Línea 10 (BUS 01 • Z1A-780)', 'success');
+          expandTripSheet();
+          updateDynamicIsland('BUS 01 • En viaje');
+          playArrivalMelodicChime();
+        } else {
+          showToast('No se detectó un bus en movimiento cercano. Sincronización activa al subir.', 'error');
+        }
+      }, 1000);
+    }
+
+    // Proximity Simulation Toggle
+    function toggleUserProximitySim() {
+      isUserSimulatedOnboard = !isUserSimulatedOnboard;
+      const badge = document.getElementById('badge-proximity');
+      if (isUserSimulatedOnboard) {
+        badge.innerHTML = '📍 A bordo (&lt;25m)';
+        badge.className = 'font-bold text-[10px] px-2 py-0.5 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-700 transition';
+        showToast('Simulador: Ahora estás DENTRO del bus (<25m)', 'success');
+      } else {
+        badge.innerHTML = '🚶 En la calle (850m)';
+        badge.className = 'font-bold text-[10px] px-2 py-0.5 rounded-lg bg-amber-950 text-amber-300 border border-amber-700 transition';
+        showToast('Simulador: Ahora estás FUERA del bus (850m)', 'error');
+      }
+    }
+
+    // ============================================================
+    // STOP SELECTION & 2-TIMER ALERTS (Feature #2)
+    // ============================================================
+    function selectStop(stopName, event) {
+      if (event) event.stopPropagation();
+      deselectBus();
+      deselectPlace();
+      selectedStopName = stopName;
+
+      document.getElementById('stop-title').textContent = `${stopName} (L10)`;
+      document.getElementById('alert-modal-stopname').textContent = `Paradero: ${stopName}`;
+
+      // Calculate approximate ETAs
+      let eta1 = '~3 min';
+      let eta4 = '~10 min';
+      if (stopName.includes('Mercado')) {
+        eta1 = '~6 min';
+        eta4 = '~2 min';
+      } else if (stopName.includes('UNJBG')) {
+        eta1 = '~12 min';
+        eta4 = '~8 min';
+      }
+      document.getElementById('stop-eta-bus1').textContent = eta1;
+      document.getElementById('stop-eta-bus4').textContent = eta4;
+
+      document.getElementById('stop-card').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function deselectStop() {
+      selectedStopName = null;
+      document.getElementById('stop-card').classList.add('hidden');
+    }
+
+    function openStopAlertModal() {
+      document.getElementById('modal-stop-alert').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeStopAlertModal() {
+      document.getElementById('modal-stop-alert').classList.add('hidden');
+    }
+
+    function setAlertAdvanceMinutes(min) {
+      stopAlertAdvanceMin = min;
+      document.querySelectorAll('.advance-min-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-600', 'text-white');
+        btn.classList.add('bg-slate-800', 'text-slate-200');
+      });
+      const activeBtn = document.getElementById(`btn-adv-${min}`);
+      if (activeBtn) {
+        activeBtn.classList.remove('bg-slate-800', 'text-slate-200');
+        activeBtn.classList.add('bg-blue-600', 'text-white');
+      }
+      document.getElementById('lbl-adv-min').textContent = `${min} minutos`;
+    }
+
+    function saveStopArrivalAlert() {
+      stopAlertImminent = document.getElementById('chk-imminent-alert').checked;
+      closeStopAlertModal();
+      playArrivalMelodicChime();
+      showToast(`Alerta programada: ${stopAlertAdvanceMin} min antes + aviso al arribar`, 'success');
+    }
+
+    // ============================================================
+    // SEARCH & GOOGLE MAPS STYLE DESTINATIONS (Feature #3)
+    // ============================================================
+    function showDestinationSuggestions(show) {
+      const el = document.getElementById('destination-suggestions');
+      const clearBtn = document.getElementById('btn-clear-dest');
+      if (show) {
+        el.classList.remove('hidden');
+        clearBtn.classList.remove('hidden');
+      } else {
+        setTimeout(() => el.classList.add('hidden'), 250);
+      }
+      lucide.createIcons();
+    }
+
+    function clearDestinationSearch() {
+      const input = document.getElementById('destination-search-input');
+      input.value = '';
+      document.getElementById('btn-clear-dest').classList.add('hidden');
+      document.getElementById('destination-suggestions').classList.add('hidden');
+      document.getElementById('dynamic-searched-pin').classList.add('hidden');
+      deselectPlace();
+    }
+
+    function filterDestinations(val) {
+      document.getElementById('btn-clear-dest').classList.remove('hidden');
+      showDestinationSuggestions(true);
+    }
+
+    // Handle selection from search: if isInstantRoute is true ("Ir" button clicked), start route planning!
+    function selectPlaceFromSearch(placeName, isInstantRoute) {
+      document.getElementById('destination-suggestions').classList.add('hidden');
+      document.getElementById('destination-search-input').value = placeName;
+      selectedPlaceName = placeName;
+
+      if (isInstantRoute) {
+        // Direct route planning activation!
+        startRoutePlanningTo(placeName);
+      } else {
+        // Navigate map to place and drop pin
+        showPlaceOnMap(placeName);
+      }
+    }
+
+    function showPlaceOnMap(placeName) {
+      deselectBus();
+      deselectStop();
+
+      // Check if it's a stop
+      if (placeName.includes('Mercado Central')) {
+        selectStop('Mercado Central');
+        return;
+      }
+      if (placeName.includes('Paseo Cívico')) {
+        selectStop('Paseo Cívico');
+        return;
+      }
+      if (placeName.includes('Plaza Zela')) {
+        selectStop('Plaza Zela');
+        return;
+      }
+      if (placeName.includes('UNJBG')) {
+        selectStop('UNJBG (Campus)');
+        return;
+      }
+
+      // General landmark place
+      const pin = document.getElementById('dynamic-searched-pin');
+      document.getElementById('searched-pin-label').textContent = placeName;
+      pin.classList.remove('hidden');
+
+      document.getElementById('place-card-title').textContent = placeName;
+      document.getElementById('place-card-subtitle').textContent = `Tacna • A ~1.4 km de tu posición actual`;
+      document.getElementById('place-card').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function deselectPlace() {
+      selectedPlaceName = null;
+      document.getElementById('place-card').classList.add('hidden');
+      document.getElementById('dynamic-searched-pin').classList.add('hidden');
+    }
+
+    function planRouteToSelectedStop() {
+      if (selectedStopName) {
+        startRoutePlanningTo(selectedStopName);
+      }
+    }
+
+    function startRoutePlanningToCurrentPlace() {
+      if (selectedPlaceName) {
+        startRoutePlanningTo(selectedPlaceName);
+      }
+    }
+
+    // ============================================================
+    // ROUTE NAVIGATION OVERLAY & ALTERNATIVES (Features #4 & #5)
+    // ============================================================
+    function openRouteNavigation() {
+      deselectBus();
+      deselectStop();
+      deselectPlace();
+      document.getElementById('route-navigation-overlay').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeRouteNavigation() {
+      document.getElementById('route-navigation-overlay').classList.add('hidden');
+    }
+
+    function startRoutePlanningTo(destName) {
+      activeRouteDestination = destName;
+      document.getElementById('route-dest-input').value = `🏁 ${destName}`;
+      openRouteNavigation();
+    }
+
+    function swapRouteEndpoints() {
+      const orig = document.getElementById('route-origin-input');
+      const dest = document.getElementById('route-dest-input');
+      const temp = orig.value;
+      orig.value = dest.value;
+      dest.value = temp;
+      showToast('Origen y destino invertidos', 'success');
+    }
+
+    function setRouteTransportMode(mode) {
+      const btnBus = document.getElementById('mode-btn-bus');
+      const btnWalk = document.getElementById('mode-btn-walk');
+      if (mode === 'bus') {
+        btnBus.className = 'flex-1 py-1.5 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center gap-1.5 shadow transition';
+        btnWalk.className = 'flex-1 py-1.5 rounded-xl bg-slate-800 text-slate-400 font-semibold flex items-center justify-center gap-1.5 hover:text-white transition';
+      } else {
+        btnWalk.className = 'flex-1 py-1.5 rounded-xl bg-blue-600 text-white font-bold flex items-center justify-center gap-1.5 shadow transition';
+        btnBus.className = 'flex-1 py-1.5 rounded-xl bg-slate-800 text-slate-400 font-semibold flex items-center justify-center gap-1.5 hover:text-white transition';
+      }
+    }
+
+    function selectRouteOption(optionId) {
+      document.querySelectorAll('.route-option-card').forEach(c => {
+        c.classList.remove('border-2', 'border-blue-500', 'bg-slate-900', 'shadow-lg');
+        c.classList.add('border', 'border-slate-800', 'bg-slate-900/60');
+      });
+      const selected = document.getElementById(`route-opt-${optionId}`);
+      if (selected) {
+        selected.classList.add('border-2', 'border-blue-500', 'bg-slate-900', 'shadow-lg');
+        selected.classList.remove('border-slate-800', 'bg-slate-900/60');
+      }
+    }
+
+    function applyRouteAndReturnToMap() {
+      closeRouteNavigation();
+      // Draw simulated route line on map
+      const routeLine = document.getElementById('svg-active-route');
+      routeLine.classList.remove('hidden');
+      showToast('Ruta trazada: Sube al BUS 01 en Paradero Paseo Cívico', 'success');
+    }
+
+    // ============================================================
+    // IN-TRIP SHEET & SUBSCRIPTION (Features #6 & #7)
+    // ============================================================
+    function expandTripSheet() {
+      isTripSheetMinimized = false;
+      document.getElementById('trip-minimized-pill').classList.add('hidden');
+      document.getElementById('trip-expanded-sheet').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function minimizeTripSheet() {
+      isTripSheetMinimized = true;
+      document.getElementById('trip-expanded-sheet').classList.add('hidden');
+      document.getElementById('trip-minimized-pill').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function updateDestinationChoice(val) {
+      const box = document.getElementById('destination-alert-box');
+      if (val) {
+        box.classList.remove('hidden');
+        showToast(`Destino fijado: ${val}. Alarma a 400m activa.`, 'success');
+      } else {
+        box.classList.add('hidden');
+      }
+    }
+
+    function testArrivalChime() {
+      playArrivalMelodicChime();
+      showToast('🔔 Alarma de aproximación a tu paradero (400m)', 'success');
+    }
+
+    function simulateDropoff() {
+      isUserSubscribed = false;
+      document.getElementById('trip-expanded-sheet').classList.add('hidden');
+      document.getElementById('trip-minimized-pill').classList.add('hidden');
+      updateDynamicIsland(null);
+      showToast('Descenso detectado por geofencing (>150m). ¡Gracias por viajar con Línea 10!', 'success');
+    }
+
+    function updateDynamicIsland(text) {
+      const island = document.getElementById('dynamic-island');
+      const content = document.getElementById('island-content');
+      const islandText = document.getElementById('island-text');
+
+      if (text) {
+        island.classList.add('expanded');
+        content.classList.remove('hidden');
+        content.classList.add('flex');
+        islandText.textContent = text;
+      } else {
+        island.classList.remove('expanded');
+        content.classList.add('hidden');
+        content.classList.remove('flex');
+      }
+      lucide.createIcons();
+    }
+
+    // ============================================================
+    // QR PAYMENT (Automatic Subscription & Occupancy Update)
+    // ============================================================
+    function adjustCompanion(delta) {
+      companions = Math.max(0, Math.min(4, companions + delta));
+      document.getElementById('companion-count').textContent = companions;
+      
+      const userFare = 7; // Student fare
+      const companionFare = 15; // Adult companion fare
+      const totalPts = userFare + (companions * companionFare);
+      const totalPen = (totalPts / 10).toFixed(2);
+      document.getElementById('total-pay-points').textContent = `${totalPts} Puntos BC (S/. ${totalPen})`;
+    }
+
+    function simulateScanPayment() {
+      const userFare = 7;
+      const companionFare = 15;
+      const totalPts = userFare + (companions * companionFare);
+
+      if (walletPoints < totalPts) {
+        playBeep(false);
+        showToast('Saldo insuficiente. Recarga en tu Monedero.', 'error');
+        return;
+      }
+
+      // Debit wallet points
+      walletPoints -= totalPts;
+      document.getElementById('wallet-balance-pts').textContent = walletPoints;
+      document.getElementById('wallet-balance-pen').textContent = `Equivalente a S/. ${(walletPoints / 10).toFixed(2)} Soles`;
+
+      // Beep & Tablet trigger
+      playBeep(true);
+      occupancy = Math.min(32, occupancy + 1 + companions);
+      document.getElementById('occupancy-number').innerHTML = `${occupancy} <span class="text-xl text-slate-500 font-normal">/ 32</span>`;
+      const pct = Math.round((occupancy / 32) * 100);
+      document.getElementById('occupancy-progress').style.width = `${pct}%`;
+      document.getElementById('sheet-occupancy').textContent = `${occupancy} / 32 pasajeros`;
+
+      // Update driver tablet
+      driverAppTrips += 1 + companions;
+      driverRevenue += (totalPts / 10);
+      document.getElementById('drv-app-trips').textContent = `${driverAppTrips} viajes`;
+      document.getElementById('drv-total-revenue').textContent = `S/. ${driverRevenue.toFixed(2)}`;
+
+      // Automatically subscribe user to BUS 01!
+      isUserSubscribed = true;
+      showToast(`¡Cobro exitoso! -${totalPts} pts. Suscrito automáticamente a BUS 01.`, 'success');
+      
+      // Return to map & expand in-trip sheet
+      switchPassengerTab('map');
+      expandTripSheet();
+      updateDynamicIsland('BUS 01 • En viaje');
+    }
+
+    // Wallet recharge
+    function rechargePoints(penAmount) {
+      const addedPts = penAmount * 10;
+      walletPoints += addedPts;
+      document.getElementById('wallet-balance-pts').textContent = walletPoints;
+      document.getElementById('wallet-balance-pen').textContent = `Equivalente a S/. ${(walletPoints / 10).toFixed(2)} Soles`;
+      playCoinSound();
+      showToast(`Recarga exitosa con Yape: +${addedPts} Puntos BC (S/. ${penAmount}.00)`, 'success');
+    }
+
+    // Driver actions
+    function driverRecordConadis() {
+      occupancy = Math.min(32, occupancy + 1);
+      driverConadisCount += 1;
+      document.getElementById('drv-conadis-count').textContent = `${driverConadisCount} personas`;
+      document.getElementById('occupancy-number').innerHTML = `${occupancy} <span class="text-xl text-slate-500 font-normal">/ 32</span>`;
+      const pct = Math.round((occupancy / 32) * 100);
+      document.getElementById('occupancy-progress').style.width = `${pct}%`;
+
+      playBeep(true);
+      showToast('Pasaje CONADIS registrado (+1 aforo, S/. 0.00)', 'success');
+    }
+
+    function adjustOccupancy(delta) {
+      occupancy = Math.max(0, Math.min(32, occupancy + delta));
+      document.getElementById('occupancy-number').innerHTML = `${occupancy} <span class="text-xl text-slate-500 font-normal">/ 32</span>`;
+      const pct = Math.round((occupancy / 32) * 100);
+      document.getElementById('occupancy-progress').style.width = `${pct}%`;
+    }
+
+    function driverReportBreakdown() {
+      alert(`ALERTA DE AVERÍA ACTIVADA:\nSe ha marcado BUS 01 como OUT_OF_SERVICE.\nTodos los pasajeros activos a bordo recibirán el reembolso automático en su monedero.`);
+      showToast('Avería reportada. Reembolso masivo emitido.', 'error');
+    }
+
+    function driverCloseShift() {
+      alert(`RESUMEN DE LIQUIDACIÓN DE TURNO (BUS 01):\n• Recaudación App BC: ${driverAppTrips} viajes\n• CONADIS: ${driverConadisCount} personas\n• Total Liquidado: S/. ${driverRevenue.toFixed(2)}\nTurno cerrado exitosamente.`);
+    }
+
+    let isUpDirection = true;
+    function toggleRouteDirection() {
+      isUpDirection = !isUpDirection;
+      document.getElementById('route-direction-badge').textContent = isUpDirection ? 'IDA (SUBIDA)' : 'VUELTA (BAJADA)';
+    }
+
+    // Navigation tabs inside passenger app
+    function switchPassengerTab(tabName) {
+      document.querySelectorAll('.screen-tab').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.pass-tab').forEach(el => {
+        el.classList.remove('text-blue-500', 'font-bold');
+        el.classList.add('text-slate-400');
+      });
+
+      const targetScreen = document.getElementById(`screen-${tabName}`);
+      const targetTab = document.getElementById(`ptab-${tabName}`);
+      if (targetScreen) targetScreen.classList.remove('hidden');
+      if (targetTab) {
+        targetTab.classList.remove('text-slate-400');
+        targetTab.classList.add('text-blue-500', 'font-bold');
+      }
+      lucide.createIcons();
+    }
+
+    // Delete Account Modal
+    function promptDeleteAccount() {
+      document.getElementById('modal-delete').classList.remove('hidden');
+      lucide.createIcons();
+    }
+    function closeDeleteModal() {
+      document.getElementById('modal-delete').classList.add('hidden');
+    }
+    function confirmAccountDeletion() {
+      closeDeleteModal();
+      showToast('Cuenta marcada para baja (15 días de gracia)', 'error');
+      setTimeout(() => switchPassengerTab('map'), 1000);
+    }
+
+    function promptReportIssue() {
+      alert(`CENTRO DE REPORTES BC:\nTu reporte ha sido enviado con el identificador del BUS 01 adjunto para revisión de la mesa de soporte.`);
+    }
+
+    // Device Switcher
+    function switchDevice(device) {
+      document.querySelectorAll('.device-container').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.device-tab').forEach(el => {
+        el.classList.remove('bg-blue-600', 'text-white', 'shadow');
+        el.classList.add('text-slate-400');
+      });
+
+      const activeView = document.getElementById(`view-${device}`);
+      const activeBtn = document.getElementById(`btn-${device}`);
+
+      if (activeView) activeView.classList.remove('hidden');
+      if (activeBtn) {
+        activeBtn.classList.remove('text-slate-400');
+        activeBtn.classList.add('bg-blue-600', 'text-white', 'shadow');
+      }
+      lucide.createIcons();
+    }
+
+    // In-App Toast Helper
+    function showToast(msg, type = 'success') {
+      const toast = document.getElementById('toast-notif');
+      const toastMsg = document.getElementById('toast-msg');
+      const toastIcon = document.getElementById('toast-icon');
+
+      toastMsg.textContent = msg;
+      if (type === 'error') {
+        toastIcon.className = 'w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center font-bold text-xs shrink-0';
+        toastIcon.textContent = '✕';
+      } else {
+        toastIcon.className = 'w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs shrink-0';
+        toastIcon.textContent = '✓';
+      }
+
+      toast.classList.remove('-translate-y-20', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('-translate-y-20', 'opacity-0');
+      }, 3500);
+    }
+
+    function resetMockupState() {
+      walletPoints = 85;
+      occupancy = 22;
+      isUserSubscribed = false;
+      isUserSimulatedOnboard = true;
+      document.getElementById('wallet-balance-pts').textContent = '85';
+      document.getElementById('wallet-balance-pen').textContent = 'Equivalente a S/. 8.50 Soles';
+      deselectBus();
+      deselectStop();
+      deselectPlace();
+      closeRouteNavigation();
+      document.getElementById('trip-expanded-sheet').classList.add('hidden');
+      document.getElementById('trip-minimized-pill').classList.add('hidden');
+      document.getElementById('svg-active-route').classList.add('hidden');
+      updateDynamicIsland(null);
+      showToast('Simulador reiniciado al estado inicial', 'success');
+    }
+
+    // Initialize icons
+    lucide.createIcons();
+
+    // Rotate simulated POS countdown
+    let posSec = 18;
+    setInterval(() => {
+      posSec = posSec <= 1 ? 30 : posSec - 1;
+      const el = document.getElementById('qr-refresh-seconds');
+      if (el) el.textContent = `${posSec}s`;
+    }, 1000);
+  </script>
+</body>
+</html>
