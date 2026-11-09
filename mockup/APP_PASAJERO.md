@@ -3,7 +3,8 @@
 
 > **Archivo de Referencia del Prototipo:** [`mockup/index.html`](file:///Users/aron/githubRepo/sem-bus/mockup/index.html)  
 > **Ubicación:** `mockup/APP_PASAJERO.md`  
-> **Propósito:** Especificación funcional, ergonómica y técnica exhaustiva para el desarrollo 100% nativo de la **App Pasajero** en **SwiftUI (iOS 17+)** y **Jetpack Compose (Android 14+)**.
+> **Viewport Físico de Referencia:** **iPhone 16** (393 pt × 852 pt @3x, radio de esquina 55px, Dynamic Island nativa).  
+> **Propósito:** Especificación funcional, ergonómica y técnica exhaustiva para el desarrollo 100% nativo de la **App Pasajero** en **SwiftUI (iOS 18+)** y **Jetpack Compose (Android 15+)**.
 
 ---
 
@@ -12,38 +13,53 @@
 La **App Pasajero** del sistema **Bus Conectado (BC)** es la interfaz primaria del ciudadano para el transporte público urbano en Tacna (enfocada inicialmente en la **Línea 10**). Su objetivo principal es erradicar el pago manual con efectivo y resolver la incertidumbre de tiempos de espera mediante:
 1. **Cobro Digital Dinámico por QR en Puerta** (< 1 segundo de validación).
 2. **Monedero Prepago en Puntos BC** recargable con Yape y Plin (1 PEN = 10 Puntos).
-3. **Telemetría y Visualización en Vivo de la Flota** (Línea 10 con múltiples unidades en mapa).
-4. **Alertas Inteligentes de Paradero con 2 Temporizadores** (Aviso anticipado + Aviso inminente).
-5. **Trazador de Rutas y Asistente al Estilo Google Maps** (Ruta óptima, transbordos, opciones de viaje).
-6. **Suscripción y Detección Automática de Unidad** sin alterar artificialmente el aforo físico del bus.
+3. **Telemetría y Visualización en Vivo de la Flota** (Línea 10 con exactamente 2 unidades activas: `BUS 01` y `BUS 07`).
+4. **Red de Paraderos Oficiales Optimizada** (3 paraderos clave: **Plaza Zela**, **P. Mercado**, **P. UNJBG**).
+5. **Navegación Integral Pantalla Completa Estilo Google Maps** con hoja interactiva de 3 niveles de estiramiento (*Compacto*, *Detalle Intermedio* y *Todas las Opciones*).
+6. **Alertas Inteligentes de Paradero con 2 Temporizadores** (Aviso anticipado + Aviso inminente).
+7. **Suscripción y Detección Automática de Unidad** sin alterar artificialmente el aforo físico del bus.
 
 ---
 
-## 2. Casos de Uso y Requisitos del Sistema Cubiertos
+## 2. Especificaciones de Pantalla — iPhone 16
+
+| Parámetro de Diseño | Valor Estándar iPhone 16 | Implementación en Prototipo |
+| :--- | :--- | :--- |
+| **Ancho Lógico (Width)** | **393 pt** | `width: 393px;` en contenedor `.iphone-frame` |
+| **Alto Lógico (Height)** | **852 pt** | `height: 852px;` en contenedor `.iphone-frame` |
+| **Radio de Borde (Corner Radius)** | **55 pt** | `border-radius: 55px;` |
+| **Densidad de Píxeles** | `@3x` (2556 × 1179 px) | Renderizado Retina en navegadores web |
+| **Dynamic Island** | 125 px ancho × 35 px alto | Centrada a 11px de margen superior |
+| **Home Indicator Safe Area** | Altura reservada 34 pt | Barra de pestañas inferior de `84px` con padding bottom `pb-6` |
+
+---
+
+## 3. Casos de Uso y Requisitos del Sistema Cubiertos
 
 | Código CU | Nombre del Caso de Uso | Implementación en la App Móvil |
 | :--- | :--- | :--- |
 | **CU-01** | *Pago de Pasaje con QR Dinámico* | Pantalla de escaneo de cámara, selección de acompañantes, débito en monedero y feedback acústico (880Hz). |
 | **CU-05** | *Recarga de Saldo Prepago* | Módulo de monedero con paquetes de S/. 5, S/. 10, S/. 20 y S/. 50 vía Yape / Plin. |
 | **CU-06** | *Seguimiento de Viaje en Curso* | Hoja flotante (*In-Trip Sheet*) minimizable en *Explorar*, Dynamic Island y desacoplamiento por geofencing (>150m). |
-| **CU-07** | *Consulta de Rutas y Paraderos* | Mapa interactivo de Tacna, marcadores de buses, fichas técnicas y cálculo de ETA del bus más cercano. |
+| **CU-07** | *Consulta de Rutas y Paraderos* | Mapa interactivo de Tacna, marcadores de 2 buses, 3 paraderos oficiales y cálculo de ETA del bus más cercano. |
 | **CU-08** | *Validación de Identificación Estudiantil* | Aplicación automática de tarifa universitaria (7 pts / S/. 0.70) basada en carné SUNEDU validado. |
 | **CU-11** | *Gestión de Perfil y Eliminación de Cuenta* | Menú de perfil, advertencia de liquidación de saldo y baja con período de gracia de 15 días. |
 
 ---
 
-## 3. Estructura de Navegación (4 Pestañas Principales)
+## 4. Estructura de Navegación (4 Pestañas Principales)
 
-La interfaz se estructura sobre una barra de navegación fija de **4 pestañas** en la parte inferior, optimizada ergonómicamente para operación con una sola mano:
+La interfaz se estructura sobre una barra de navegación fija de **4 pestañas** en la parte inferior, con altura de `84px` y espacio libre para el *Home Indicator* de iOS:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      PANTALLA MÓVIL                         │
+│                      PANTALLA MÓVIL (393 × 852)             │
 │                                                             │
-│  [ Tab 1: Explorar ]   [ Tab 2: Pagar ]   [ Tab 3: Saldo ]  │
-│         (Mapa)              (QR)             (Monedero)     │
+│  [ Tab 1: Explorar ]   [ Tab 2: Líneas ]   [ Tab 3: Pagar QR ]
+│      (Icono Globo)        (Icono Bus)         (Icono Scan)   │
 │                                                             │
 │                      [ Tab 4: Perfil ]                      │
+│                        (Icono User)                         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -53,28 +69,24 @@ La interfaz se estructura sobre una barra de navegación fija de **4 pestañas**
 
 Es la pantalla principal por defecto de la aplicación.
 
-#### A. Barra Superior y Detección Automática
-* **Identificador de Línea:** Insignia distintiva de la **Línea 10** (`Cono Norte ➔ Cono Sur`), indicando el número de unidades en circulación en tiempo real.
-* **Botón `[📡 Detectar Bus]`:**  
-  Permite al usuario forzar la sincronización con el bus si subió a una unidad y la app aún no lo ha detectado por segundo plano. Al presionarlo:
-  - Ejecuta una comprobación de telemetría de ruta, velocidad (>10 km/h) y acelerómetro.
-  - Si coincide con la posición de un bus de la flota (<25m), vincula el viaje automáticamente, despliega la hoja de viaje (*In-Trip Sheet*) y activa la Dynamic Island.
-  - Si no coincide, notifica amablemente que no se detectó un bus en movimiento cercano.
+#### A. Barra Superior y Filtros de Categoría
+* **Buscador en Píldora Superior:** Campo de búsqueda redondeado con icono de marcador azul en círculo a la izquierda, placeholder *"Buscar paradero o línea en Tacna..."* e icono de micrófono a la derecha.
+* **Fila de Filtros Rápidos (Todo, Rutas, Paraderos):**
+  - **Todo (Marcado por default):** Muestra simultáneamente la ruta, los 2 buses en vivo y los 3 paraderos.
+  - **Rutas:** Filtra el mapa enfocando la ruta y los buses activos (`BUS 01` y `BUS 07`).
+  - **Paraderos:** Filtra el mapa enfocando exclusivamente los 3 paraderos oficiales de la Línea 10.
+* **Botón `[📡 Wifi / Detectar Bus]`:** Ubicado en la esquina superior derecha del mapa para forzar la sincronización acústica y telemétrica si la app aún no detectó el abordaje.
 
-#### B. Buscador Predictivo de Lugares (Estilo Google Maps)
-* **Campo de Entrada:** Placeholder dinámico *"Buscar lugar o paradero en Tacna..."*.
-* **Lista Desplegable de Sugerencias:**
-  - Despliega hitos clave: *Mercado Central*, *Paseo Cívico*, *UNJBG (Campus)*, *Plaza Zela*, *Terminal Terrestre Manuel A. Odría*, etc.
-  - Cada fila incluye icono de categoría, nombre del hito, dirección/subtítulo y un **botón circular azul con la flecha de "Ir"**:
-    * **Pulsar en el texto/fila:** Centra el mapa en el lugar y suelta un pin de ubicación. Si es un paradero, abre inmediatamente su ficha con los tiempos de llegada y alertas.
-    * **Pulsar en el botón circular `[Ir]`:** Abre directamente el **Modo de Trazado de Ruta Automático** con origen en la ubicación actual y destino en dicho punto.
+#### B. Buscador Predictivo con Menú Sólido (Cero Transparencias)
+* **Menú Desplegable Opaco:** Caja sólida `#0F172A` con borde reforzado `z-50`, eliminando el solapamiento o transparencia con los elementos y calles del mapa.
+* Cada fila incluye tarjeta individual destacada con icono, nombre, dirección/subtítulo y el **botón circular azul con la flecha de "Ir"**:
+  * **Pulsar en el texto/fila:** Centra el mapa en el lugar y suelta un pin de ubicación. Si es un paradero, abre inmediatamente su ficha con los tiempos de llegada y alertas.
+  * **Pulsar en el botón circular `[Ir]`:** Abre directamente el **Modo Pantalla Completa Google Maps** con origen en *"Tu ubicación"* y destino fijado.
 
-#### C. Visualización de la Flota en Tiempo Real
-* En el mapa conviven simultáneamente **4 buses activos** de la Línea 10:
+#### C. Visualización de la Flota en Tiempo Real (Exactamente 2 Unidades)
+* En el mapa conviven exactamente **2 buses activos** de la Línea 10:
   * **BUS 01** (`Z1A-780`): Chofer Juan Mamani (4.9★), 22/32 pasajeros (68%, Asientos disponibles).
-  * **BUS 04** (`Z2B-104`): Chofer Carlos Condori (4.7★), 28/32 pasajeros (87%, Pasajeros de pie).
   * **BUS 07** (`Z3C-550`): Chofer Marco Mamani (4.8★), 14/32 pasajeros (43%, Asientos disponibles).
-  * **BUS 12** (`Z4D-990`): Chofer Pedro Flores (4.6★), 31/32 pasajeros (96%, Casi lleno / Rojo).
 * **Ficha Técnica del Bus (Al tocar cualquier bus):**
   - **Sin botones manuales de pago ni suscripción** (evita desinformación o suscripciones fraudulentas).
   - Foto del modelo de unidad y placa oficial.
@@ -83,12 +95,48 @@ Es la pantalla principal por defecto de la aplicación.
   - Próxima parada y tiempo estimado de arribo (ETA).
   - Mensaje explicativo: *"Suscripción Automática activa: Tu app se vinculará a este bus en cuanto abordes o escanees tu QR en puerta"*.
 
-#### D. Paraderos y Sistema de Alertas con 2 Temporizadores
-* Paraderos modelados a lo largo de la ruta: **Cono Norte**, **Plaza Zela**, **Paseo Cívico**, **Mercado Central** y **UNJBG (Campus)**.
+#### D. Red Oficial de 3 Paraderos y Sistema de Alertas con 2 Temporizadores
+* Paraderos modelados estratégicamente en Tacna:
+  1. **Plaza Zela** (`Calle Zela • Conexión Centro Histórico`)
+  2. **P. Mercado** (`Av. Bolognesi • Conexión Zona Comercial`)
+  3. **P. UNJBG** (`Av. Miraflores • Campus Universitario Los Pabellones`)
 * Al pulsar un paradero se muestra:
-  - Próximos buses en aproximación con sus respectivos ETAs (ej. BUS 01 en ~3 min, BUS 04 en ~10 min).
+  - Próximos buses en aproximación con sus respectivos ETAs (ej. BUS 01 en ~3 min, BUS 07 en ~11 min).
   - Botón **"🔔 Alerta de Llegada (2 Timers)"** que abre el configurador modal interno:
     * **Temporizador 1 (Alerta Anticipada):** Selector de anticipación en $n = 5$, $10$ o $15$ minutos antes de que el bus alcance el paradero.
+    * **Temporizador 2 (Alerta Inminente):** Checkbox para activar notificación y vibración háptica de inminencia (cuando el bus esté a escasos metros o frenando en el paradero).
+
+#### E. Escenario Pantalla Completa Estilo Google Maps ("Cómo Llegar")
+Al tocar el botón de dirección (FAB cian `[↱]` o el botón circular `[Ir]` en cualquier búsqueda), la app despliega un escenario que **ocupa el 100% de la pantalla del móvil**:
+* **Cabecera Nativa de Ruteo:**
+  - Botón de retroceso `[<]` para salir del modo ruteo.
+  - Puntos de parada con conexión vertical punteada: Origen (*Tu ubicación*) y Destino (*Mercadillo Bolognesi*).
+  - Botón de inversión de sentido `[⇅]`.
+  - Botón de opciones `[...]`.
+* **Pestañas de Modos de Movilidad:**
+  - 🚗 Auto (`12 min`)
+  - 🏍️ Moto (`11 min`)
+  - 🚌 Bus / Tránsito (`14 min`)
+  - 🚶 A pie (`22 min`)
+* **Hoja Inferior Interactiva de 3 Niveles (Bottom Sheet Snap States):**
+  1. **Nivel 1: Compacto (Peek, ~140px):**
+     - Muestra el tiempo principal (`12 min • 6 km`), indicador ecológico de ahorro y botones rápidos `[Iniciar]`, `[Agregar paradas]` y `[Seguir ETA]`.
+  2. **Nivel 2: Primer Estiramiento / Detalle (Medium, ~340px):**
+     - Muestra la hora de llegada estimada (`Llegada: 12:10 a.m.`), condición del tráfico en tiempo real y el resumen de eficiencia.
+  3. **Nivel 3: Estiramiento Completo (Full, 90% de pantalla):**
+     - Despliega el catálogo completo con **todas las formas de llegar al destino**:
+       - *Opción 1 (Recomendada):* **BUS 01 (Línea 10)** • 12 min • Tarifa S/. 0.70.
+       - *Opción 2:* **BUS 07 (Línea 10)** • 18 min • Asientos libres garantizados.
+       - *Opción 3:* **Caminata Directa** • 22 min • 1.6 km • Ejercicio y cero emisiones.
+     - Tarjeta con foto del destino (*Mercadillo Bolognesi*) y detalles de acceso.
+     - Acordeón interactivo del **itinerario paso a paso** (caminar al paradero, abordar el bus, recorrido de paradas intermedias y llegada a pie).
+
+#### F. Hoja Flotante de Viaje en Curso (In-Trip Sheet)
+* Cuando el usuario está a bordo (por pago QR o detección automática), la pestaña *Explorar* despliega un bottom sheet emergente que no bloquea la navegación general:
+  - **Minimizable:** Botón *"Minimizar"* que contrae el viaje a una píldora flotante inferior (`BUS 01 • Próxima: P. Mercado ~2 min`), liberando el mapa completo.
+  - **Selector de Destino Opcional:** Permite fijar el paradero de desembarque deseado (*P. Mercado*, *P. UNJBG*, etc.).
+  - **Alarma a 400 Metros:** Alarma sonora melódica (C5 ➔ E5 ➔ G5 ➔ C6) que avisa con 400 metros de anticipación antes de la parada fijada.
+  - **Descenso por Geofencing:** Botón de simulación de bajada que ejecuta el desacoplamiento al alejarse >150 metros del bus.
     * **Temporizador 2 (Alerta Inminente):** Checkbox para activar notificación y vibración háptica de inminencia (cuando el bus esté a escasos metros o frenando en el paradero).
 
 #### E. Botón Flotante Circular de Direcciones (FAB Inferior Derecho)
