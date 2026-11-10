@@ -256,8 +256,11 @@
                     oninput="filterDestinations(this.value)"
                     class="bg-transparent text-white placeholder-slate-400 text-xs focus:outline-none flex-1 font-medium">
                   <button onclick="clearDestinationSearch()" id="btn-clear-dest" class="text-slate-400 hover:text-white hidden text-xs px-1">✕</button>
-                  <button class="text-slate-400 hover:text-white pr-1">
+                  <button class="text-slate-400 hover:text-white pr-0.5">
                     <i data-lucide="mic" class="w-4 h-4"></i>
+                  </button>
+                  <button onclick="openProfileModal()" class="w-7 h-7 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 border border-blue-400/80 text-white font-bold text-[11px] flex items-center justify-center shrink-0 shadow transition active:scale-90 hover:ring-2 hover:ring-blue-400/60" title="Perfil y cuenta de Aron Mamani">
+                    A
                   </button>
                 </div>
 
@@ -367,7 +370,59 @@
 
                 <!-- Planned Active Route Polyline -->
                 <path id="svg-active-route" d="M 160 230 L 160 300 L 290 300 L 290 372" fill="none" stroke="#22D3EE" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="hidden" opacity="0.95" />
+
+                <!-- ACTIVE GUIDED ROUTE GROUP (shown when Iniciar is pressed) -->
+                <g id="main-map-guided-route" class="hidden">
+                  <!-- Walking leg from User (80, 90) to Plaza Zela (160, 90) -->
+                  <path id="guide-path-walk" d="M 80 90 L 160 90" fill="none" stroke="#22D3EE" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="4 4" />
+                  
+                  <!-- Bus leg from Plaza Zela to P. Mercado (Solid cyan) -->
+                  <path id="guide-path-bus-mercado" d="M 160 90 L 160 230 L 290 230 L 290 365" fill="none" stroke="#00E5FF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+                  <path id="guide-path-bus-mercado-pulse" d="M 160 90 L 160 230 L 290 230 L 290 365" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10 16">
+                    <animate attributeName="stroke-dashoffset" from="0" to="-26" dur="1.2s" repeatCount="indefinite"/>
+                  </path>
+                  
+                  <!-- Bus leg to P. UNJBG (Continues down to 515) -->
+                  <path id="guide-path-bus-unjbg" d="M 160 90 L 160 230 L 290 230 L 290 515" fill="none" stroke="#00E5FF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="hidden" />
+                  <path id="guide-path-bus-unjbg-pulse" d="M 160 90 L 160 230 L 290 230 L 290 515" fill="none" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10 16" class="hidden">
+                    <animate attributeName="stroke-dashoffset" from="0" to="-26" dur="1.2s" repeatCount="indefinite"/>
+                  </path>
+
+                  <!-- Walking leg from P. Mercado to Mercadillo Bolognesi -->
+                  <path id="guide-path-walk-mercadillo" d="M 290 365 L 290 395 L 310 395" fill="none" stroke="#22D3EE" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 4" class="hidden" />
+                </g>
               </svg>
+
+              <!-- FLOATING GREEN TIMER & RED CANCEL BUTTON (Upper Left of Map) -->
+              <div id="guide-timer-widget" class="absolute top-3 left-3 z-30 hidden flex flex-col items-center gap-2">
+                <!-- Circular Green Timer Badge -->
+                <div onclick="showTimerDetailsToast()" class="relative flex items-center justify-center cursor-pointer active:scale-95 transition" title="Tiempo estimado del próximo bus">
+                  <div class="w-13 h-13 rounded-full bg-emerald-500/25 animate-ping absolute"></div>
+                  <div class="w-13 h-13 rounded-full bg-gradient-to-br from-emerald-500 via-emerald-600 to-green-700 border-2 border-emerald-300 shadow-2xl shadow-emerald-950 flex flex-col items-center justify-center text-white p-1">
+                    <span class="text-[7.5px] font-extrabold text-emerald-100 flex items-center gap-0.5 uppercase tracking-tighter">
+                      <i data-lucide="clock" class="w-2 h-2 text-white"></i> Bus
+                    </span>
+                    <span id="guide-timer-countdown" class="text-xs font-black font-mono tracking-tight text-white leading-none mt-0.5">02:48</span>
+                  </div>
+                </div>
+
+                <!-- Circular Red Cancel Button (Directly below timer) -->
+                <button id="guide-cancel-btn" onclick="promptCancelGuide()" class="w-8 h-8 rounded-full bg-rose-600 hover:bg-rose-500 border-2 border-white/80 text-white shadow-2xl flex items-center justify-center cursor-pointer active:scale-90 transition" title="Cancelar guía de ruta">
+                  <i data-lucide="x" class="w-4 h-4 stroke-[3]"></i>
+                </button>
+              </div>
+
+              <!-- Active Guided Destination Pin on Main Map -->
+              <div id="guide-dest-pin" class="absolute z-25 hidden pointer-events-none transition-all duration-300">
+                <div class="flex flex-col items-center -translate-x-1/2 -translate-y-full">
+                  <div class="bg-rose-600 text-white text-[9px] font-extrabold px-2 py-0.5 rounded-lg shadow-2xl border border-rose-400 whitespace-nowrap flex items-center gap-1" id="guide-dest-pin-label">
+                    <i data-lucide="map-pin" class="w-2.5 h-2.5"></i> Mercadillo Bolognesi
+                  </div>
+                  <div class="w-5 h-5 rounded-full bg-rose-600 border-2 border-white shadow-2xl flex items-center justify-center text-white mt-0.5">
+                    <div class="w-1.5 h-1.5 rounded-full bg-white"></div>
+                  </div>
+                </div>
+              </div>
 
               <!-- Landmarks in Tacna -->
               <div class="absolute top-4 left-5 text-[9px] text-slate-400 font-bold bg-slate-900/90 px-1.5 py-0.5 rounded border border-slate-800">Cono Norte</div>
@@ -549,7 +604,7 @@
                 </div>
 
                 <div class="mt-3 flex gap-2">
-                  <button onclick="openStopAlertModal()" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow transition">
+                  <button onclick="triggerStopArrivalAlert(selectedStopName)" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow transition">
                     <i data-lucide="bell" class="w-3.5 h-3.5 text-blue-200"></i> Alerta de Llegada
                   </button>
                   <button onclick="openRouteNavigation(selectedStopName)" class="px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl text-xs flex items-center gap-1 transition" title="Cómo llegar a este paradero">
@@ -769,77 +824,224 @@
           </div>
 
           <!-- ------------------------------------------------------------- -->
-          <!-- TAB 4: PERFIL, MONEDERO Y AJUSTES -->
+          <!-- TAB 4: MONEDERO BC & HISTORIAL DE VIAJES -->
           <!-- ------------------------------------------------------------- -->
-          <div id="screen-profile" class="screen-tab flex-1 flex flex-col hidden bg-slate-950 overflow-y-auto custom-scroll p-4 space-y-4">
-            <div class="flex items-center gap-3 p-3 bg-slate-900 rounded-3xl border border-slate-800">
-              <div class="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-extrabold text-base shadow">
-                AM
-              </div>
+          <div id="screen-wallet" class="screen-tab flex-1 hidden bg-slate-950 overflow-y-auto custom-scroll px-4 pt-3 pb-12 space-y-4">
+            
+            <!-- Monedero Header & Status -->
+            <div class="flex items-center justify-between pb-0.5 shrink-0">
               <div>
-                <h3 class="font-extrabold text-sm text-white">Aron Mamani Quispe</h3>
-                <p class="text-[11px] text-slate-400 font-mono">+51 952 ••• 819</p>
-                <span class="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-bold">Perfil Verificado</span>
+                <h2 class="text-base font-extrabold text-white flex items-center gap-2">
+                  <i data-lucide="wallet" class="w-5 h-5 text-blue-400"></i> Mi Monedero BC
+                </h2>
+                <p class="text-[11px] text-slate-400 mt-0.5">Saldo prepago para transporte urbano de Tacna</p>
               </div>
+              <span class="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5 shrink-0 shadow-sm">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Verificado
+              </span>
             </div>
 
-            <!-- Monedero Prepago Card -->
-            <div class="bg-gradient-to-br from-blue-700 via-blue-600 to-indigo-800 rounded-3xl p-4 text-white shadow-xl relative overflow-hidden">
+            <!-- Monedero Prepago Card (Tarjetón Saldo - Apple Wallet Style) -->
+            <div class="bg-gradient-to-br from-blue-600 via-indigo-600 to-indigo-900 rounded-3xl p-4 text-white shadow-xl relative shrink-0 border border-blue-400/20">
+              <!-- Top Row: Card Title & Rate -->
               <div class="flex items-center justify-between text-blue-100 text-xs font-medium">
-                <span>Monedero Prepago BC</span>
-                <span class="bg-white/20 backdrop-blur px-2 py-0.5 rounded-full text-[10px] font-bold">1 PEN = 10 Pts</span>
-              </div>
-              <div class="mt-2.5">
-                <div class="flex items-baseline gap-2">
-                  <span id="wallet-balance-pts" class="text-3xl font-extrabold font-mono tracking-tight">85</span>
-                  <span class="text-xs font-bold text-blue-200">Puntos BC</span>
-                </div>
-                <p id="wallet-balance-pen" class="text-[11px] text-blue-100/90 font-medium mt-0.5">Equivalente a S/. 8.50 Soles</p>
+                <span class="flex items-center gap-1.5 font-bold tracking-tight text-white">
+                  <i data-lucide="credit-card" class="w-4 h-4 text-blue-300"></i> Saldo Prepago Bus Conectado
+                </span>
+                <span class="bg-white/20 backdrop-blur px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white shadow-sm">1 PEN = 10 Pts</span>
               </div>
 
-              <div class="mt-3 pt-3 border-t border-white/20">
-                <span class="text-[10px] font-bold text-blue-100 uppercase tracking-wider block mb-2">Recarga con Yape / Plin</span>
+              <!-- Middle: Big Balance Display -->
+              <div class="my-3">
+                <div class="flex items-baseline gap-2">
+                  <span id="wallet-balance-pts" class="text-4xl font-extrabold font-mono tracking-tight text-white drop-shadow-sm">85</span>
+                  <span class="text-xs font-bold text-blue-200 uppercase tracking-wider">Puntos BC</span>
+                </div>
+                <p id="wallet-balance-pen" class="text-xs text-blue-100/90 font-medium mt-0.5">Equivalente a S/. 8.50 Soles</p>
+              </div>
+
+              <!-- Bottom: Quick Recharge via Yape/Plin -->
+              <div class="pt-3 border-t border-white/20">
+                <span class="text-[10px] font-bold text-blue-100 uppercase tracking-wider block mb-2">Recarga instantánea con Yape / Plin</span>
                 <div class="grid grid-cols-4 gap-1.5">
-                  <button onclick="rechargePoints(5)" class="py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-center transition">
-                    <span class="text-xs font-bold font-mono">S/. 5</span>
+                  <button onclick="rechargePoints(5)" class="py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-center transition font-bold text-xs font-mono shadow-sm border border-white/15 text-white">
+                    S/. 5
                   </button>
-                  <button onclick="rechargePoints(10)" class="py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-center transition">
-                    <span class="text-xs font-bold font-mono">S/. 10</span>
+                  <button onclick="rechargePoints(10)" class="py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-center transition font-bold text-xs font-mono shadow-sm border border-white/15 text-white">
+                    S/. 10
                   </button>
-                  <button onclick="rechargePoints(20)" class="py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-center transition">
-                    <span class="text-xs font-bold font-mono">S/. 20</span>
+                  <button onclick="rechargePoints(20)" class="py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-center transition font-bold text-xs font-mono shadow-sm border border-white/15 text-white">
+                    S/. 20
                   </button>
-                  <button onclick="rechargePoints(50)" class="py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-center transition">
-                    <span class="text-xs font-bold font-mono">S/. 50</span>
+                  <button onclick="rechargePoints(50)" class="py-2 rounded-xl bg-white/15 hover:bg-white/25 active:scale-95 text-center transition font-bold text-xs font-mono shadow-sm border border-white/15 text-white">
+                    S/. 50
                   </button>
                 </div>
               </div>
             </div>
 
             <!-- Student Card Banner -->
-            <div class="bg-amber-950/40 border border-amber-700/50 rounded-2xl p-3 flex items-start gap-3 text-xs">
+            <div class="bg-amber-950/40 border border-amber-700/50 rounded-2xl p-3 flex items-start gap-3 text-xs shrink-0">
               <div class="w-8 h-8 rounded-xl bg-amber-600/30 text-amber-400 flex items-center justify-center shrink-0">
                 <i data-lucide="graduation-cap" class="w-4 h-4"></i>
               </div>
-              <div>
-                <h5 class="text-xs font-bold text-amber-300">Carné Universitario SUNEDU Vigente</h5>
-                <p class="text-[10px] text-amber-200/80 mt-0.5">Válido hasta el 31/12/2026. Tarifa especial (7 pts / S/. 0.70).</p>
+              <div class="flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <h5 class="text-xs font-bold text-amber-300">Carné Universitario SUNEDU Vigente</h5>
+                  <span class="text-[9px] bg-amber-900/70 text-amber-200 border border-amber-700/60 px-2 py-0.5 rounded-md font-mono font-bold whitespace-nowrap shrink-0">Tarifa 7 pts</span>
+                </div>
+                <p class="text-[10px] text-amber-200/80 mt-0.5">Válido hasta el 31/12/2026. Ahorro del 53% respecto a tarifa regular (15 pts / S/. 1.50).</p>
               </div>
             </div>
 
-            <div class="space-y-2 text-xs">
-              <button class="w-full p-3 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-between text-slate-200 hover:bg-slate-850">
-                <span class="flex items-center gap-2"><i data-lucide="history" class="w-4 h-4 text-blue-400"></i> Historial de Viajes</span>
-                <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
-              </button>
-              <button class="w-full p-3 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-between text-slate-200 hover:bg-slate-850">
-                <span class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-blue-400"></i> Términos y Privacidad</span>
+            <!-- HISTORIAL DE VIAJES Y MOVIMIENTOS -->
+            <div class="space-y-2.5 pt-1 shrink-0">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-1.5">
+                  <i data-lucide="history" class="w-4 h-4 text-blue-400"></i>
+                  <h4 class="text-xs font-extrabold text-white uppercase tracking-wider">Historial de Viajes</h4>
+                </div>
+                <span class="text-[10px] text-slate-400 font-medium">Últimos movimientos</span>
+              </div>
+
+              <!-- Filter chips -->
+              <div class="flex items-center gap-1.5 pb-1">
+                <button onclick="filterTripHistory('all')" id="hist-filter-all" class="px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold transition">Todos (4)</button>
+                <button onclick="filterTripHistory('trip')" id="hist-filter-trip" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-[10px] font-semibold border border-slate-800 transition">Viajes (3)</button>
+                <button onclick="filterTripHistory('recharge')" id="hist-filter-recharge" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-[10px] font-semibold border border-slate-800 transition">Recargas (1)</button>
+              </div>
+
+              <!-- History Items Container -->
+              <div id="trip-history-list" class="space-y-2 text-xs">
+                
+                <!-- Trip 1: Hoy 18:30 -->
+                <div class="trip-item trip-type-trip p-3 bg-slate-900/90 rounded-2xl border border-slate-800 hover:border-slate-700 transition shrink-0">
+                  <div class="flex items-start justify-between">
+                    <div class="flex items-start gap-2.5">
+                      <div class="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800/60 text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <i data-lucide="bus-front" class="w-4 h-4"></i>
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-white text-xs">Línea 10 • BUS 01</span>
+                          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">Z1A-780</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-0.5 font-medium">Plaza Zela ➔ P. Mercado (Mercado Central)</p>
+                        <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                          <span>Hoy, 18:30</span>
+                          <span>•</span>
+                          <span>12 min</span>
+                          <span>•</span>
+                          <span class="text-emerald-400 font-medium">Completado</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                      <span class="font-bold text-rose-400 font-mono text-xs block">-7 pts</span>
+                      <span class="text-[10px] text-slate-400 font-mono">-S/. 0.70</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Trip 2: Ayer 08:15 -->
+                <div class="trip-item trip-type-trip p-3 bg-slate-900/90 rounded-2xl border border-slate-800 hover:border-slate-700 transition shrink-0">
+                  <div class="flex items-start justify-between">
+                    <div class="flex items-start gap-2.5">
+                      <div class="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800/60 text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <i data-lucide="bus-front" class="w-4 h-4"></i>
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-white text-xs">Línea 10 • BUS 07</span>
+                          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">Z3C-550</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-0.5 font-medium">P. Mercado ➔ P. UNJBG (Campus Basadre)</p>
+                        <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                          <span>Ayer, 08:15</span>
+                          <span>•</span>
+                          <span>14 min</span>
+                          <span>•</span>
+                          <span class="text-emerald-400 font-medium">Completado</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                      <span class="font-bold text-rose-400 font-mono text-xs block">-7 pts</span>
+                      <span class="text-[10px] text-slate-400 font-mono">-S/. 0.70</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Item 3: Recarga Yape -->
+                <div class="trip-item trip-type-recharge p-3 bg-slate-900/90 rounded-2xl border border-emerald-900/40 hover:border-emerald-700/60 transition shrink-0">
+                  <div class="flex items-start justify-between">
+                    <div class="flex items-start gap-2.5">
+                      <div class="w-8 h-8 rounded-xl bg-emerald-950 border border-emerald-800/60 text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <i data-lucide="zap" class="w-4 h-4"></i>
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-emerald-300 text-xs">Recarga Yape / Plin</span>
+                          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">Op #8921340</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-0.5 font-medium">Billetera móvil • Agente Tacna</p>
+                        <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                          <span>07 Nov, 19:42</span>
+                          <span>•</span>
+                          <span class="text-emerald-400 font-medium">Acreditado</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                      <span class="font-bold text-emerald-400 font-mono text-xs block">+100 pts</span>
+                      <span class="text-[10px] text-emerald-300/80 font-mono">+S/. 10.00</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Trip 4: 06 Nov 13:20 -->
+                <div class="trip-item trip-type-trip p-3 bg-slate-900/90 rounded-2xl border border-slate-800 hover:border-slate-700 transition shrink-0">
+                  <div class="flex items-start justify-between">
+                    <div class="flex items-start gap-2.5">
+                      <div class="w-8 h-8 rounded-xl bg-blue-950 border border-blue-800/60 text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                        <i data-lucide="bus-front" class="w-4 h-4"></i>
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-1.5">
+                          <span class="font-bold text-white text-xs">Línea 10 • BUS 01</span>
+                          <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-300 border border-slate-700">Z1A-780</span>
+                        </div>
+                        <p class="text-[11px] text-slate-300 mt-0.5 font-medium">Plaza Zela ➔ P. UNJBG (Campus)</p>
+                        <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                          <span>06 Nov, 13:20</span>
+                          <span>•</span>
+                          <span>15 min</span>
+                          <span>•</span>
+                          <span class="text-emerald-400 font-medium">Completado</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                      <span class="font-bold text-rose-400 font-mono text-xs block">-7 pts</span>
+                      <span class="text-[10px] text-slate-400 font-mono">-S/. 0.70</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- Terms & Privacy link -->
+            <div class="pt-1">
+              <button onclick="showToast('Términos y condiciones de transporte urbano Tacna', 'info');" class="w-full p-2.5 bg-slate-900 rounded-2xl border border-slate-800 flex items-center justify-between text-slate-300 hover:bg-slate-850 text-xs transition">
+                <span class="flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-blue-400"></i> Términos y Privacidad BC</span>
                 <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
               </button>
             </div>
 
-            <div class="pt-2">
-              <button onclick="promptDeleteAccount()" class="w-full p-3 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-800/60 rounded-2xl text-rose-300 text-xs font-bold flex items-center justify-center gap-2 transition">
+            <!-- Delete Account Button -->
+            <div class="pt-1 pb-4">
+              <button onclick="promptDeleteAccount()" class="w-full p-3 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-800/60 rounded-2xl text-rose-300 text-xs font-bold flex items-center justify-center gap-2 transition active:scale-98">
                 <i data-lucide="trash-2" class="w-4 h-4 text-rose-400"></i>
                 Eliminar mi cuenta definitivamente (CU-11)
               </button>
@@ -921,6 +1123,133 @@
             </div>
           </div>
 
+          <!-- Modal 3: Cancel Navigation Guide Confirmation -->
+          <div id="modal-cancel-guide" class="absolute inset-0 bg-black/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full p-4 shadow-2xl space-y-3">
+              <div class="w-10 h-10 rounded-2xl bg-rose-950 text-rose-400 border border-rose-800 flex items-center justify-center">
+                <i data-lucide="x-circle" class="w-5 h-5"></i>
+              </div>
+              <h3 class="text-sm font-bold text-white">¿Cancelar guía de ruta establecida?</h3>
+              <p class="text-[11px] text-slate-300 leading-relaxed">
+                ¿Deseas cancelar la dirección de ruta establecida por el usuario, detener la guía y el temporizador?
+              </p>
+              <div class="flex gap-2 pt-1">
+                <button onclick="closeCancelGuideModal()" class="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition">
+                  No, continuar
+                </button>
+                <button onclick="confirmCancelGuide()" class="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition">
+                  Sí, cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Modal 4: Google-Style Profile & Account Dialog -->
+          <div id="modal-google-profile" class="absolute inset-0 bg-black/75 backdrop-blur-sm z-50 hidden flex flex-col justify-end sm:justify-center p-3 animate-fade-in" onclick="if(event.target === this) closeProfileModal();">
+            <div class="w-full max-w-[340px] mx-auto bg-[#1e1f22] border border-slate-700/70 rounded-[28px] p-4 shadow-2xl space-y-3.5 relative overflow-hidden" onclick="event.stopPropagation();">
+              
+              <!-- Top bar with close button & Google-style brand header -->
+              <div class="flex items-center justify-between pb-1">
+                <div class="flex items-center gap-2">
+                  <div class="w-6 h-6 rounded-lg bg-blue-600 flex items-center justify-center text-white text-[11px] font-black shadow-sm">
+                    BC
+                  </div>
+                  <span class="text-xs font-bold text-slate-200 tracking-tight">Cuenta Bus Conectado</span>
+                </div>
+                <button onclick="closeProfileModal()" class="w-7 h-7 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center text-xs transition">
+                  ✕
+                </button>
+              </div>
+
+              <!-- User Identity Section (Google style) -->
+              <div class="flex flex-col items-center text-center pt-1 pb-1">
+                <div class="relative">
+                  <div class="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 border-2 border-blue-400/80 text-white font-extrabold text-2xl flex items-center justify-center shadow-lg">
+                    A
+                  </div>
+                  <div class="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 border-2 border-[#1e1f22] flex items-center justify-center text-[10px] text-white" title="Cuenta verificada">
+                    ✓
+                  </div>
+                </div>
+                <h3 class="font-extrabold text-sm text-white mt-2">Aron Mamani Quispe</h3>
+                <p class="text-[11px] text-slate-400 font-mono">aron.mamani@unjbg.edu.pe</p>
+                
+                <div class="mt-2 flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-700/60 text-[10px] text-slate-300">
+                  <i data-lucide="graduation-cap" class="w-3.5 h-3.5 text-amber-400"></i>
+                  <span>Estudiante UNJBG • Tarifa 7 pts</span>
+                </div>
+              </div>
+
+              <!-- Quick Wallet Summary Card -->
+              <div class="p-3 rounded-2xl bg-slate-800/70 border border-slate-700/60 flex items-center justify-between">
+                <div>
+                  <span class="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Saldo en Monedero</span>
+                  <div class="text-sm font-extrabold text-blue-400 font-mono flex items-baseline gap-1">
+                    <span id="profile-modal-pts">85</span> <span class="text-[11px] text-slate-300 font-normal">pts (S/. 8.50)</span>
+                  </div>
+                </div>
+                <button onclick="closeProfileModal(); switchPassengerTab('wallet');" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition flex items-center gap-1 active:scale-95 shadow">
+                  <i data-lucide="wallet" class="w-3.5 h-3.5"></i> Ver Monedero
+                </button>
+              </div>
+
+              <!-- Account Actions List (Google style) -->
+              <div class="space-y-1 pt-1 border-t border-slate-800">
+                
+                <!-- Option: Configuraciones ("que todavía no tocaremos") -->
+                <div onclick="showToast('Configuraciones: Próximamente en la siguiente actualización', 'info');" class="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-800/60 cursor-pointer transition group">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center group-hover:text-white group-hover:bg-slate-700 transition">
+                      <i data-lucide="settings" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                      <span class="text-xs font-semibold text-slate-200 block">Configuraciones</span>
+                      <span class="text-[10px] text-slate-400">Preferencias, audio y notificaciones</span>
+                    </div>
+                  </div>
+                  <span class="text-[9px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700 font-mono">Próximamente</span>
+                </div>
+
+                <!-- Option: Paraderos y líneas guardadas -->
+                <div onclick="closeProfileModal(); switchPassengerTab('lines');" class="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-800/60 cursor-pointer transition group">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center group-hover:text-white group-hover:bg-slate-700 transition">
+                      <i data-lucide="bookmark" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                      <span class="text-xs font-semibold text-slate-200 block">Líneas y Paraderos</span>
+                      <span class="text-[10px] text-slate-400">Rutas frecuentes en Tacna</span>
+                    </div>
+                  </div>
+                  <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+                </div>
+
+                <!-- Option: Ayuda y soporte -->
+                <div onclick="promptReportIssue(); closeProfileModal();" class="flex items-center justify-between p-2.5 rounded-xl hover:bg-slate-800/60 cursor-pointer transition group">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-7 h-7 rounded-lg bg-slate-800 text-slate-300 flex items-center justify-center group-hover:text-white group-hover:bg-slate-700 transition">
+                      <i data-lucide="help-circle" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                      <span class="text-xs font-semibold text-slate-200 block">Ayuda y soporte</span>
+                      <span class="text-[10px] text-slate-400">Centro de ayuda y reportes de bus</span>
+                    </div>
+                  </div>
+                  <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+                </div>
+              </div>
+
+              <!-- Footer: Cerrar sesión & Terms -->
+              <div class="pt-2 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400 px-1">
+                <button onclick="promptDeleteAccount(); closeProfileModal();" class="text-rose-400 hover:text-rose-300 font-medium flex items-center gap-1 transition">
+                  <i data-lucide="trash-2" class="w-3 h-3"></i> Gestionar cuenta
+                </button>
+                <span>Privacidad • Términos</span>
+              </div>
+
+            </div>
+          </div>
+
         </div>
 
         <!-- ============================================================= -->
@@ -949,11 +1278,11 @@
             <span class="text-[11px] font-medium text-slate-400">Pagar QR</span>
           </button>
 
-          <button onclick="switchPassengerTab('profile')" id="ptab-profile" class="pass-tab flex flex-col items-center gap-0.5 text-slate-400 hover:text-slate-200 transition">
-            <div id="ptab-profile-pill" class="px-4 py-1 rounded-full text-slate-400 flex items-center justify-center transition">
-              <i data-lucide="user" class="w-5 h-5"></i>
+          <button onclick="switchPassengerTab('wallet')" id="ptab-wallet" class="pass-tab flex flex-col items-center gap-0.5 text-slate-400 hover:text-slate-200 transition">
+            <div id="ptab-wallet-pill" class="px-4 py-1 rounded-full text-slate-400 flex items-center justify-center transition">
+              <i data-lucide="wallet" class="w-5 h-5"></i>
             </div>
-            <span class="text-[11px] font-medium text-slate-400">Perfil</span>
+            <span class="text-[11px] font-medium text-slate-400">Monedero</span>
           </button>
         </nav>
 
@@ -1168,6 +1497,33 @@
 
           <!-- Search results list -->
           <div id="gm-search-results" class="flex-1 overflow-y-auto" style="background:#1c1c1e;">
+            <button onclick="gmSelectDest('Plaza Zela')" class="flex items-center w-full px-4 py-3 gap-3 border-b text-left hover:bg-white/5 transition" style="border-color:#2c2c2e;">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background:#2c2c2e;">
+              <i data-lucide="map-pin" class="w-4 h-4 text-emerald-400"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-white text-sm font-medium">Plaza Zela</p>
+              <p class="text-slate-500 text-xs">Paradero Oficial L10 • Centro Histórico</p>
+            </div>
+            </button>
+            <button onclick="gmSelectDest('P. UNJBG')" class="flex items-center w-full px-4 py-3 gap-3 border-b text-left hover:bg-white/5 transition" style="border-color:#2c2c2e;">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background:#2c2c2e;">
+              <i data-lucide="graduation-cap" class="w-4 h-4 text-amber-400"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-white text-sm font-medium">P. UNJBG</p>
+              <p class="text-slate-500 text-xs">Campus Universitario • Av. Miraflores</p>
+            </div>
+            </button>
+            <button onclick="gmSelectDest('P. Mercado')" class="flex items-center w-full px-4 py-3 gap-3 border-b text-left hover:bg-white/5 transition" style="border-color:#2c2c2e;">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background:#2c2c2e;">
+              <i data-lucide="store" class="w-4 h-4 text-blue-400"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-white text-sm font-medium">P. Mercado</p>
+              <p class="text-slate-500 text-xs">Av. Bolognesi • Zona Comercial</p>
+            </div>
+            </button>
             <button onclick="gmSelectDest('Mercadillo Bolognesi')" class="flex items-center w-full px-4 py-3 gap-3 border-b text-left hover:bg-white/5 transition" style="border-color:#2c2c2e;">
             <div class="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style="background:#2c2c2e;">
               <i data-lucide="clock" class="w-4 h-4 text-slate-400"></i>
@@ -1280,23 +1636,29 @@
               <!-- ════════ SUGGESTED MULTI-MODAL ROUTE PATHS ════════ -->
 
               <!-- 1. CAMINO A PIE AL PARADERO CERCANO: De Tu Ubicación a Plaza Zela (Cyan walking dots) -->
-              <path d="M 70 265 L 180 265" fill="none" stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-dasharray="4 6" opacity="0.95" />
+              <path id="gm-path-walk1" d="M 70 265 L 180 265" fill="none" stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-dasharray="4 6" opacity="0.95" />
 
               <!-- 2A. BUS APROXIMÁNDOSE DESDE ARRIBA HACIA PLAZA ZELA (Cono Norte ➔ Plaza Zela) -->
-              <path d="M 180 175 L 180 265" fill="none" stroke="#2563EB" stroke-width="7" stroke-linecap="round" opacity="0.8" />
-              <path d="M 180 175 L 180 265" fill="none" stroke="#93C5FD" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="10 14">
+              <path id="gm-path-bus-incoming" d="M 180 175 L 180 265" fill="none" stroke="#2563EB" stroke-width="7" stroke-linecap="round" opacity="0.8" />
+              <path id="gm-path-bus-incoming-anim" d="M 180 175 L 180 265" fill="none" stroke="#93C5FD" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="10 14">
                 <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="1s" repeatCount="indefinite"/>
               </path>
 
               <!-- 2B. TRAYECTO EN BUS DESDE PLAZA ZELA HASTA P. MERCADO: Solid Electric Blue -->
-              <path d="M 180 265 L 180 410 L 280 410" fill="none" stroke="#2563EB" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+              <path id="gm-path-bus-mercado" d="M 180 265 L 180 410 L 280 410" fill="none" stroke="#2563EB" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
               <!-- Animated bus pulse beam -->
-              <path d="M 180 265 L 180 410 L 280 410" fill="none" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14 20" opacity="0.9">
+              <path id="gm-path-bus-mercado-anim" d="M 180 265 L 180 410 L 280 410" fill="none" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14 20" opacity="0.9">
+                <animate attributeName="stroke-dashoffset" from="0" to="-34" dur="1.2s" repeatCount="indefinite"/>
+              </path>
+
+              <!-- 2C. TRAYECTO EN BUS HASTA P. UNJBG (Campus Universitario) -->
+              <path id="gm-path-bus-unjbg" class="hidden" d="M 180 265 L 180 410 L 280 410 L 280 560" fill="none" stroke="#2563EB" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+              <path id="gm-path-bus-unjbg-anim" class="hidden" d="M 180 265 L 180 410 L 280 410 L 280 560" fill="none" stroke="#93C5FD" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="14 20" opacity="0.9">
                 <animate attributeName="stroke-dashoffset" from="0" to="-34" dur="1.2s" repeatCount="indefinite"/>
               </path>
 
               <!-- 3. CAMINO A PIE DESDE P. MERCADO HASTA EL DESTINO (Mercadillo Bolognesi): Cyan walking dots -->
-              <path d="M 280 410 L 280 465 L 330 465" fill="none" stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 6" opacity="0.95" />
+              <path id="gm-path-walk2" d="M 280 410 L 280 465 L 330 465" fill="none" stroke="#38BDF8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 6" opacity="0.95" />
             </svg>
 
             <!-- ORIGIN: Tu ubicación (Pulsing blue pin) -->
@@ -1312,14 +1674,14 @@
             </div>
 
             <!-- WALKING BADGE 1: A pie a Plaza Zela (placed cleanly below walking line) -->
-            <div class="absolute flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold text-cyan-200 shadow-lg pointer-events-none" style="top:285px; left:70px; background:rgba(15,23,42,0.95); border:1px solid #0284c7; z-index:15;">
+            <div id="gm-marker-walk1-badge" class="absolute flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold text-cyan-200 shadow-lg pointer-events-none" style="top:285px; left:70px; background:rgba(15,23,42,0.95); border:1px solid #0284c7; z-index:15;">
               <i data-lucide="footprints" class="w-3 h-3 text-cyan-300"></i>
               <span>2 min a pie</span>
             </div>
 
             <!-- ================= BUS 01 VIENE DESDE ARRIBA HACIA EL PARADERO ================= -->
             <!-- Bus vehicle unit coming from north -->
-            <div class="absolute flex items-center gap-2 pointer-events-none" style="top:185px; left:166px; z-index:18;">
+            <div id="gm-marker-bus-incoming" class="absolute flex items-center gap-2 pointer-events-none" style="top:185px; left:166px; z-index:18;">
               <div class="w-7 h-7 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center text-white shrink-0">
                 <i data-lucide="bus-front" class="w-3.5 h-3.5"></i>
               </div>
@@ -1330,14 +1692,24 @@
               </div>
             </div>
 
-            <!-- ================= PARADERO 1 (Abordaje): Plaza Zela ================= -->
+            <!-- ================= PARADERO 1: Plaza Zela ================= -->
             <div class="absolute flex items-center gap-2 pointer-events-none" style="top:253px; left:168px; z-index:18;">
               <div class="w-6 h-6 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center shrink-0">
                 <div class="w-2 h-2 bg-white rounded-full"></div>
               </div>
-              <div class="flex items-center gap-1 bg-emerald-950/95 text-emerald-300 border border-emerald-500/80 px-2 py-0.5 rounded-lg text-[9px] font-bold shadow-lg whitespace-nowrap">
+              <!-- Boarding tag (when boarding bus here) -->
+              <div id="gm-tag-board-zela" class="flex items-center gap-1 bg-emerald-950/95 text-emerald-300 border border-emerald-500/80 px-2 py-0.5 rounded-lg text-[9px] font-bold shadow-lg whitespace-nowrap">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                 <span>Subir aquí: BUS 01</span>
+              </div>
+            </div>
+            <!-- Red Destination Pin when destination is Plaza Zela -->
+            <div id="gm-tag-dest-zela" class="hidden absolute flex flex-col items-center pointer-events-none" style="top:215px; left:145px; z-index:22;">
+              <div class="bg-rose-600 text-white font-extrabold text-[9px] px-2.5 py-0.5 rounded-lg shadow-xl border border-rose-400 mb-0.5 whitespace-nowrap flex items-center gap-1">
+                <i data-lucide="map-pin" class="w-2.5 h-2.5"></i> Plaza Zela (Destino final)
+              </div>
+              <div class="w-4 h-4 rounded-full bg-rose-600 border-2 border-white shadow-lg flex items-center justify-center">
+                <div class="w-1.5 h-1.5 rounded-full bg-white"></div>
               </div>
             </div>
             <!-- Plaza Zela Stop Label -->
@@ -1345,19 +1717,31 @@
               <span class="text-[8px] bg-slate-950 text-slate-200 font-extrabold px-1.5 py-0.5 rounded shadow border border-slate-700">Plaza Zela</span>
             </div>
 
-            <!-- BUS TRANSIT LEG LABEL (Plaza Zela ➔ P. Mercado) -->
-            <div class="absolute flex items-center gap-1.5 px-2.5 py-1 rounded-xl font-bold text-xs text-white shadow-xl pointer-events-none" style="top:335px; left:195px; background:#2563eb; border:1px solid #60a5fa; z-index:16;">
+            <!-- BUS TRANSIT LEG LABEL (Plaza Zela ➔ P. Mercado / P. UNJBG) -->
+            <div id="gm-marker-bus-leg-badge" class="absolute flex items-center gap-1.5 px-2.5 py-1 rounded-xl font-bold text-xs text-white shadow-xl pointer-events-none" style="top:335px; left:195px; background:#2563eb; border:1px solid #60a5fa; z-index:16;">
               <i data-lucide="bus" class="w-3.5 h-3.5 text-white"></i>
-              <span>En bus · 8 min</span>
+              <span id="gm-marker-bus-leg-text">En bus · 8 min</span>
               <span class="text-[9px] text-blue-200 font-mono">S/. 0.70</span>
             </div>
 
-            <!-- ================= PARADERO 2 (Bajada): P. Mercado ================= -->
-            <!-- Bajar aquí Tag (above P. Mercado turn) -->
-            <div class="absolute pointer-events-none" style="top:382px; left:200px; z-index:18;">
+            <!-- ================= PARADERO 2: P. Mercado ================= -->
+            <!-- Bajar aquí Tag (when getting off at P. Mercado) -->
+            <div id="gm-tag-bajar-mercado" class="absolute pointer-events-none" style="top:382px; left:200px; z-index:18;">
               <div class="flex items-center gap-1 bg-amber-950/95 text-amber-300 border border-amber-600/80 px-2 py-0.5 rounded-lg text-[9px] font-bold shadow-lg whitespace-nowrap">
                 <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
                 <span>Bajar aquí (P. Mercado)</span>
+              </div>
+            </div>
+            <!-- Intermediate Stop Tag (when going to UNJBG) -->
+            <div id="gm-tag-inter-mercado" class="hidden absolute pointer-events-none" style="top:382px; left:190px; z-index:18;">
+              <div class="flex items-center gap-1 bg-slate-900/95 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-lg text-[9px] font-semibold shadow-lg whitespace-nowrap">
+                <span>Parada intermedia • P. Mercado</span>
+              </div>
+            </div>
+            <!-- Destination Pin when destination is P. Mercado directly -->
+            <div id="gm-tag-dest-mercado" class="hidden absolute flex flex-col items-center pointer-events-none" style="top:365px; left:245px; z-index:22;">
+              <div class="bg-rose-600 text-white font-extrabold text-[9px] px-2.5 py-0.5 rounded-lg shadow-xl border border-rose-400 mb-0.5 whitespace-nowrap flex items-center gap-1">
+                <i data-lucide="map-pin" class="w-2.5 h-2.5"></i> P. Mercado (Destino final)
               </div>
             </div>
             <!-- P. Mercado Stop Marker -->
@@ -1369,21 +1753,46 @@
             </div>
 
             <!-- WALKING BADGE 2: De P. Mercado al Mercadillo -->
-            <div class="absolute flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8px] font-bold text-cyan-200 shadow pointer-events-none" style="top:475px; left:235px; background:rgba(15,23,42,0.95); border:1px solid #0284c7; z-index:15;">
+            <div id="gm-marker-walk2-badge" class="absolute flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[8px] font-bold text-cyan-200 shadow pointer-events-none" style="top:475px; left:235px; background:rgba(15,23,42,0.95); border:1px solid #0284c7; z-index:15;">
               <i data-lucide="footprints" class="w-2.5 h-2.5 text-cyan-300"></i>
               <span>1 min a pie</span>
             </div>
 
             <!-- DESTINATION PIN: Mercadillo Bolognesi -->
-            <div class="absolute flex flex-col items-center pointer-events-none" style="top:425px; left:250px; z-index:20;">
-              <div class="bg-rose-600 text-white font-extrabold text-[9px] px-2.5 py-0.5 rounded-lg shadow-xl border border-rose-400 mb-0.5 whitespace-nowrap flex items-center gap-1" id="gm-dest-pin-label">
-                <i data-lucide="map-pin" class="w-2.5 h-2.5"></i> Mercadillo Bolognesi
+            <div id="gm-marker-dest-mercadillo" class="absolute pointer-events-none" style="top:425px; left:250px; z-index:20;">
+              <div class="flex flex-col items-center">
+                <div class="bg-rose-600 text-white font-extrabold text-[9px] px-2.5 py-0.5 rounded-lg shadow-xl border border-rose-400 mb-0.5 whitespace-nowrap flex items-center gap-1" id="gm-dest-pin-label">
+                  <i data-lucide="map-pin" class="w-2.5 h-2.5"></i> Mercadillo Bolognesi
+                </div>
+              </div>
+              <!-- Red Pin on map coordinate -->
+              <div class="absolute" style="top:28px; left:68px;">
+                <div class="w-6 h-6 rounded-full bg-rose-600 border-2 border-white shadow-xl flex items-center justify-center text-white">
+                  <div class="w-2 h-2 rounded-full bg-white"></div>
+                </div>
               </div>
             </div>
-            <!-- Red Pin on map coordinate -->
-            <div class="absolute pointer-events-none" style="top:453px; left:318px; z-index:20;">
-              <div class="w-6 h-6 rounded-full bg-rose-600 border-2 border-white shadow-xl flex items-center justify-center text-white">
-                <div class="w-2 h-2 rounded-full bg-white"></div>
+
+            <!-- ================= PARADERO 3: P. UNJBG ================= -->
+            <div id="gm-marker-unjbg" class="hidden absolute pointer-events-none" style="top:535px; left:268px; z-index:20;">
+              <!-- Bajar aquí Tag for UNJBG -->
+              <div id="gm-tag-bajar-unjbg" class="absolute pointer-events-none" style="top:-25px; left:-105px; z-index:18;">
+                <div class="flex items-center gap-1 bg-amber-950/95 text-amber-300 border border-amber-600/80 px-2 py-0.5 rounded-lg text-[9px] font-bold shadow-lg whitespace-nowrap">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span>Bajar aquí (P. UNJBG)</span>
+                </div>
+              </div>
+              <!-- Destination Pin for UNJBG -->
+              <div id="gm-tag-dest-unjbg" class="absolute flex flex-col items-center pointer-events-none" style="top:-48px; left:-65px; z-index:22;">
+                <div class="bg-rose-600 text-white font-extrabold text-[9px] px-2.5 py-0.5 rounded-lg shadow-xl border border-rose-400 mb-0.5 whitespace-nowrap flex items-center gap-1">
+                  <i data-lucide="map-pin" class="w-2.5 h-2.5"></i> P. UNJBG (Campus Universitario)
+                </div>
+              </div>
+              <div class="flex flex-col items-center">
+                <div class="w-6 h-6 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center">
+                  <div class="w-2 h-2 bg-white rounded-full"></div>
+                </div>
+                <span class="text-[8px] bg-slate-950 text-slate-200 font-extrabold px-1.5 py-0.5 rounded mt-0.5 shadow border border-slate-700">P. UNJBG</span>
               </div>
             </div>
 
@@ -1436,7 +1845,7 @@
             </div>
 
             <!-- Route Suggestion Steps Bar (Multimodal Preview) -->
-            <div class="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl px-3 py-1.5 shadow-xl flex items-center justify-between text-[10px]">
+            <div id="gm-route-steps-bar" class="bg-slate-900/95 backdrop-blur-md border border-slate-700/80 rounded-2xl px-3 py-1.5 shadow-xl flex items-center justify-between text-[10px]">
               <div class="flex items-center gap-1.5 font-bold text-slate-200">
                 <span class="flex items-center gap-1 text-cyan-300">
                   <i data-lucide="footprints" class="w-3 h-3"></i> 2m
@@ -1465,7 +1874,7 @@
             <!-- ——— COMPACT CONTENT (State 3: Peek 140px) ——— -->
             <div id="sheet-content-compact" class="flex flex-col px-4 pb-3 gap-3">
             <!-- Mode tabs row -->
-            <div class="flex items-center gap-3 overflow-x-auto no-scrollbar">
+            <div id="gm-compact-tabs" class="flex items-center gap-3 overflow-x-auto no-scrollbar">
               <div class="flex flex-col items-center gap-0.5 shrink-0">
                 <span class="text-[11px] font-bold text-white">12 min</span>
                 <div class="h-0.5 w-full rounded" style="background:#0a84ff;"></div>
@@ -1481,8 +1890,8 @@
             <div class="flex items-center gap-2">
               <!-- Time / distance -->
               <div class="flex-1">
-                <span class="text-sm font-bold text-white">12 min · </span>
-                <span class="text-sm text-slate-400">1.4 km</span>
+                <span id="gm-compact-time" class="text-sm font-bold text-white">12 min · </span>
+                <span id="gm-compact-dist" class="text-sm text-slate-400">1.4 km</span>
               </div>
               <!-- Controls -->
               <div class="flex items-center gap-1.5">
@@ -1510,7 +1919,7 @@
             <!-- ——— MEDIUM CONTENT (State 4: Detailed 340px) ——— -->
             <div id="sheet-content-medium" class="hidden flex flex-col px-4 pb-3 gap-2 overflow-y-auto">
             <!-- Transport mode selector -->
-            <div class="flex items-end gap-3 overflow-x-auto no-scrollbar border-b pb-2" style="border-color:#2c2c2e;">
+            <div id="gm-medium-tabs" class="flex items-end gap-3 overflow-x-auto no-scrollbar border-b pb-2" style="border-color:#2c2c2e;">
               <div class="flex flex-col items-center gap-0.5 shrink-0 pb-1">
                 <i data-lucide="bus-front" class="w-5 h-5 text-blue-400"></i>
                 <span class="text-[11px] font-bold text-white">12 min</span>
@@ -1523,18 +1932,18 @@
             </div>
             <!-- Big time display -->
             <div class="pt-1">
-              <p class="text-2xl font-black text-white">12 min</p>
-              <p class="text-xs text-slate-400">Llegada: 12:10 a.m. · La ruta más rápida</p>
-              <p class="text-xs text-slate-400">1.4 km · <span class="text-green-400">🌿 Ahorra 6% combustible</span></p>
+              <p id="gm-medium-bigtime" class="text-2xl font-black text-white">12 min</p>
+              <p id="gm-medium-sub" class="text-xs text-slate-400">Llegada: 12:10 a.m. · La ruta más rápida</p>
+              <p id="gm-medium-save" class="text-xs text-slate-400">1.4 km · <span class="text-green-400">🌿 Ahorra 6% combustible</span></p>
             </div>
             <!-- Next bus info -->
-            <div class="p-3 rounded-2xl" style="background:#2c2c2e;">
+            <div id="gm-medium-nextbus-box" class="p-3 rounded-2xl" style="background:#2c2c2e;">
               <p class="text-xs font-bold text-white mb-1">🚌 Próximo bus · BUS 01</p>
               <p class="text-xs text-slate-400">Llega a Plaza Zela en <span class="text-white font-semibold">~3 min</span></p>
               <p class="text-xs text-slate-400">Baja en <span class="text-white font-semibold" id="gm-dest-step">P. Mercado</span> · 68% aforo</p>
             </div>
             <!-- Step-by-step preview -->
-            <div class="space-y-2">
+            <div id="gm-medium-steps-box" class="space-y-2">
               <div class="flex items-center gap-2">
                 <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#1e3a8a;">
                   <i data-lucide="footprints" class="w-3 h-3 text-blue-300"></i>
@@ -2344,7 +2753,7 @@
       stopAlertImminent = document.getElementById('chk-imminent-alert').checked;
       closeStopAlertModal();
       playArrivalMelodicChime();
-      showToast(`Alerta programada: ${stopAlertAdvanceMin} min antes + aviso al arribar`, 'success');
+      triggerStopArrivalAlert(selectedStopName);
     }
 
     // Search and Suggestions
@@ -2493,21 +2902,294 @@
 
     // User selected a destination — go to route map (State 3)
     function gmSelectDest(destName) {
+      if (!destName) destName = 'Mercadillo Bolognesi';
       gmDestination = destName;
+
+      var nameLower = destName.toLowerCase();
+      var isZela = nameLower.includes('zela');
+      var isUNJBG = nameLower.includes('unjbg') || nameLower.includes('universidad') || nameLower.includes('basadre');
+      var isMercado = nameLower.includes('mercado') && !nameLower.includes('mercadillo');
+
+      // Update input and card labels
       var routeLabel = document.getElementById('gm-route-dest-label');
       var pinLabel = document.getElementById('gm-dest-pin-label');
-      var destStep = document.getElementById('gm-dest-step');
-      var destWalk = document.getElementById('gm-dest-walk-label');
       var gopt1dest = document.getElementById('gopt-1-dest');
       var goptDestLabel = document.getElementById('gopt-dest-label');
       if (routeLabel) routeLabel.textContent = destName;
       if (pinLabel) pinLabel.textContent = destName;
-      if (destStep) destStep.textContent = destName;
-      if (destWalk) destWalk.textContent = 'Baja en ' + destName + ' · 1 min a pie';
       if (gopt1dest) gopt1dest.textContent = destName;
       if (goptDestLabel) goptDestLabel.textContent = destName;
+
+      // 1. SVG Paths
+      var pWalk1 = document.getElementById('gm-path-walk1');
+      var pBusInc = document.getElementById('gm-path-bus-incoming');
+      var pBusIncAnim = document.getElementById('gm-path-bus-incoming-anim');
+      var pBusMercado = document.getElementById('gm-path-bus-mercado');
+      var pBusMercadoAnim = document.getElementById('gm-path-bus-mercado-anim');
+      var pBusUNJBG = document.getElementById('gm-path-bus-unjbg');
+      var pBusUNJBGAnim = document.getElementById('gm-path-bus-unjbg-anim');
+      var pWalk2 = document.getElementById('gm-path-walk2');
+
+      if (pWalk1) pWalk1.classList.remove('hidden');
+
+      if (isZela) {
+        // ONLY WALKING TO PLAZA ZELA
+        if (pBusInc) pBusInc.classList.add('hidden');
+        if (pBusIncAnim) pBusIncAnim.classList.add('hidden');
+        if (pBusMercado) pBusMercado.classList.add('hidden');
+        if (pBusMercadoAnim) pBusMercadoAnim.classList.add('hidden');
+        if (pBusUNJBG) pBusUNJBG.classList.add('hidden');
+        if (pBusUNJBGAnim) pBusUNJBGAnim.classList.add('hidden');
+        if (pWalk2) pWalk2.classList.add('hidden');
+      } else if (isUNJBG) {
+        // BUS ALL THE WAY TO P. UNJBG
+        if (pBusInc) pBusInc.classList.remove('hidden');
+        if (pBusIncAnim) pBusIncAnim.classList.remove('hidden');
+        if (pBusMercado) pBusMercado.classList.add('hidden');
+        if (pBusMercadoAnim) pBusMercadoAnim.classList.add('hidden');
+        if (pBusUNJBG) pBusUNJBG.classList.remove('hidden');
+        if (pBusUNJBGAnim) pBusUNJBGAnim.classList.remove('hidden');
+        if (pWalk2) pWalk2.classList.add('hidden');
+      } else if (isMercado) {
+        // BUS TO P. MERCADO
+        if (pBusInc) pBusInc.classList.remove('hidden');
+        if (pBusIncAnim) pBusIncAnim.classList.remove('hidden');
+        if (pBusMercado) pBusMercado.classList.remove('hidden');
+        if (pBusMercadoAnim) pBusMercadoAnim.classList.remove('hidden');
+        if (pBusUNJBG) pBusUNJBG.classList.add('hidden');
+        if (pBusUNJBGAnim) pBusUNJBGAnim.classList.add('hidden');
+        if (pWalk2) pWalk2.classList.add('hidden');
+      } else {
+        // MERCADILLO BOLOGNESI (Bus + 1 min walk)
+        if (pBusInc) pBusInc.classList.remove('hidden');
+        if (pBusIncAnim) pBusIncAnim.classList.remove('hidden');
+        if (pBusMercado) pBusMercado.classList.remove('hidden');
+        if (pBusMercadoAnim) pBusMercadoAnim.classList.remove('hidden');
+        if (pBusUNJBG) pBusUNJBG.classList.add('hidden');
+        if (pBusUNJBGAnim) pBusUNJBGAnim.classList.add('hidden');
+        if (pWalk2) pWalk2.classList.remove('hidden');
+      }
+
+      // 2. Map Markers & Badges
+      var mBusInc = document.getElementById('gm-marker-bus-incoming');
+      var tagBoardZela = document.getElementById('gm-tag-board-zela');
+      var tagDestZela = document.getElementById('gm-tag-dest-zela');
+      var mBusLegBadge = document.getElementById('gm-marker-bus-leg-badge');
+      var mBusLegText = document.getElementById('gm-marker-bus-leg-text');
+
+      var tagBajarMercado = document.getElementById('gm-tag-bajar-mercado');
+      var tagInterMercado = document.getElementById('gm-tag-inter-mercado');
+      var tagDestMercado = document.getElementById('gm-tag-dest-mercado');
+
+      var mWalk2Badge = document.getElementById('gm-marker-walk2-badge');
+      var mDestMercadillo = document.getElementById('gm-marker-dest-mercadillo');
+
+      var mStopUNJBG = document.getElementById('gm-marker-unjbg');
+      var tagBajarUNJBG = document.getElementById('gm-tag-bajar-unjbg');
+      var tagDestUNJBG = document.getElementById('gm-tag-dest-unjbg');
+
+      if (isZela) {
+        if (mBusInc) mBusInc.classList.add('hidden');
+        if (tagBoardZela) tagBoardZela.classList.add('hidden');
+        if (tagDestZela) tagDestZela.classList.remove('hidden');
+        if (mBusLegBadge) mBusLegBadge.classList.add('hidden');
+
+        if (tagBajarMercado) tagBajarMercado.classList.add('hidden');
+        if (tagInterMercado) tagInterMercado.classList.add('hidden');
+        if (tagDestMercado) tagDestMercado.classList.add('hidden');
+
+        if (mWalk2Badge) mWalk2Badge.classList.add('hidden');
+        if (mDestMercadillo) mDestMercadillo.classList.add('hidden');
+
+        if (mStopUNJBG) mStopUNJBG.classList.add('hidden');
+        if (tagBajarUNJBG) tagBajarUNJBG.classList.add('hidden');
+        if (tagDestUNJBG) tagDestUNJBG.classList.add('hidden');
+      } else if (isUNJBG) {
+        if (mBusInc) mBusInc.classList.remove('hidden');
+        if (tagBoardZela) tagBoardZela.classList.remove('hidden');
+        if (tagDestZela) tagDestZela.classList.add('hidden');
+        if (mBusLegBadge) {
+          mBusLegBadge.classList.remove('hidden');
+          if (mBusLegText) mBusLegText.textContent = 'En bus · 14 min';
+        }
+
+        if (tagBajarMercado) tagBajarMercado.classList.add('hidden');
+        if (tagInterMercado) tagInterMercado.classList.remove('hidden');
+        if (tagDestMercado) tagDestMercado.classList.add('hidden');
+
+        if (mWalk2Badge) mWalk2Badge.classList.add('hidden');
+        if (mDestMercadillo) mDestMercadillo.classList.add('hidden');
+
+        if (mStopUNJBG) mStopUNJBG.classList.remove('hidden');
+        if (tagBajarUNJBG) tagBajarUNJBG.classList.remove('hidden');
+        if (tagDestUNJBG) tagDestUNJBG.classList.remove('hidden');
+      } else if (isMercado) {
+        if (mBusInc) mBusInc.classList.remove('hidden');
+        if (tagBoardZela) tagBoardZela.classList.remove('hidden');
+        if (tagDestZela) tagDestZela.classList.add('hidden');
+        if (mBusLegBadge) {
+          mBusLegBadge.classList.remove('hidden');
+          if (mBusLegText) mBusLegText.textContent = 'En bus · 8 min';
+        }
+
+        if (tagBajarMercado) tagBajarMercado.classList.remove('hidden');
+        if (tagInterMercado) tagInterMercado.classList.add('hidden');
+        if (tagDestMercado) tagDestMercado.classList.remove('hidden');
+
+        if (mWalk2Badge) mWalk2Badge.classList.add('hidden');
+        if (mDestMercadillo) mDestMercadillo.classList.add('hidden');
+
+        if (mStopUNJBG) mStopUNJBG.classList.add('hidden');
+        if (tagBajarUNJBG) tagBajarUNJBG.classList.add('hidden');
+        if (tagDestUNJBG) tagDestUNJBG.classList.add('hidden');
+      } else {
+        // Mercadillo Bolognesi
+        if (mBusInc) mBusInc.classList.remove('hidden');
+        if (tagBoardZela) tagBoardZela.classList.remove('hidden');
+        if (tagDestZela) tagDestZela.classList.add('hidden');
+        if (mBusLegBadge) {
+          mBusLegBadge.classList.remove('hidden');
+          if (mBusLegText) mBusLegText.textContent = 'En bus · 8 min';
+        }
+
+        if (tagBajarMercado) tagBajarMercado.classList.remove('hidden');
+        if (tagInterMercado) tagInterMercado.classList.add('hidden');
+        if (tagDestMercado) tagDestMercado.classList.add('hidden');
+
+        if (mWalk2Badge) mWalk2Badge.classList.remove('hidden');
+        if (mDestMercadillo) mDestMercadillo.classList.remove('hidden');
+
+        if (mStopUNJBG) mStopUNJBG.classList.add('hidden');
+        if (tagBajarUNJBG) tagBajarUNJBG.classList.add('hidden');
+        if (tagDestUNJBG) tagDestUNJBG.classList.add('hidden');
+      }
+
+      // 3. Header multimodal steps bar
+      var stepsBar = document.getElementById('gm-route-steps-bar');
+      if (stepsBar) {
+        if (isZela) {
+          stepsBar.innerHTML = '<div class="flex items-center gap-1.5 font-bold text-slate-200"><span class="flex items-center gap-1 text-cyan-300"><i data-lucide="footprints" class="w-3 h-3"></i> 2 min a pie</span><span class="text-slate-500">•</span><span class="text-slate-400">180 metros directo</span></div><span class="text-emerald-400 font-extrabold font-mono">2 min · Gratis</span>';
+        } else if (isUNJBG) {
+          stepsBar.innerHTML = '<div class="flex items-center gap-1.5 font-bold text-slate-200"><span class="flex items-center gap-1 text-cyan-300"><i data-lucide="footprints" class="w-3 h-3"></i> 2m</span><span class="text-slate-500">➔</span><span class="flex items-center gap-1 text-blue-300 bg-blue-950 px-1.5 py-0.5 rounded border border-blue-800 font-mono"><i data-lucide="bus-front" class="w-3 h-3 text-blue-400"></i> BUS 01 (14m)</span></div><span class="text-emerald-400 font-extrabold font-mono">16 min · S/. 0.70</span>';
+        } else if (isMercado) {
+          stepsBar.innerHTML = '<div class="flex items-center gap-1.5 font-bold text-slate-200"><span class="flex items-center gap-1 text-cyan-300"><i data-lucide="footprints" class="w-3 h-3"></i> 2m</span><span class="text-slate-500">➔</span><span class="flex items-center gap-1 text-blue-300 bg-blue-950 px-1.5 py-0.5 rounded border border-blue-800 font-mono"><i data-lucide="bus-front" class="w-3 h-3 text-blue-400"></i> BUS 01 (8m)</span></div><span class="text-emerald-400 font-extrabold font-mono">10 min · S/. 0.70</span>';
+        } else {
+          stepsBar.innerHTML = '<div class="flex items-center gap-1.5 font-bold text-slate-200"><span class="flex items-center gap-1 text-cyan-300"><i data-lucide="footprints" class="w-3 h-3"></i> 2m</span><span class="text-slate-500">➔</span><span class="flex items-center gap-1 text-blue-300 bg-blue-950 px-1.5 py-0.5 rounded border border-blue-800 font-mono"><i data-lucide="bus-front" class="w-3 h-3 text-blue-400"></i> BUS 01 (8m)</span><span class="text-slate-500">➔</span><span class="flex items-center gap-1 text-cyan-300"><i data-lucide="footprints" class="w-3 h-3"></i> 1m</span></div><span class="text-emerald-400 font-extrabold font-mono">12 min · S/. 0.70</span>';
+        }
+      }
+
+      // 4. Compact Bottom Sheet Info
+      var compTime = document.getElementById('gm-compact-time');
+      var compDist = document.getElementById('gm-compact-dist');
+      var compTabs = document.getElementById('gm-compact-tabs');
+      if (compTime && compDist) {
+        if (isZela) {
+          compTime.textContent = '2 min · ';
+          compDist.textContent = '180 m (A pie)';
+        } else if (isUNJBG) {
+          compTime.textContent = '16 min · ';
+          compDist.textContent = '3.2 km';
+        } else if (isMercado) {
+          compTime.textContent = '10 min · ';
+          compDist.textContent = '1.2 km';
+        } else {
+          compTime.textContent = '12 min · ';
+          compDist.textContent = '1.4 km';
+        }
+      }
+      if (compTabs) {
+        if (isZela) {
+          compTabs.innerHTML = '<div class="flex flex-col items-center gap-0.5 shrink-0"><span class="text-[11px] font-bold text-white">2 min</span><div class="h-0.5 w-full rounded" style="background:#0a84ff;"></div></div>';
+        } else if (isUNJBG) {
+          compTabs.innerHTML = '<div class="flex flex-col items-center gap-0.5 shrink-0"><span class="text-[11px] font-bold text-white">16 min</span><div class="h-0.5 w-full rounded" style="background:#0a84ff;"></div></div><div class="flex flex-col items-center gap-0.5 shrink-0"><span class="text-[11px] text-slate-400">24 min</span></div>';
+        } else {
+          compTabs.innerHTML = '<div class="flex flex-col items-center gap-0.5 shrink-0"><span class="text-[11px] font-bold text-white">12 min</span><div class="h-0.5 w-full rounded" style="background:#0a84ff;"></div></div><div class="flex flex-col items-center gap-0.5 shrink-0"><span class="text-[11px] text-slate-400">18 min</span></div><div class="flex flex-col items-center gap-0.5 shrink-0"><span class="text-[11px] text-slate-400">22 min</span></div>';
+        }
+      }
+
+      // 5. Medium Bottom Sheet Info
+      var medBigTime = document.getElementById('gm-medium-bigtime');
+      var medSub = document.getElementById('gm-medium-sub');
+      var medSave = document.getElementById('gm-medium-save');
+      var medNextBus = document.getElementById('gm-medium-nextbus-box');
+      var medSteps = document.getElementById('gm-medium-steps-box');
+
+      if (isZela) {
+        if (medBigTime) medBigTime.textContent = '2 min';
+        if (medSub) medSub.textContent = 'Llegada en 2 min · Caminata directa';
+        if (medSave) medSave.innerHTML = '180 m · <span class="text-green-400">🌿 Caminata directa saludable (0 emisiones)</span>';
+        if (medNextBus) {
+          medNextBus.innerHTML = '<p class="text-xs font-bold text-white mb-1">🚶‍♂️ Llegada a pie al paradero</p><p class="text-xs text-slate-400">Tu destino es el paradero <span class="text-white font-semibold">Plaza Zela</span>.</p><p class="text-xs text-emerald-400 mt-0.5 font-medium">Distancia corta: la mejor y única opción es caminar.</p>';
+        }
+        if (medSteps) {
+          medSteps.innerHTML = '<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#1e3a8a;"><i data-lucide="footprints" class="w-3 h-3 text-blue-300"></i></div><span class="text-xs text-slate-300">Camina 2 min (180m) por Calle Zela</span></div><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#e11d48;"><i data-lucide="map-pin" class="w-3 h-3 text-white"></i></div><span class="text-xs text-slate-300 font-bold">Llegada a Paradero Plaza Zela</span></div>';
+        }
+      } else if (isUNJBG) {
+        if (medBigTime) medBigTime.textContent = '16 min';
+        if (medSub) medSub.textContent = 'Llegada: 12:16 a.m. · Directo a Ciudad Universitaria';
+        if (medSave) medSave.innerHTML = '3.2 km · <span class="text-green-400">🌿 Tarifa universitaria S/. 0.70</span>';
+        if (medNextBus) {
+          medNextBus.innerHTML = '<p class="text-xs font-bold text-white mb-1">🚌 Próximo bus · BUS 01</p><p class="text-xs text-slate-400">Llega a Plaza Zela en <span class="text-white font-semibold">~3 min</span></p><p class="text-xs text-slate-400">Baja en <span class="text-emerald-400 font-bold">P. UNJBG</span> (Campus Universitario) · 68% aforo</p>';
+        }
+        if (medSteps) {
+          medSteps.innerHTML = '<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#1e3a8a;"><i data-lucide="footprints" class="w-3 h-3 text-blue-300"></i></div><span class="text-xs text-slate-300">Camina 2 min hasta Plaza Zela</span></div><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#14532d;"><i data-lucide="bus-front" class="w-3 h-3 text-green-300"></i></div><span class="text-xs text-slate-300">Toma BUS 01 · Línea 10 · S/. 0.70</span></div><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#b91c1c;"><i data-lucide="map-pin" class="w-3 h-3 text-white"></i></div><span class="text-xs text-slate-300 font-bold">Baja en P. UNJBG (Campus Universitario)</span></div>';
+        }
+      } else if (isMercado) {
+        if (medBigTime) medBigTime.textContent = '10 min';
+        if (medSub) medSub.textContent = 'Llegada: 12:10 a.m. · La ruta más rápida';
+        if (medSave) medSave.innerHTML = '1.2 km · <span class="text-green-400">🌿 Ahorra 6% combustible</span>';
+        if (medNextBus) {
+          medNextBus.innerHTML = '<p class="text-xs font-bold text-white mb-1">🚌 Próximo bus · BUS 01</p><p class="text-xs text-slate-400">Llega a Plaza Zela en <span class="text-white font-semibold">~3 min</span></p><p class="text-xs text-slate-400">Baja en <span class="text-white font-semibold">P. Mercado</span> · 68% aforo</p>';
+        }
+        if (medSteps) {
+          medSteps.innerHTML = '<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#1e3a8a;"><i data-lucide="footprints" class="w-3 h-3 text-blue-300"></i></div><span class="text-xs text-slate-300">Camina 2 min hasta Plaza Zela</span></div><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#14532d;"><i data-lucide="bus-front" class="w-3 h-3 text-green-300"></i></div><span class="text-xs text-slate-300">Toma BUS 01 · Línea 10 · S/. 0.70</span></div><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#b91c1c;"><i data-lucide="map-pin" class="w-3 h-3 text-white"></i></div><span class="text-xs text-slate-300 font-bold">Baja en P. Mercado (Destino final)</span></div>';
+        }
+      } else {
+        // Mercadillo Bolognesi
+        if (medBigTime) medBigTime.textContent = '12 min';
+        if (medSub) medSub.textContent = 'Llegada: 12:10 a.m. · La ruta más rápida';
+        if (medSave) medSave.innerHTML = '1.4 km · <span class="text-green-400">🌿 Ahorra 6% combustible</span>';
+        if (medNextBus) {
+          medNextBus.innerHTML = '<p class="text-xs font-bold text-white mb-1">🚌 Próximo bus · BUS 01</p><p class="text-xs text-slate-400">Llega a Plaza Zela en <span class="text-white font-semibold">~3 min</span></p><p class="text-xs text-slate-400">Baja en <span class="text-white font-semibold">P. Mercado</span> · 68% aforo</p>';
+        }
+        if (medSteps) {
+          medSteps.innerHTML = '<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#1e3a8a;"><i data-lucide="footprints" class="w-3 h-3 text-blue-300"></i></div><span class="text-xs text-slate-300">Camina 2 min hasta Plaza Zela</span></div><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#14532d;"><i data-lucide="bus-front" class="w-3 h-3 text-green-300"></i></div><span class="text-xs text-slate-300">Toma BUS 01 · Línea 10 · S/. 0.70</span></div><div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style="background:#1e3a8a;"><i data-lucide="footprints" class="w-3 h-3 text-blue-300"></i></div><span class="text-xs text-slate-300">Baja en P. Mercado · 1 min a pie</span></div>';
+        }
+      }
+
+      // 6. Full Sheet Options
+      var opt1Card = document.getElementById('gopt-1');
+      var opt2Card = document.getElementById('gopt-2');
+      var opt3Card = document.getElementById('gopt-3');
+
+      if (isZela) {
+        if (opt1Card) {
+          opt1Card.innerHTML = '<div class="flex items-start justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style="background:#0284c7;"><i data-lucide="footprints" class="w-4 h-4 text-white"></i></div><div><div class="flex items-center gap-1.5"><span class="text-xs font-black text-white px-1.5 py-0.5 rounded font-mono" style="background:#0284c7;">A PIE</span><span class="text-xs font-bold text-white">Caminata directa</span><span class="text-[10px] font-bold text-green-400 px-1.5 py-0.5 rounded-full" style="background:rgba(52,199,89,0.15);">★ Única opción</span></div><p class="text-[11px] text-slate-400 mt-0.5">Hacia Plaza Zela • 180 m directo</p></div></div><span class="font-black text-lg text-green-400 font-mono shrink-0">2 min</span></div><div class="flex items-center justify-between mt-2 pt-2 text-[10px] text-slate-400" style="border-top:1px solid #2c2c2e;"><span>Costo: <span class="text-white font-semibold">Gratis</span> · 0 min de espera</span><span class="text-green-300">🌿 Saludable</span></div>';
+        }
+        if (opt2Card) opt2Card.classList.add('hidden');
+        if (opt3Card) opt3Card.classList.add('hidden');
+      } else if (isUNJBG) {
+        if (opt1Card) {
+          opt1Card.innerHTML = '<div class="flex items-start justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style="background:#1d3461;"><i data-lucide="bus-front" class="w-4 h-4 text-blue-400"></i></div><div><div class="flex items-center gap-1.5"><span class="text-xs font-black text-white px-1.5 py-0.5 rounded font-mono" style="background:#0a84ff;">L10</span><span class="text-xs font-bold text-white">BUS 01</span><span class="text-[10px] font-bold text-green-400 px-1.5 py-0.5 rounded-full" style="background:rgba(52,199,89,0.15);">★ Recomendada</span></div><p class="text-[11px] text-slate-400 mt-0.5">Próximo en ~3 min · Plaza Zela → <span class="text-white font-bold">P. UNJBG</span></p></div></div><span class="font-black text-lg text-green-400 font-mono shrink-0">16 min</span></div><div class="flex items-center justify-between mt-2 pt-2 text-[10px] text-slate-400" style="border-top:1px solid #2c2c2e;"><span>Tarifa: <span class="text-white font-semibold">S/. 0.70 Univ.</span> · 68% aforo</span><span class="text-green-300">🌿 Eco</span></div>';
+        }
+        if (opt2Card) {
+          opt2Card.classList.remove('hidden');
+          var p2 = opt2Card.querySelector('p');
+          if (p2) p2.textContent = 'Llega en ~11 min · Directo a UNJBG · 43% aforo';
+        }
+        if (opt3Card) opt3Card.classList.add('hidden');
+      } else {
+        // Mercado / Mercadillo
+        if (opt1Card) {
+          opt1Card.innerHTML = '<div class="flex items-start justify-between"><div class="flex items-center gap-2"><div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style="background:#1d3461;"><i data-lucide="bus-front" class="w-4 h-4 text-blue-400"></i></div><div><div class="flex items-center gap-1.5"><span class="text-xs font-black text-white px-1.5 py-0.5 rounded font-mono" style="background:#0a84ff;">L10</span><span class="text-xs font-bold text-white">BUS 01</span><span class="text-[10px] font-bold text-green-400 px-1.5 py-0.5 rounded-full" style="background:rgba(52,199,89,0.15);">★ Recomendada</span></div><p class="text-[11px] text-slate-400 mt-0.5">Próximo en ~3 min · Plaza Zela → <span class="text-white" id="gopt-1-dest">' + destName + '</span></p></div></div><span class="font-black text-lg text-green-400 font-mono shrink-0">12 min</span></div><div class="flex items-center justify-between mt-2 pt-2 text-[10px] text-slate-400" style="border-top:1px solid #2c2c2e;"><span>Tarifa: <span class="text-white font-semibold">S/. 0.70</span> · 68% aforo</span><span class="text-green-300">🌿 Eco</span></div>';
+        }
+        if (opt2Card) opt2Card.classList.remove('hidden');
+        if (opt3Card) opt3Card.classList.remove('hidden');
+      }
+
       document.getElementById('route-google-maps-view').classList.remove('hidden');
       gmShowState('route');
+      lucide.createIcons();
     }
 
     // Swap origin / destination
@@ -2571,12 +3253,173 @@
       }
     }
 
+    var guideTimerInterval = null;
+    var guideSecondsLeft = 168; // 2 min 48 s
+    var isGuideActive = false;
+
+    function startGuideTimer(showCancelBtn) {
+      var widget = document.getElementById('guide-timer-widget');
+      var cancelBtn = document.getElementById('guide-cancel-btn');
+      if (widget) widget.classList.remove('hidden');
+      if (cancelBtn) {
+        if (showCancelBtn) {
+          cancelBtn.classList.remove('hidden');
+        } else {
+          cancelBtn.classList.add('hidden');
+        }
+      }
+
+      if (guideTimerInterval) clearInterval(guideTimerInterval);
+      guideSecondsLeft = 168; // 2 min 48 s
+      updateTimerDisplay();
+
+      guideTimerInterval = setInterval(function() {
+        guideSecondsLeft = Math.max(0, guideSecondsLeft - 1);
+        updateTimerDisplay();
+        if (guideSecondsLeft <= 0) {
+          clearInterval(guideTimerInterval);
+          showToast('🚌 ¡BUS 01 llegando al paradero ahora!', 'success');
+        }
+      }, 1000);
+      lucide.createIcons();
+    }
+
+    function updateTimerDisplay() {
+      var el = document.getElementById('guide-timer-countdown');
+      if (!el) return;
+      var m = Math.floor(guideSecondsLeft / 60);
+      var s = guideSecondsLeft % 60;
+      el.textContent = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function stopGuideTimer() {
+      if (guideTimerInterval) clearInterval(guideTimerInterval);
+      guideTimerInterval = null;
+      var widget = document.getElementById('guide-timer-widget');
+      if (widget) widget.classList.add('hidden');
+    }
+
+    function triggerStopArrivalAlert(stopName) {
+      deselectStop();
+      var targetStop = stopName || selectedStopName || 'Plaza Zela';
+      startGuideTimer(false); // ONLY the green circular timer popup, no cancel button, no active route
+      showToast('🔔 Alerta de llegada activada para ' + targetStop + ' (~3 min)', 'success');
+    }
+
+    function showTimerDetailsToast() {
+      var m = Math.floor(guideSecondsLeft / 60);
+      var s = guideSecondsLeft % 60;
+      var timeStr = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+      showToast('⏱️ Tiempo estimado: ' + timeStr + ' min para el próximo bus', 'info');
+    }
+
+    function promptCancelGuide() {
+      document.getElementById('modal-cancel-guide').classList.remove('hidden');
+      lucide.createIcons();
+    }
+
+    function closeCancelGuideModal() {
+      document.getElementById('modal-cancel-guide').classList.add('hidden');
+    }
+
+    function confirmCancelGuide() {
+      closeCancelGuideModal();
+      stopGuideTimer();
+
+      // Hide active guided route on main map
+      var guidedGroup = document.getElementById('main-map-guided-route');
+      if (guidedGroup) guidedGroup.classList.add('hidden');
+      var destPin = document.getElementById('guide-dest-pin');
+      if (destPin) destPin.classList.add('hidden');
+
+      isGuideActive = false;
+      updateDynamicIsland(null);
+      showToast('Guía de ruta cancelada. Interfaz inicial restaurada', 'info');
+      lucide.createIcons();
+    }
+
     function startNavigationGuide() {
-      closeRouteNavigation();
-      isUserSubscribed = true;
-      expandTripSheet();
-      updateDynamicIsland('BUS 01 · En viaje');
-      showToast('Iniciando guía: Sube al BUS 01 en Plaza Zela', 'success');
+      closeRouteNavigation(); // Closes Google Maps full-screen view
+      isGuideActive = true;
+      switchPassengerTab('map'); // Return to main map view (Image 1)
+
+      var dest = gmDestination || 'Mercadillo Bolognesi';
+      var nameLower = dest.toLowerCase();
+      var isZela = nameLower.includes('zela');
+      var isUNJBG = nameLower.includes('unjbg') || nameLower.includes('universidad') || nameLower.includes('basadre');
+      var isMercado = nameLower.includes('mercado') && !nameLower.includes('mercadillo');
+
+      // 1. Highlight guided route on main map
+      var guidedGroup = document.getElementById('main-map-guided-route');
+      var pWalk = document.getElementById('guide-path-walk');
+      var pBusMercado = document.getElementById('guide-path-bus-mercado');
+      var pBusMercadoPulse = document.getElementById('guide-path-bus-mercado-pulse');
+      var pBusUNJBG = document.getElementById('guide-path-bus-unjbg');
+      var pBusUNJBGPulse = document.getElementById('guide-path-bus-unjbg-pulse');
+      var pWalkMercadillo = document.getElementById('guide-path-walk-mercadillo');
+      var destPin = document.getElementById('guide-dest-pin');
+      var destPinLabel = document.getElementById('guide-dest-pin-label');
+
+      if (guidedGroup) guidedGroup.classList.remove('hidden');
+      if (pWalk) pWalk.classList.remove('hidden');
+
+      if (isZela) {
+        if (pBusMercado) pBusMercado.classList.add('hidden');
+        if (pBusMercadoPulse) pBusMercadoPulse.classList.add('hidden');
+        if (pBusUNJBG) pBusUNJBG.classList.add('hidden');
+        if (pBusUNJBGPulse) pBusUNJBGPulse.classList.add('hidden');
+        if (pWalkMercadillo) pWalkMercadillo.classList.add('hidden');
+        if (destPin) {
+          destPin.style.top = '90px';
+          destPin.style.left = '160px';
+          destPin.classList.remove('hidden');
+        }
+      } else if (isUNJBG) {
+        if (pBusMercado) pBusMercado.classList.add('hidden');
+        if (pBusMercadoPulse) pBusMercadoPulse.classList.add('hidden');
+        if (pBusUNJBG) pBusUNJBG.classList.remove('hidden');
+        if (pBusUNJBGPulse) pBusUNJBGPulse.classList.remove('hidden');
+        if (pWalkMercadillo) pWalkMercadillo.classList.add('hidden');
+        if (destPin) {
+          destPin.style.top = '515px';
+          destPin.style.left = '281px';
+          destPin.classList.remove('hidden');
+        }
+      } else if (isMercado) {
+        if (pBusMercado) pBusMercado.classList.remove('hidden');
+        if (pBusMercadoPulse) pBusMercadoPulse.classList.remove('hidden');
+        if (pBusUNJBG) pBusUNJBG.classList.add('hidden');
+        if (pBusUNJBGPulse) pBusUNJBGPulse.classList.add('hidden');
+        if (pWalkMercadillo) pWalkMercadillo.classList.add('hidden');
+        if (destPin) {
+          destPin.style.top = '365px';
+          destPin.style.left = '281px';
+          destPin.classList.remove('hidden');
+        }
+      } else {
+        // Mercadillo Bolognesi
+        if (pBusMercado) pBusMercado.classList.remove('hidden');
+        if (pBusMercadoPulse) pBusMercadoPulse.classList.remove('hidden');
+        if (pBusUNJBG) pBusUNJBG.classList.add('hidden');
+        if (pBusUNJBGPulse) pBusUNJBGPulse.classList.add('hidden');
+        if (pWalkMercadillo) pWalkMercadillo.classList.remove('hidden');
+        if (destPin) {
+          destPin.style.top = '395px';
+          destPin.style.left = '310px';
+          destPin.classList.remove('hidden');
+        }
+      }
+      if (destPinLabel) destPinLabel.innerHTML = '<i data-lucide="map-pin" class="w-2.5 h-2.5"></i> ' + dest;
+
+      // 2. Start circular green timer with red cancel button
+      startGuideTimer(true);
+
+      // 3. Keep bottom nav accessible
+      gmShowNav();
+
+      updateDynamicIsland('Ruta a ' + dest + ' · ~3 min');
+      showToast('Guía iniciada: Ruta fijada hacia ' + dest, 'success');
+      lucide.createIcons();
     }
 
 
@@ -2656,6 +3499,8 @@
       walletPoints -= totalPts;
       document.getElementById('wallet-balance-pts').textContent = walletPoints;
       document.getElementById('wallet-balance-pen').textContent = `Equivalente a S/. ${(walletPoints / 10).toFixed(2)} Soles`;
+      const profPts = document.getElementById('profile-modal-pts');
+      if (profPts) profPts.textContent = walletPoints;
 
       playBeep(true);
       occupancy = Math.min(32, occupancy + 1 + companions);
@@ -2689,6 +3534,8 @@
       walletPoints += addedPts;
       document.getElementById('wallet-balance-pts').textContent = walletPoints;
       document.getElementById('wallet-balance-pen').textContent = `Equivalente a S/. ${(walletPoints / 10).toFixed(2)} Soles`;
+      const profPts = document.getElementById('profile-modal-pts');
+      if (profPts) profPts.textContent = walletPoints;
       playCoinSound();
       showToast(`Recarga exitosa con Yape: +${addedPts} Puntos BC (S/. ${penAmount}.00)`, 'success');
     }
@@ -2897,9 +3744,11 @@
     }
 
     function switchPassengerTab(tabName) {
+      if (tabName === 'profile') tabName = 'wallet';
+
       document.querySelectorAll('.screen-tab').forEach(el => el.classList.add('hidden'));
       
-      ['map', 'lines', 'scan', 'profile'].forEach(name => {
+      ['map', 'lines', 'scan', 'wallet', 'profile'].forEach(name => {
         const pill = document.getElementById(`ptab-${name}-pill`);
         const tabBtn = document.getElementById(`ptab-${name}`);
         if (pill) {
@@ -2924,6 +3773,58 @@
         if (span) span.className = 'text-[11px] font-bold text-blue-400';
       }
       lucide.createIcons();
+    }
+
+    // Google-style Profile Dialog handlers
+    function openProfileModal() {
+      const modal = document.getElementById('modal-google-profile');
+      if (modal) {
+        modal.classList.remove('hidden');
+        const profPts = document.getElementById('profile-modal-pts');
+        if (profPts) profPts.textContent = walletPoints;
+        lucide.createIcons();
+      }
+    }
+
+    function closeProfileModal() {
+      const modal = document.getElementById('modal-google-profile');
+      if (modal) {
+        modal.classList.add('hidden');
+      }
+    }
+
+    // Trip History filter
+    function filterTripHistory(type) {
+      const allBtn = document.getElementById('hist-filter-all');
+      const tripBtn = document.getElementById('hist-filter-trip');
+      const recBtn = document.getElementById('hist-filter-recharge');
+      
+      [allBtn, tripBtn, recBtn].forEach(b => {
+        if (b) {
+          b.className = 'px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-[10px] font-semibold border border-slate-800 transition';
+        }
+      });
+
+      if (type === 'all' && allBtn) {
+        allBtn.className = 'px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold transition';
+      } else if (type === 'trip' && tripBtn) {
+        tripBtn.className = 'px-2.5 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold transition';
+      } else if (type === 'recharge' && recBtn) {
+        recBtn.className = 'px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold transition';
+      }
+
+      const items = document.querySelectorAll('.trip-item');
+      items.forEach(item => {
+        if (type === 'all') {
+          item.classList.remove('hidden');
+        } else if (type === 'trip') {
+          if (item.classList.contains('trip-type-trip')) item.classList.remove('hidden');
+          else item.classList.add('hidden');
+        } else if (type === 'recharge') {
+          if (item.classList.contains('trip-type-recharge')) item.classList.remove('hidden');
+          else item.classList.add('hidden');
+        }
+      });
     }
 
     function promptDeleteAccount() {

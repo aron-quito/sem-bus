@@ -47,19 +47,20 @@ La **App Pasajero** del sistema **Bus Conectado (BC)** es la interfaz primaria d
 
 ---
 
-## 4. Estructura de Navegación (4 Pestañas Principales)
+## 4. Estructura de Navegación (4 Pestañas Principales + Perfil Superior)
 
-La interfaz se estructura sobre una barra de navegación fija de **4 pestañas** en la parte inferior, con altura de `84px` y espacio libre para el *Home Indicator* de iOS:
+La interfaz se estructura sobre una barra de navegación fija de **4 pestañas** en la parte inferior, con altura de `84px` y espacio libre para el *Home Indicator* de iOS, junto al **Perfil de Usuario estilo Google** reubicado en la barra de búsqueda superior:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      PANTALLA MÓVIL (393 × 852)             │
+│  [🔍 Buscar paradero o línea...       🎤] [👤 Perfil (A)]   │
 │                                                             │
 │  [ Tab 1: Explorar ]   [ Tab 2: Líneas ]   [ Tab 3: Pagar QR ]
 │      (Icono Globo)        (Icono Bus)         (Icono Scan)   │
 │                                                             │
-│                      [ Tab 4: Perfil ]                      │
-│                        (Icono User)                         │
+│                      [ Tab 4: Monedero ]                    │
+│                       (Icono Wallet)                        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -69,8 +70,17 @@ La interfaz se estructura sobre una barra de navegación fija de **4 pestañas**
 
 Es la pantalla principal por defecto de la aplicación.
 
-#### A. Barra Superior y Filtros de Categoría
-* **Buscador en Píldora Superior:** Campo de búsqueda redondeado con icono de marcador azul en círculo a la izquierda, placeholder *"Buscar paradero o línea en Tacna..."* e icono de micrófono a la derecha.
+#### A. Barra Superior con Perfil Google-Style y Filtros de Categoría
+* **Buscador en Píldora Superior:** Campo de búsqueda redondeado con icono de marcador azul en círculo a la izquierda, placeholder *"Buscar paradero o línea en Tacna..."*, icono de micrófono y **avatar circular de Perfil ("A") a la extrema derecha**.
+* **Pop-up de Perfil estilo Google (`#modal-google-profile`):**
+  - Al pulsar el avatar circular `[A]` en el buscador, se despliega un diálogo centrado/flotante con diseño inspirado en la cuenta de Google / Google Maps.
+  - **Identidad del Usuario:** Avatar con degradado, nombre *"Aron Mamani Quispe"*, correo `aron.mamani@unjbg.edu.pe`, y badge de cuenta universitaria verificada.
+  - **Resumen Rápido de Monedero:** Saldo disponible (85 pts / S/. 8.50) con botón directo *"Ver Monedero"*.
+  - **Opciones de Cuenta:**
+    - `Configuraciones` (*con etiqueta "Próximamente", apartado reservado para futuras versiones sin modificar el alcance actual*).
+    - `Líneas y Paraderos` (acceso directo a rutas guardadas).
+    - `Ayuda y soporte` (centro de reportes y retroalimentación).
+    - `Gestionar cuenta` y `Cerrar sesión`.
 * **Fila de Filtros Rápidos (Todo, Rutas, Paraderos):**
   - **Todo (Marcado por default):** Muestra simultáneamente la ruta, los 2 buses en vivo y los 3 paraderos.
   - **Rutas:** Filtra el mapa enfocando la ruta y los buses activos (`BUS 01` y `BUS 07`).
@@ -109,27 +119,52 @@ Es la pantalla principal por defecto de la aplicación.
 #### E. Escenario Pantalla Completa Estilo Google Maps ("Cómo Llegar")
 Al tocar el botón de dirección (FAB cian `[↱]` o el botón circular `[Ir]` en cualquier búsqueda), la app despliega un escenario que **ocupa el 100% de la pantalla del móvil**:
 * **Cabecera Nativa de Ruteo:**
-  - Botón de retroceso `[<]` para salir del modo ruteo.
-  - Puntos de parada con conexión vertical punteada: Origen (*Tu ubicación*) y Destino (*Mercadillo Bolognesi*).
-  - Botón de inversión de sentido `[⇅]`.
-  - Botón de opciones `[...]`.
-* **Pestañas de Modos de Movilidad:**
-  - 🚗 Auto (`12 min`)
-  - 🏍️ Moto (`11 min`)
-  - 🚌 Bus / Tránsito (`14 min`)
-  - 🚶 A pie (`22 min`)
+  - Botón de retroceso `[<]` integrado en la fila de origen/destino (sin solapamiento con los puntos guía).
+  - Puntos de parada con conexión vertical: Origen (*Tu ubicación*) y Destino dinámico (*Plaza Zela*, *P. UNJBG*, *P. Mercado* o *Mercadillo Bolognesi*).
+  - Botón de inversión de sentido `[⇅]` y opciones `[...]`.
+  - Marco superior opaco `bg-slate-950` con desenfoque de fondo que garantiza que la barra de estado y la Dynamic Island mantengan fondo oscuro continuo sin que las calles o rutas se filtren por detrás.
+  - Píldora multimodal flotante que resume el trayecto (ej. `🚶‍♂️ 2m ➔ 🚌 BUS 01 (14m) ➔ 16 min · S/. 0.70` o `🚶‍♂️ 2 min a pie · 180 m · Gratis`).
+
+* **Casos de Ruteo Dinámico según el Destino Seleccionado:**
+  1. **Destino: Plaza Zela (Paradero cercano):**
+     - Al ser el paradero más próximo al origen, la mejor y única opción es **caminar directamente** hacia dicho paradero.
+     - En el mapa se dibuja únicamente el trayecto a pie (punteado cian, 180 metros) con Pin Rojo de destino final en Plaza Zela. No se traza bus ni se muestran unidades aproximándose.
+     - Resumen: **2 min • 180 m • Sin costo (Gratis)**.
+  2. **Destino: P. UNJBG (Campus Universitario):**
+     - Origen camina 2 min hasta Plaza Zela, aborda `BUS 01` (tarifa S/. 0.70).
+     - El bus recorre la Línea 10 pasando por *P. Mercado* (marcado como parada intermedia) y continúa hacia el sur hasta **P. UNJBG**.
+     - En el mapa se destaca el aviso *"Bajar aquí (P. UNJBG)"* con Pin Rojo de destino en el paradero universitario.
+     - Resumen: **16 min • 3.2 km • Tarifa Universitaria S/. 0.70**.
+  3. **Destino: P. Mercado / Mercadillo Bolognesi:**
+     - Camina a Plaza Zela, toma `BUS 01` por 8 min, baja en *P. Mercado* (y si el destino es el mercadillo, camina 1 min adicional a pie).
+     - Resumen: **10 a 12 min • 1.2 a 1.4 km • S/. 0.70**.
+
 * **Hoja Inferior Interactiva de 3 Niveles (Bottom Sheet Snap States):**
-  1. **Nivel 1: Compacto (Peek, ~140px):**
-     - Muestra el tiempo principal (`12 min • 6 km`), indicador ecológico de ahorro y botones rápidos `[Iniciar]`, `[Agregar paradas]` y `[Seguir ETA]`.
-  2. **Nivel 2: Primer Estiramiento / Detalle (Medium, ~340px):**
-     - Muestra la hora de llegada estimada (`Llegada: 12:10 a.m.`), condición del tráfico en tiempo real y el resumen de eficiencia.
-  3. **Nivel 3: Estiramiento Completo (Full, 90% de pantalla):**
+  1. **Nivel 1: Compacto (Peek, ~185px):**
+     - Muestra el tiempo principal (`12 min · 1.4 km` o `2 min · 180 m`), botón para compartir, botón de cerrar `[✕]`, botón principal verde `[Iniciar]` y botón de `[ETA]`.
+  2. **Nivel 2: Primer Estiramiento / Detalle (Medium, ~360px):**
+     - Detalle de hora de llegada estimada, ahorro de combustible o impacto ecológico, tarjeta informativa de la unidad próxima y desglose de pasos legibles.
+  3. **Nivel 3: Estiramiento Completo (Full, 88% de pantalla):**
      - Despliega el catálogo completo con **todas las formas de llegar al destino**:
-       - *Opción 1 (Recomendada):* **BUS 01 (Línea 10)** • 12 min • Tarifa S/. 0.70.
-       - *Opción 2:* **BUS 07 (Línea 10)** • 18 min • Asientos libres garantizados.
-       - *Opción 3:* **Caminata Directa** • 22 min • 1.6 km • Ejercicio y cero emisiones.
-     - Tarjeta con foto del destino (*Mercadillo Bolognesi*) y detalles de acceso.
-     - Acordeón interactivo del **itinerario paso a paso** (caminar al paradero, abordar el bus, recorrido de paradas intermedias y llegada a pie).
+       - *Opción 1 (Recomendada):* **BUS 01 (Línea 10)** o **Caminata Directa** según el destino.
+       - *Opción 2:* **BUS 07 (Línea 10)** con aforo menor garantizado.
+       - Filtros rápidos (*Más rápida*, *Menos trasbordos*, *Asientos libres*).
+       - Tarjeta con foto del destino y botón inferior fijado `[Iniciar]`.
+
+* **Comportamiento del Botón "Iniciar" (Guía de Ruta en Mapa Principal):**
+  - Al presionar **"Iniciar"** en cualquier nivel de la hoja de ruteo:
+    1. Cierra el escenario completo de Google Maps y regresa a la pantalla principal (*Explorar*).
+    2. **Marca y resalta la ruta trazada sobre el mapa principal:** Muestra la línea de caminata (cian punteado), el tramo de bus (azul/cian brillante continuo) y el **Pin Rojo de Destino** (`P. UNJBG`, `Plaza Zela` o `Mercadillo Bolognesi`).
+    3. **Pop-up Circular Verde (Timer en la esquina superior izquierda):** Despliega un widget circular verde con pulso luminoso que muestra un **Timer regresivo en vivo** (`02:48`) del tiempo estimado para la llegada del próximo bus al paradero de abordaje.
+    4. **Botón Circular Rojo de Cancelación `[✕]`:** Ubicado directamente debajo del timer verde. Al pulsarlo, abre un modal de confirmación:
+       * *¿Deseas cancelar la dirección de ruta establecida por el usuario y la guía?*
+       * Si se confirma, cancela la guía, detiene el timer, retira el trazado de la ruta del mapa y restaura la interfaz inicial limpia.
+    5. **Barra Inferior Activa:** Los botones inferiores (*Explorar*, *Líneas*, *Pagar QR*, *Perfil*) permanecen 100% operativos para que el usuario pueda pagar con QR en puerta o revisar líneas cuando el bus arribe.
+
+* **Comportamiento del Botón "Alerta de Llegada":**
+  - Al pulsar **"Alerta de llegada"** en la ficha de un paradero (o desde su configurador):
+    - Cierra la ficha del paradero.
+    - Despliega **únicamente el pop-up circular verde con el Timer** en la esquina superior izquierda (sin marcar ruta ni mostrar el botón rojo de cancelación), manteniendo el mapa limpio con el recordatorio del bus aproximándose.
 
 #### F. Hoja Flotante de Viaje en Curso (In-Trip Sheet)
 * Cuando el usuario está a bordo (por pago QR o detección automática), la pestaña *Explorar* despliega un bottom sheet emergente que no bloquea la navegación general:
@@ -168,7 +203,15 @@ Al tocar el botón de dirección (FAB cian `[↱]` o el botón circular `[Ir]` e
 
 ---
 
-### Pestaña 2: Pagar QR (Escáner en Puerta)
+### Pestaña 2: Líneas (Catálogo de Rutas de Tacna)
+
+* **Detalle Operativo de la Línea 10:** Recorrido oficial Cono Norte ➔ Cono Sur, paraderos oficiales (Plaza Zela, P. Mercado, P. UNJBG), frecuencias estimadas y unidades en circulación (`BUS 01` y `BUS 07`).
+* **Selector de Dirección (Ida / Vuelta):** Alternancia entre sentido Subida y Bajada.
+* **Acceso Directo al Mapa:** Botón para proyectar la traza completa de la línea en la pantalla principal.
+
+---
+
+### Pestaña 3: Pagar QR (Escáner en Puerta)
 
 * **Visor de Cámara Nativo:**  
   Capa de video optimizada con visor reticular y animación de barrido láser para enfocar la pantalla del módulo validador POS en la puerta delantera del bus.
@@ -188,11 +231,11 @@ Al tocar el botón de dirección (FAB cian `[↱]` o el botón circular `[Ir]` e
 
 ---
 
-### Pestaña 3: Monedero (Prepago y Beneficios)
+### Pestaña 4: Monedero (Prepago, Historial de Viajes y Beneficios)
 
 * **Tarjeta de Saldo Principal:**  
   Visualización en tipografía gigante del saldo en **Puntos BC** y su conversión exacta a Soles (ej. `85 Puntos BC = S/. 8.50`).
-* **Recarga Instantánea con Billeteras Móviles:**  
+* **Recarga Instantánea con Billeteras Móviles (Yape / Plin):**  
   Cuadrícula táctil para recargas rápidas con Yape y Plin:
   - `+S/. 5` (+50 pts)
   - `+S/. 10` (+100 pts)
@@ -201,17 +244,13 @@ Al tocar el botón de dirección (FAB cian `[↱]` o el botón circular `[Ir]` e
   - Sonido de confirmación de monedas (987Hz ➔ 1318Hz).
 * **Tarjeta de Identificación Estudiantil (CU-08):**  
   Muestra el estado de la validación del Carné Universitario emitido por SUNEDU, fecha de vencimiento y vigencia de la prórroga anual configurada en el backoffice.
-
----
-
-### Pestaña 4: Perfil y Ajustes
-
-* **Datos de Identidad:** Nombre del titular, número telefónico verificado (`+51 952 ••• 819`) y badge de *"Perfil Verificado"*.
-* **Accesos Rápidos:** Historial de viajes, configuración de notificaciones, términos de servicio y políticas de privacidad.
+* **Historial de Viajes y Movimientos (CU-10):**
+  - **Filtros Interactivos:** Segmentación rápida por chips: *"Todos (4)"*, *"Viajes (3)"*, y *"Recargas (1)"*.
+  - **Detalle de Viajes Realizados:** Registros exhaustivos con línea, número de unidad, placa oficial, paradero de origen y destino, timestamp exacto, duración, monto debitado en puntos y soles, y estado (*Completado*).
+  - **Detalle de Recargas Acreditadas:** Identificador de operación, canal de recarga (Yape/Plin/Agente), timestamp y puntos agregados.
 * **Baja Definitiva de Cuenta (CU-11):**  
-  - Botón claramente visible pero protegido con confirmación.
-  - Modal interno que informa el saldo actual no reembolsable en Puntos BC.
-  - Notifica el **período de gracia legal de 15 días** durante el cual el usuario puede revocar la baja volviendo a iniciar sesión con su número de teléfono.
+  - Botón protegido con confirmación modal.
+  - Informa el saldo remanente y notifica el período de gracia de 15 días.
 
 ---
 
