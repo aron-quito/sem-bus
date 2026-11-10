@@ -66,3 +66,4 @@ Este Plan Maestro de Pruebas define la estrategia, herramientas, cobertura míni
 | **P2 — Crítico** | El QR no escanea, la telemetría del bus se congela por >30s o la tablet del chofer pierde enlace. | < 24 horas |
 | **P3 — Mayor** | Fallo en filtros de historial, retardo en toast de notificación o fallo visual en un componente. | Siguiente Sprint |
 | **P4 — Menor** | Detalle tipográfico, espaciado visual leve o traducción mejorable. | Backlog regular |
+

@@ -132,3 +132,4 @@ volumes:
    * **iOS:** El `access_token` y `refresh_token` se almacenan en el **Keychain** del sistema operativo con atributo `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. Nunca en `UserDefaults` ni archivos plist.
    * **Android:** Se emplea **EncryptedSharedPreferences** mediante la librería `androidx.security:security-crypto` respaldada por Android Keystore.
 3. **CI/CD Seguro:** Los pipelines de GitHub Actions inyectan los secretos exclusivamente en tiempo de compilación y despliegue a través de **GitHub Encrypted Secrets**.
+

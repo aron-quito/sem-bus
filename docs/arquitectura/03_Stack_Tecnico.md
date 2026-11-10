@@ -81,3 +81,4 @@ celery>=5.3.6
 * Cámara: `androidx.camera:camera-camera2:1.3.2`
 * Persistencia segura: `androidx.security:security-crypto:1.1.0-alpha06`
 * Networking: `com.squareup.okhttp3:okhttp:4.12.0`
+

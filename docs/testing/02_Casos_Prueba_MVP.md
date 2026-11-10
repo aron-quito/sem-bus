@@ -148,3 +148,4 @@
 * **Pasos:** Chofer confirma `[Avería de Unidad]` en la tablet.
 * **Resultado Esperado:** Todos los 12 pasajeros reciben reembolso íntegro de sus puntos debitados y notificación push inmediata.
 * **Estado:** ⬜ Pendiente de Ejecución
+

@@ -124,3 +124,4 @@ Al presionar `[Cerrar Turno]`:
 * **CU-02:** *Pago Directo con Yape sin App (Failsafe y verificación en cabina)*
 * **CU-06:** *Descenso y Desacoplamiento (Ajuste manual de aforo)*
 * **CU-10:** *Vinculación Segura de Hardware (Tablet ➔ Unidad de Bus)*
+

@@ -103,3 +103,4 @@ flowchart TD
 * **Handshake con JWT:** El cliente se autentica en la apertura del socket enviando el token en el header `Authorization: Bearer <token>` o como parámetro de query `token` firmado.
 * **Heartbeat / Ping-Pong:** Ping cada 25 segundos para evitar timeouts de carriers móviles peruanos (Claro/Movistar/Entel).
 * **Degradación Elegante:** Si la conexión WebSocket se interrumpe por más de 12 segundos, la app conmuta automáticamente a **HTTP Polling** sobre el endpoint `GET /api/v1/buses/active` con frecuencia de 10 segundos, reintentando la reconexión de WebSocket en background con retroceso exponencial (*exponential backoff*).
+

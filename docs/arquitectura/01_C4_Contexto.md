@@ -73,3 +73,4 @@ flowchart TD
 1. **Adopción de Billeteras Móviles Existentes:** Más del 85% del comercio en Tacna utiliza Yape o Plin. El sistema BC no busca competir con las billeteras bancarias, sino interoperar como receptor digital y alimentar el monedero prepago en Puntos BC (1 PEN = 10 Puntos).
 2. **Cero Contraseñas Complejas (OTP Estricto):** En entornos de transporte público, los usuarios no recuerdan contraseñas al subir al bus. La autenticación telefónica por OTP garantiza acceso en menos de 20 segundos.
 3. **Desacoplamiento de Conectividad:** Si el bus pasa por zonas con sombra de señal 4G en los cerros de Cono Norte, el POS retiene las transacciones en una cola local firmada y las transmite al recuperar enlace.
+

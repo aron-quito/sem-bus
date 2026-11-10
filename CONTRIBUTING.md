@@ -90,3 +90,4 @@ docker compose up -d postgres redis
 # 3. Explorar el Mockup Interactivo en Navegador
 open mockup/index.html
 ```
+

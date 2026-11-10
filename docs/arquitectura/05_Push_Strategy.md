@@ -74,3 +74,4 @@ El ecosistema Bus Conectado utiliza una arquitectura dual de notificaciones push
 2. **Rotación:** Si el proveedor (FCM o APNs) regenera el token, la app actualiza el registro de inmediato.
 3. **Invalidación Inmediata (Unsubscribe):** Al cerrar sesión o desinstalar la app, el token se desactiva (`active = false`) para evitar despachar mensajes a terminales ajenos.
 4. **Política Anti-Spam:** Máximo 5 notificaciones no transaccionales por semana. Las notificaciones transaccionales (cobros, alertas de bajada) están exentas por ser de seguridad operativa.
+
