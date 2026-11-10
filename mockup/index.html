@@ -1416,6 +1416,20 @@
                   </div>
                   <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
                 </div>
+
+                <!-- Option: Cerrar Sesión (CU-11) -->
+                <div onclick="logoutUser();" class="flex items-center justify-between p-2.5 rounded-xl hover:bg-rose-950/40 border border-transparent hover:border-rose-900/40 cursor-pointer transition group">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-7 h-7 rounded-lg bg-rose-950/60 text-rose-400 flex items-center justify-center group-hover:bg-rose-900/80 transition">
+                      <i data-lucide="log-out" class="w-4 h-4"></i>
+                    </div>
+                    <div>
+                      <span id="profile-logout-title" class="text-xs font-bold text-rose-300 block">Cerrar sesión</span>
+                      <span id="profile-logout-desc" class="text-[10px] text-slate-400">Salir a la pantalla de bienvenida</span>
+                    </div>
+                  </div>
+                  <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500 group-hover:text-rose-400"></i>
+                </div>
               </div>
 
               <!-- Footer: Cerrar sesión & Terms -->
@@ -1497,7 +1511,7 @@
         <!-- ============================================================= -->
         <!-- BOTTOM 4-TAB NAVIGATION BAR (NATIVE 84px WITH SAFE AREA) -->
         <!-- ============================================================= -->
-        <nav id="passenger-bottom-nav" class="h-[84px] pb-6 pt-1.5 bg-slate-950/98 backdrop-blur-xl border-t border-slate-800/80 px-2 flex items-center justify-around shrink-0 z-30">
+        <nav id="passenger-bottom-nav" class="h-[84px] pb-6 pt-1.5 bg-slate-950/98 backdrop-blur-xl border-t border-slate-800/80 px-2 flex items-center justify-around shrink-0 z-30 hidden">
           
           <button onclick="switchPassengerTab('map')" id="ptab-map" class="pass-tab flex flex-col items-center gap-0.5 transition">
             <div id="ptab-map-pill" class="px-4 py-1 rounded-full bg-blue-900/60 text-blue-400 flex items-center justify-center transition">
@@ -4110,19 +4124,25 @@
     function completeOnboarding() {
       const screen = document.getElementById('screen-onboarding');
       if (screen) screen.classList.add('hidden');
+      const nav = document.getElementById('passenger-bottom-nav');
+      if (nav) nav.classList.remove('hidden');
       isGuestMode = false;
       updateGuestModeUI();
       switchPassengerTab('map');
       showToast('¡Sesión iniciada con éxito! Monedero: 85 pts (S/. 8.50)', 'success');
+      lucide.createIcons();
     }
 
     function continueAsGuest() {
       const screen = document.getElementById('screen-onboarding');
       if (screen) screen.classList.add('hidden');
+      const nav = document.getElementById('passenger-bottom-nav');
+      if (nav) nav.classList.remove('hidden');
       isGuestMode = true;
       updateGuestModeUI();
       switchPassengerTab('map');
       showToast('Modo Invitado activo: consulta rutas y paraderos libremente', 'success');
+      lucide.createIcons();
     }
 
     function startRegisterFromGuest() {
@@ -4131,6 +4151,27 @@
         screen.classList.remove('hidden');
         showOnboardingStep('phone');
       }
+      const nav = document.getElementById('passenger-bottom-nav');
+      if (nav) nav.classList.add('hidden');
+    }
+
+    function logoutUser() {
+      closeProfileModal();
+      const nav = document.getElementById('passenger-bottom-nav');
+      if (nav) nav.classList.add('hidden');
+      const screen = document.getElementById('screen-onboarding');
+      if (screen) {
+        screen.classList.remove('hidden');
+        showOnboardingStep('splash');
+      }
+      // Reset inputs de teléfono y casillas OTP
+      const phoneInput = document.getElementById('onboarding-phone-input');
+      if (phoneInput) phoneInput.value = '';
+      document.querySelectorAll('#otp-inputs-container input').forEach(i => i.value = '');
+      isGuestMode = false;
+      updateGuestModeUI();
+      showToast('Sesión cerrada correctamente', 'success');
+      lucide.createIcons();
     }
 
     function updateGuestModeUI() {
@@ -4141,14 +4182,21 @@
       const profName = document.getElementById('profile-modal-name');
       const profPhone = document.getElementById('profile-modal-phone');
       const profPts = document.getElementById('profile-modal-pts');
+      const logoutTitle = document.getElementById('profile-logout-title');
+      const logoutDesc = document.getElementById('profile-logout-desc');
+
       if (isGuestMode) {
         if (profName) profName.textContent = 'Modo Invitado';
         if (profPhone) profPhone.textContent = 'Sin registrar • Tacna';
         if (profPts) profPts.textContent = '0';
+        if (logoutTitle) logoutTitle.textContent = 'Salir de Modo Invitado';
+        if (logoutDesc) logoutDesc.textContent = 'Volver a la pantalla de bienvenida';
       } else {
         if (profName) profName.textContent = 'Aron Mamani Quispe';
         if (profPhone) profPhone.textContent = '+51 952 123 456';
         if (profPts) profPts.textContent = walletPoints;
+        if (logoutTitle) logoutTitle.textContent = 'Cerrar sesión';
+        if (logoutDesc) logoutDesc.textContent = 'Salir a la pantalla de bienvenida';
       }
     }
 
@@ -4202,6 +4250,8 @@
         screen.classList.remove('hidden');
         showOnboardingStep('splash');
       }
+      const nav = document.getElementById('passenger-bottom-nav');
+      if (nav) nav.classList.add('hidden');
     }
 
     function switchPassengerTab(tabName) {
