@@ -1,161 +1,194 @@
 import SwiftUI
 
-struct LineStopItem: Identifiable {
-    let id = UUID()
-    let order: Int
-    let name: String
-    let detail: String
-    let isCurrent: Bool
-}
-
 struct LinesView: View {
-    private let stops: [LineStopItem] = [
-        LineStopItem(order: 1, name: "Terminal Pesquero (Cono Norte)", detail: "Punto de partida · Salidas cada 6 min", isCurrent: false),
-        LineStopItem(order: 2, name: "Av. Pinto / Mercado Mayorista Grau", detail: "Conexión comercial", isCurrent: false),
-        LineStopItem(order: 3, name: "Campus Central UNJBG", detail: "Av. Miraflores · Zona Universitaria", isCurrent: false),
-        LineStopItem(order: 4, name: "Plaza Zela", detail: "Centro Histórico · Paradero Principal", isCurrent: true),
-        LineStopItem(order: 5, name: "Paseo Cívico / Av. San Martín", detail: "Catedral de Tacna · Arco Parabólico", isCurrent: false),
-        LineStopItem(order: 6, name: "Mercado Central de Tacna", detail: "Comercio céntrico", isCurrent: false),
-        LineStopItem(order: 7, name: "Terminal Terrestre Manuel A. Odría", detail: "Zona Sur", isCurrent: false),
-        LineStopItem(order: 8, name: "Asoc. Vista Alegre (Cono Sur)", detail: "Fin de ruta", isCurrent: false),
-    ]
+    @ObservedObject var viewModel: AuthViewModel
+    @State private var selectedDirection: String = "UP" // "UP" (Subida) o "DOWN" (Bajada)
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Cabecera de la Línea
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.blue)
-                                .frame(width: 48, height: 48)
-
-                            Text("10")
-                                .font(.title2)
-                                .fontWeight(.heavy)
-                                .foregroundColor(.white)
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Línea 10 · Tacna")
-                                .font(.title3)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                            Text("Cono Norte ⇄ Cono Sur (Vía Centro / UNJBG)")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-
-                        Spacer()
-
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("Activo")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.emerald)
-                            Text("6 min frec.")
-                                .font(.caption2)
-                                .foregroundColor(.gray)
-                        }
+                // Cabecera Minimalista Apple HIG
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Líneas y Paraderos")
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                        Text("Red oficial de transporte urbano de Tacna")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.55))
                     }
 
-                    HStack(spacing: 12) {
-                        metricPill(icon: "clock.fill", title: "05:30 - 22:30", color: .blue)
-                        metricPill(icon: "dollarsign.circle.fill", title: "S/. 0.70 Univ.", color: .amber)
-                        metricPill(icon: "bus.fill", title: "18 buses", color: .emerald)
+                    Spacer()
+
+                    // Selector de Sentido (Ida / Vuelta)
+                    HStack(spacing: 4) {
+                        directionPill(title: "Subida", code: "UP")
+                        directionPill(title: "Bajada", code: "DOWN")
                     }
+                    .padding(4)
+                    .background(Color.white.opacity(0.06))
+                    .clipShape(Capsule())
                 }
-                .padding(18)
-                .background(Color.white.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 18))
                 .padding(.horizontal, 20)
-                .padding(.top, 10)
+                .padding(.top, 12)
 
-                // Lista de Paraderos en Ruta
-                VStack(alignment: .leading, spacing: 14) {
-                    Text("RECORRIDO Y PARADEROS")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.gray)
-                        .padding(.horizontal, 20)
-
-                    VStack(spacing: 0) {
-                        ForEach(stops) { stop in
-                            HStack(alignment: .top, spacing: 14) {
-                                // Indicador visual de parada
-                                VStack(spacing: 0) {
-                                    Circle()
-                                        .fill(stop.isCurrent ? Color.emerald : Color.blue.opacity(0.6))
-                                        .frame(width: stop.isCurrent ? 14 : 10, height: stop.isCurrent ? 14 : 10)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.white, lineWidth: stop.isCurrent ? 2 : 0)
-                                        )
-
-                                    if stop.order != stops.count {
-                                        Rectangle()
-                                            .fill(Color.white.opacity(0.15))
-                                            .frame(width: 2, height: 38)
-                                    }
-                                }
-                                .padding(.top, 4)
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack {
-                                        Text(stop.name)
-                                            .font(.subheadline)
-                                            .fontWeight(stop.isCurrent ? .bold : .medium)
-                                            .foregroundColor(.white)
-
-                                        if stop.isCurrent {
-                                            Text("Próxima")
-                                                .font(.caption2)
-                                                .fontWeight(.bold)
-                                                .foregroundColor(.emerald)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(Color.emerald.opacity(0.15))
-                                                .clipShape(Capsule())
-                                        }
-                                    }
-
-                                    Text(stop.detail)
-                                        .font(.caption2)
-                                        .foregroundColor(.gray)
-                                }
-
-                                Spacer()
-                            }
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 6)
-                        }
+                // Renderizado dinámico: Si no existen rutas/paraderos activos (Cuenta de Prueba), muestra Estado Vacío Limpio
+                if viewModel.routes.isEmpty {
+                    emptyLinesStateView
+                } else {
+                    ForEach(viewModel.routes) { route in
+                        routeCardView(route)
                     }
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: 18))
-                    .padding(.horizontal, 20)
                 }
 
-                Spacer(minLength: 30)
+                Spacer(minLength: 32)
             }
         }
-        .background(Color(red: 11/255, green: 17/255, blue: 30/255).ignoresSafeArea())
+        .background(BCTheme.background.ignoresSafeArea())
     }
 
-    private func metricPill(icon: String, title: String, color: Color) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.caption2)
-                .foregroundColor(color)
+    private func directionPill(title: String, code: String) -> some View {
+        let isSelected = selectedDirection == code
+        return Button {
+            BCFeedbackManager.shared.impactLight()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedDirection = code
+            }
+        } label: {
             Text(title)
-                .font(.caption2)
-                .fontWeight(.semibold)
-                .foregroundColor(.white.opacity(0.9))
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(isSelected ? .white : .white.opacity(0.55))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(isSelected ? BCTheme.royalBlue : Color.clear)
+                .clipShape(Capsule())
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(color.opacity(0.12))
-        .clipShape(Capsule())
+    }
+
+    // MARK: - Estado Vacío Minimalista cuando no existen rutas ni paraderos registrados
+    private var emptyLinesStateView: some View {
+        VStack(spacing: 18) {
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.05))
+                    .frame(width: 76, height: 76)
+                Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
+                    .font(.system(size: 30, weight: .medium))
+                    .foregroundColor(.white.opacity(0.55))
+            }
+            .padding(.top, 24)
+
+            VStack(spacing: 6) {
+                Text("Sin paraderos ni rutas activas")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(.white)
+
+                Text("Al estar en una cuenta de prueba sin unidades ni paraderos dados de alta en operación, esta lista permanece limpia. En cuanto se habiliten rutas y paraderos en el servidor, se listarán aquí con su secuencia e itinerario en tiempo real.")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.55))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+            }
+
+            Button {
+                BCFeedbackManager.shared.impactLight()
+                Task {
+                    await viewModel.refreshStateFromBackendIfAvailable()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption.weight(.bold))
+                    Text("Sincronizar con el Servidor")
+                        .font(.caption.weight(.semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.08))
+                .overlay(
+                    Capsule()
+                        .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+                )
+                .clipShape(Capsule())
+            }
+            .padding(.bottom, 20)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(20)
+        .background(Color.white.opacity(0.03))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+    }
+
+    // MARK: - Tarjeta Dinámica de Ruta y Paraderos (Lista para cuando se implementen en BD)
+    private func routeCardView(_ route: BusRouteModel) -> some View {
+        let filteredStops = route.stops.filter { $0.direction == selectedDirection }
+
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(BCTheme.royalBlue)
+                        .frame(width: 44, height: 44)
+                    Text(route.lineNumber)
+                        .font(.title3.weight(.heavy))
+                        .foregroundColor(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(route.name)
+                        .font(.headline.weight(.bold))
+                        .foregroundColor(.white)
+                    Text("\(route.originName) ⇄ \(route.destinationName)")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+
+                Spacer()
+
+                Text("Cada \(route.frequencyMinutes) min")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(BCTheme.emerald)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(BCTheme.emerald.opacity(0.14))
+                    .clipShape(Capsule())
+            }
+
+            Divider().background(BCTheme.hairlineBorder)
+
+            ForEach(filteredStops) { stop in
+                HStack(spacing: 12) {
+                    Circle()
+                        .fill(stop.isKeyStop ? BCTheme.emerald : BCTheme.royalBlue)
+                        .frame(width: 10, height: 10)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(stop.name)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.white)
+                        Text(stop.subtitle)
+                            .font(.caption2)
+                            .foregroundColor(.gray)
+                    }
+
+                    Spacer()
+                }
+            }
+        }
+        .padding(18)
+        .background(Color.white.opacity(0.05))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .padding(.horizontal, 20)
     }
 }

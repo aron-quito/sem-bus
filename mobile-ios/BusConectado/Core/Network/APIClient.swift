@@ -5,7 +5,7 @@ enum APIError: LocalizedError {
     case networkError(Error)
     case serverError(statusCode: Int, message: String)
     case decodingError(Error)
-    case unauthorizedSessionRevoked // Sesión única estilo Yape
+    case unauthorizedSessionRevoked
 
     var errorDescription: String? {
         switch self {
@@ -25,14 +25,20 @@ enum APIError: LocalizedError {
 
 final class APIClient: ObservableObject {
     static let shared = APIClient()
-    #if DEBUG
+
     @Published var baseURLString: String = "http://localhost:8000/api/v1"
-    #else
-    @Published var baseURLString: String = "https://api.bc-tacna.pe/api/v1"
-    #endif
 
     private var baseURL: URL {
         URL(string: baseURLString) ?? URL(string: "http://localhost:8000/api/v1")!
+    }
+
+    var canReachRemoteBackend: Bool {
+        #if targetEnvironment(simulator)
+        return true
+        #else
+        // En un iPhone físico, "localhost" apunta al propio iPhone; solo conectar por red si se configuró una IP LAN o dominio
+        return !baseURLString.contains("localhost") && !baseURLString.contains("127.0.0.1")
+        #endif
     }
 
     func updateBaseURL(_ newURL: String) {
@@ -51,8 +57,8 @@ final class APIClient: ObservableObject {
 
     private init() {
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 15.0
-        configuration.timeoutIntervalForResource = 30.0
+        configuration.timeoutIntervalForRequest = 3.0
+        configuration.timeoutIntervalForResource = 6.0
         self.session = URLSession(configuration: configuration)
     }
 
@@ -85,12 +91,15 @@ final class APIClient: ObservableObject {
             }
 
             if httpResponse.statusCode == 401 {
-                // Notificar revocación de sesión única
-                KeychainService.shared.delete(key: "access_token")
+                _ = KeychainService.shared.delete(key: "access_token")
                 throw APIError.unauthorizedSessionRevoked
             }
 
             guard (200...299).contains(httpResponse.statusCode) else {
+                if let jsonObj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let detail = jsonObj["detail"] as? String {
+                    throw APIError.serverError(statusCode: httpResponse.statusCode, message: detail)
+                }
                 let errorMsg = String(data: data, encoding: .utf8) ?? "Error en el servidor"
                 throw APIError.serverError(statusCode: httpResponse.statusCode, message: errorMsg)
             }
@@ -105,4 +114,3 @@ final class APIClient: ObservableObject {
         }
     }
 }
-

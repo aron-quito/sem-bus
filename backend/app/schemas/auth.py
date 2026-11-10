@@ -1,6 +1,15 @@
-from typing import Optional
+from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator
 import re
+
+
+class StudentVerificationSchema(BaseModel):
+    dni: str
+    university: str
+    career: Optional[str] = None
+    academic_cycle: Optional[str] = None
+    status: str = "ACTIVE"
+    expires_at: str = "2026-12-31"
 
 
 class OtpSendRequest(BaseModel):
@@ -14,7 +23,6 @@ class OtpSendRequest(BaseModel):
     @classmethod
     def validate_peruvian_phone(cls, v: str) -> str:
         cleaned = re.sub(r"\D", "", v)
-        # Soportar si mandan con prefijo 51
         if cleaned.startswith("51") and len(cleaned) == 11:
             cleaned = cleaned[2:]
         if not re.match(r"^9\d{8}$", cleaned):
@@ -60,6 +68,7 @@ class UserAuthProfile(BaseModel):
     role: str
     points_balance: int = 0
     is_new_user: bool = False
+    student_verification: Optional[StudentVerificationSchema] = None
 
 
 class TokenResponse(BaseModel):
@@ -79,3 +88,19 @@ class RefreshTokenResponse(BaseModel):
     token_type: str = "Bearer"
     expires_in: int = 3600
 
+
+class TestAccountSeed(BaseModel):
+    phone: str
+    raw_phone: str
+    name: str
+    role: str
+    fare_points: int
+    fare_pen: float
+    badge_label: str
+    description: str
+    otp_code: str = "123456"
+    student_verification: Optional[StudentVerificationSchema] = None
+
+
+class TestAccountsResponse(BaseModel):
+    accounts: List[TestAccountSeed]

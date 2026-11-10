@@ -12,20 +12,24 @@
 		2B54217FA3868DEE142FA19E /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC123187CC731F86C0E93ECD /* OnboardingView.swift */; };
 		2E42F38F83718CDD92C14646 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F393F685F83E954717B6D902 /* MainTabView.swift */; };
 		49AAD7CE1BACE87F848162B9 /* ExploreMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26DCE8B8D9D2BE263B41B01F /* ExploreMapView.swift */; };
+		4DB02799D9CA4244441EC9C8 /* DomainModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06C092B36697177DAACE3294 /* DomainModels.swift */; };
 		8D3028B84F939483AA84110B /* BusConectadoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A4A10934172C4821A69508 /* BusConectadoApp.swift */; };
 		E05D525157770B3A65BF1241 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76270BC8EAEFB19145AE99BD /* APIClient.swift */; };
 		EA68497F4449657F9E3E2C8B /* WalletView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E266DBFEDC29AE6135141D /* WalletView.swift */; };
 		EF1FACA4EF567D03B0DF050E /* ProfileSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258B4E810A15CB1BD9EDF997 /* ProfileSheetView.swift */; };
 		FCD5EEB4F7D92BB9B9BDBD21 /* PayQrView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1632A0EA0FC2DB0AA673F7D /* PayQrView.swift */; };
 		FE4FA4B7F234323A8859829A /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D7DFC3D8EDDEBD7D7CCA4DA /* AuthViewModel.swift */; };
+		FE7805A933F763F64CE8342E /* BCTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD32F97887FD97E971F62C4 /* BCTheme.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		06C092B36697177DAACE3294 /* DomainModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainModels.swift; sourceTree = "<group>"; };
 		0ED8E7A95799199EFF341F7F /* BusConectado.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = BusConectado.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		258B4E810A15CB1BD9EDF997 /* ProfileSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSheetView.swift; sourceTree = "<group>"; };
 		26DCE8B8D9D2BE263B41B01F /* ExploreMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExploreMapView.swift; sourceTree = "<group>"; };
 		3D7DFC3D8EDDEBD7D7CCA4DA /* AuthViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthViewModel.swift; sourceTree = "<group>"; };
 		3ECF380BC2C8A160B3582AD8 /* LinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinesView.swift; sourceTree = "<group>"; };
+		6DD32F97887FD97E971F62C4 /* BCTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCTheme.swift; sourceTree = "<group>"; };
 		76270BC8EAEFB19145AE99BD /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		8376E41DB2FBF8009AD1F631 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		A1632A0EA0FC2DB0AA673F7D /* PayQrView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayQrView.swift; sourceTree = "<group>"; };
@@ -85,6 +89,8 @@
 		485BFE41EF1481C6044B4AEF /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				4CD6310A136504B515CBA521 /* DesignSystem */,
+				B484B9DAABC26A580A7E5019 /* Models */,
 				8397C31ABBAFB68CCA5A0CF6 /* Network */,
 				2A420B3440B321895C88C7D4 /* Storage */,
 			);
@@ -105,6 +111,14 @@
 				DC123187CC731F86C0E93ECD /* OnboardingView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		4CD6310A136504B515CBA521 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				6DD32F97887FD97E971F62C4 /* BCTheme.swift */,
+			);
+			path = DesignSystem;
 			sourceTree = "<group>";
 		};
 		59FF11E2E7677FA48BE96183 /* Lines */ = {
@@ -147,6 +161,14 @@
 				464917B66713A61D87FF6F88 /* Features */,
 			);
 			path = BusConectado;
+			sourceTree = "<group>";
+		};
+		B484B9DAABC26A580A7E5019 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				06C092B36697177DAACE3294 /* DomainModels.swift */,
+			);
+			path = Models;
 			sourceTree = "<group>";
 		};
 		B860FA9DFEF5D6CD2C10B40D /* Views */ = {
@@ -260,7 +282,7 @@
 				LastUpgradeCheck = 1500;
 				TargetAttributes = {
 					4ECA4D00749B2D13EB248CB5 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = 84P9Z76M99;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -291,7 +313,9 @@
 			files = (
 				E05D525157770B3A65BF1241 /* APIClient.swift in Sources */,
 				FE4FA4B7F234323A8859829A /* AuthViewModel.swift in Sources */,
+				FE7805A933F763F64CE8342E /* BCTheme.swift in Sources */,
 				8D3028B84F939483AA84110B /* BusConectadoApp.swift in Sources */,
+				4DB02799D9CA4244441EC9C8 /* DomainModels.swift in Sources */,
 				49AAD7CE1BACE87F848162B9 /* ExploreMapView.swift in Sources */,
 				0A79A40E648B949A9455FF3E /* KeychainService.swift in Sources */,
 				062C24E8AB2A1705E3915567 /* LinesView.swift in Sources */,
@@ -359,7 +383,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 84P9Z76M99;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -446,7 +470,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 84P9Z76M99;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;

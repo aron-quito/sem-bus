@@ -15,11 +15,23 @@ from app.schemas.auth import (
     TokenResponse,
     RefreshTokenRequest,
     RefreshTokenResponse,
+    TestAccountsResponse,
 )
 from app.services.otp_service import OtpService
 from app.services.auth_service import AuthService
 
 router = APIRouter()
+
+
+@router.get(
+    "/test-accounts",
+    response_model=TestAccountsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Listar cuentas de prueba preconfiguradas (Adulto, Universitario SUNEDU, CONADIS)",
+    description="Devuelve los perfiles de prueba listos para usar con OTP 123456 en entorno de desarrollo."
+)
+async def list_test_accounts():
+    return TestAccountsResponse(accounts=AuthService.get_test_accounts())
 
 
 @router.post(
@@ -66,7 +78,6 @@ async def verify_otp(
     Paso final del Onboarding e inicio de sesión.
     Imprime la regla estricta de Sesión Única: revoca cualquier terminal anterior del usuario.
     """
-    # 1. Verificar OTP en Redis
     await OtpService.verify_otp(
         phone=payload.phone,
         code=payload.code,
@@ -75,7 +86,6 @@ async def verify_otp(
 
     client_ip = request.client.host if request.client else None
 
-    # 2. Transacción de autenticación / registro en PostgreSQL
     token_response = await AuthService.authenticate_or_register_user(
         db=db,
         phone=payload.phone,
@@ -136,4 +146,3 @@ async def logout(
 
     await AuthService.logout(db=db, user_id=str(current_user.id), jti=jti)
     return {"success": True, "message": "Sesión cerrada correctamente."}
-
