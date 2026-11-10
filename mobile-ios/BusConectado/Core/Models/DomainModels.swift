@@ -247,3 +247,262 @@ struct ActiveTripState: Identifiable, Equatable {
     var isMinimized: Bool
     var nextStopEtaMinutes: Int
 }
+
+// MARK: - Destinos y Lugares de Tacna para Buscador Predictivo y Módulo "Ir / Cómo Llegar" (CU-07 / Sección 4.B y 4.E)
+enum DestinationRouteCase: String, Codable, Equatable {
+    case walkOnlyPlazaZela   // Caso 1: Destino Plaza Zela (2 min a pie · 180 m · Gratis)
+    case busToUnjbg          // Caso 2: Destino P. UNJBG (16 min · 3.2 km · S/. 0.70)
+    case busToMercado        // Caso 3A: Destino P. Mercado (10 min · 1.2 km · S/. 0.70)
+    case busToMercadillo     // Caso 3B: Destino Mercadillo / Comercial (12 min · 1.4 km · S/. 0.70)
+}
+
+struct TacnaDestinationPlace: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let shortName: String
+    let subtitle: String
+    let iconName: String
+    let iconColorHex: String
+    let latitude: Double
+    let longitude: Double
+    let routeCase: DestinationRouteCase
+    let totalDurationMinutes: Int
+    let secondaryDurationMinutes: Int
+    let walkingDirectMinutes: Int
+    let distanceLabel: String
+    let walkInitialMinutes: Int
+    let busRideMinutes: Int
+    let walkFinalMinutes: Int
+    let boardingStopName: String
+    let alightingStopName: String
+    let intermediateStopName: String?
+    let statusNote: String?
+
+    var coordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+
+    /// Coordenada simulada del usuario en Tacna ("Tu ubicación", cerca al Centro Histórico / Calle Zela)
+    static let userOriginCoordinate = CLLocationCoordinate2D(latitude: -18.0108, longitude: -70.2512)
+    static let plazaZelaCoordinate = CLLocationCoordinate2D(latitude: -18.0116, longitude: -70.2496)
+    static let pMercadoCoordinate = CLLocationCoordinate2D(latitude: -18.0148, longitude: -70.2525)
+    static let pUnjbgCoordinate = CLLocationCoordinate2D(latitude: -18.0242, longitude: -70.2504)
+
+    var walkingToBoardCoordinates: [CLLocationCoordinate2D] {
+        [
+            Self.userOriginCoordinate,
+            CLLocationCoordinate2D(latitude: -18.0112, longitude: -70.2504),
+            Self.plazaZelaCoordinate
+        ]
+    }
+
+    var busTransitCoordinates: [CLLocationCoordinate2D] {
+        switch routeCase {
+        case .walkOnlyPlazaZela:
+            return []
+        case .busToMercado, .busToMercadillo:
+            return [
+                Self.plazaZelaCoordinate,
+                CLLocationCoordinate2D(latitude: -18.0132, longitude: -70.2510),
+                Self.pMercadoCoordinate
+            ]
+        case .busToUnjbg:
+            return [
+                Self.plazaZelaCoordinate,
+                CLLocationCoordinate2D(latitude: -18.0132, longitude: -70.2510),
+                Self.pMercadoCoordinate,
+                CLLocationCoordinate2D(latitude: -18.0195, longitude: -70.2515),
+                Self.pUnjbgCoordinate
+            ]
+        }
+    }
+
+    var walkingFinalCoordinates: [CLLocationCoordinate2D] {
+        switch routeCase {
+        case .walkOnlyPlazaZela, .busToMercado, .busToUnjbg:
+            if coordinate.latitude == Self.pUnjbgCoordinate.latitude && coordinate.longitude == Self.pUnjbgCoordinate.longitude {
+                return []
+            }
+            if coordinate.latitude == Self.pMercadoCoordinate.latitude && coordinate.longitude == Self.pMercadoCoordinate.longitude {
+                return []
+            }
+            if coordinate.latitude == Self.plazaZelaCoordinate.latitude && coordinate.longitude == Self.plazaZelaCoordinate.longitude {
+                return []
+            }
+            let lastBusCoord = busTransitCoordinates.last ?? Self.pMercadoCoordinate
+            return [lastBusCoord, coordinate]
+        case .busToMercadillo:
+            return [
+                Self.pMercadoCoordinate,
+                CLLocationCoordinate2D(latitude: -18.0155, longitude: -70.2533),
+                coordinate
+            ]
+        }
+    }
+
+    /// Catálogo oficial del Mockup (Sección 4.B y 4.E)
+    static let catalog: [TacnaDestinationPlace] = [
+        TacnaDestinationPlace(
+            id: "dest-mercado",
+            name: "P. Mercado (Mercado Central)",
+            shortName: "P. Mercado",
+            subtitle: "Av. Bolognesi #450 • Paradero L10",
+            iconName: "storefront.fill",
+            iconColorHex: "#3B82F6",
+            latitude: -18.0148,
+            longitude: -70.2525,
+            routeCase: .busToMercado,
+            totalDurationMinutes: 10,
+            secondaryDurationMinutes: 16,
+            walkingDirectMinutes: 18,
+            distanceLabel: "1.2 km",
+            walkInitialMinutes: 2,
+            busRideMinutes: 8,
+            walkFinalMinutes: 0,
+            boardingStopName: "Plaza Zela",
+            alightingStopName: "P. Mercado",
+            intermediateStopName: nil,
+            statusNote: nil
+        ),
+        TacnaDestinationPlace(
+            id: "dest-zela",
+            name: "Plaza Zela",
+            shortName: "Plaza Zela",
+            subtitle: "Calle Zela • Paradero Histórico L10",
+            iconName: "mappin.and.ellipse",
+            iconColorHex: "#10B981",
+            latitude: -18.0116,
+            longitude: -70.2496,
+            routeCase: .walkOnlyPlazaZela,
+            totalDurationMinutes: 2,
+            secondaryDurationMinutes: 2,
+            walkingDirectMinutes: 2,
+            distanceLabel: "180 m",
+            walkInitialMinutes: 2,
+            busRideMinutes: 0,
+            walkFinalMinutes: 0,
+            boardingStopName: "Plaza Zela",
+            alightingStopName: "Plaza Zela",
+            intermediateStopName: nil,
+            statusNote: nil
+        ),
+        TacnaDestinationPlace(
+            id: "dest-unjbg",
+            name: "P. UNJBG (Campus Universitario)",
+            shortName: "P. UNJBG",
+            subtitle: "Av. Miraflores • Paradero Universitario L10",
+            iconName: "graduationcap.fill",
+            iconColorHex: "#F59E0B",
+            latitude: -18.0242,
+            longitude: -70.2504,
+            routeCase: .busToUnjbg,
+            totalDurationMinutes: 16,
+            secondaryDurationMinutes: 22,
+            walkingDirectMinutes: 34,
+            distanceLabel: "3.2 km",
+            walkInitialMinutes: 2,
+            busRideMinutes: 14,
+            walkFinalMinutes: 0,
+            boardingStopName: "Plaza Zela",
+            alightingStopName: "P. UNJBG",
+            intermediateStopName: "P. Mercado",
+            statusNote: nil
+        ),
+        TacnaDestinationPlace(
+            id: "dest-mercadillo",
+            name: "Mercadillo Bolognesi",
+            shortName: "Mercadillo Bolognesi",
+            subtitle: "Av. Bolognesi • Zona Comercial Tacna",
+            iconName: "bag.fill",
+            iconColorHex: "#38BDF8",
+            latitude: -18.0161,
+            longitude: -70.2541,
+            routeCase: .busToMercadillo,
+            totalDurationMinutes: 12,
+            secondaryDurationMinutes: 18,
+            walkingDirectMinutes: 22,
+            distanceLabel: "1.4 km",
+            walkInitialMinutes: 2,
+            busRideMinutes: 8,
+            walkFinalMinutes: 1,
+            boardingStopName: "Plaza Zela",
+            alightingStopName: "P. Mercado",
+            intermediateStopName: nil,
+            statusNote: nil
+        ),
+        TacnaDestinationPlace(
+            id: "dest-terminal",
+            name: "Terminal Terrestre Tacna",
+            shortName: "Terminal Terrestre",
+            subtitle: "Prol. Hipólito Unanue • Destino Comercial",
+            iconName: "bus.doubledecker.fill",
+            iconColorHex: "#F43F5E",
+            latitude: -18.0045,
+            longitude: -70.2612,
+            routeCase: .busToMercadillo,
+            totalDurationMinutes: 14,
+            secondaryDurationMinutes: 20,
+            walkingDirectMinutes: 26,
+            distanceLabel: "1.9 km",
+            walkInitialMinutes: 2,
+            busRideMinutes: 10,
+            walkFinalMinutes: 2,
+            boardingStopName: "Plaza Zela",
+            alightingStopName: "P. Mercado",
+            intermediateStopName: nil,
+            statusNote: nil
+        ),
+        TacnaDestinationPlace(
+            id: "dest-estadio",
+            name: "Estadio Jorge Basadre",
+            shortName: "Estadio Jorge Basadre",
+            subtitle: "Av. Coronel Justo Arias Araguez, Tacna",
+            iconName: "sportscourt.fill",
+            iconColorHex: "#A855F7",
+            latitude: -18.0185,
+            longitude: -70.2509,
+            routeCase: .busToUnjbg,
+            totalDurationMinutes: 14,
+            secondaryDurationMinutes: 19,
+            walkingDirectMinutes: 25,
+            distanceLabel: "2.1 km",
+            walkInitialMinutes: 2,
+            busRideMinutes: 10,
+            walkFinalMinutes: 2,
+            boardingStopName: "Plaza Zela",
+            alightingStopName: "P. UNJBG",
+            intermediateStopName: "P. Mercado",
+            statusNote: nil
+        ),
+        TacnaDestinationPlace(
+            id: "dest-pronabec",
+            name: "Pronabec Tacna",
+            shortName: "Pronabec Tacna",
+            subtitle: "Av. Bolognesi • Oficina Regional Tacna",
+            iconName: "building.columns.fill",
+            iconColorHex: "#FB923C",
+            latitude: -18.0138,
+            longitude: -70.2518,
+            routeCase: .busToMercado,
+            totalDurationMinutes: 11,
+            secondaryDurationMinutes: 17,
+            walkingDirectMinutes: 19,
+            distanceLabel: "1.3 km",
+            walkInitialMinutes: 2,
+            busRideMinutes: 8,
+            walkFinalMinutes: 1,
+            boardingStopName: "Plaza Zela",
+            alightingStopName: "P. Mercado",
+            intermediateStopName: nil,
+            statusNote: "Cerrado · Abre a las 8:30 a.m. del lun"
+        )
+    ]
+}
+
+// MARK: - Estado de Guía de Ruta Activa en el Mapa Principal (Cuando se presiona [Iniciar])
+struct ActiveRouteGuidanceState: Equatable {
+    let destination: TacnaDestinationPlace
+    let selectedOptionIndex: Int
+    var remainingBusArrivalSeconds: Int // Inicia en 168 seg (02:48 como en el mockup)
+}
+

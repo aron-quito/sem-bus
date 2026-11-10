@@ -17,6 +17,7 @@
 		E05D525157770B3A65BF1241 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76270BC8EAEFB19145AE99BD /* APIClient.swift */; };
 		EA68497F4449657F9E3E2C8B /* WalletView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3E266DBFEDC29AE6135141D /* WalletView.swift */; };
 		EF1FACA4EF567D03B0DF050E /* ProfileSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258B4E810A15CB1BD9EDF997 /* ProfileSheetView.swift */; };
+		F66CA07668F641E7061BD310 /* RoutePlannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BDFF40D6E51D6FB3F3A04DC /* RoutePlannerView.swift */; };
 		FCD5EEB4F7D92BB9B9BDBD21 /* PayQrView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1632A0EA0FC2DB0AA673F7D /* PayQrView.swift */; };
 		FE4FA4B7F234323A8859829A /* AuthViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D7DFC3D8EDDEBD7D7CCA4DA /* AuthViewModel.swift */; };
 		FE7805A933F763F64CE8342E /* BCTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DD32F97887FD97E971F62C4 /* BCTheme.swift */; };
@@ -31,6 +32,7 @@
 		3ECF380BC2C8A160B3582AD8 /* LinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinesView.swift; sourceTree = "<group>"; };
 		6DD32F97887FD97E971F62C4 /* BCTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCTheme.swift; sourceTree = "<group>"; };
 		76270BC8EAEFB19145AE99BD /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		7BDFF40D6E51D6FB3F3A04DC /* RoutePlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlannerView.swift; sourceTree = "<group>"; };
 		8376E41DB2FBF8009AD1F631 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		A1632A0EA0FC2DB0AA673F7D /* PayQrView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayQrView.swift; sourceTree = "<group>"; };
 		D7A4A10934172C4821A69508 /* BusConectadoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusConectadoApp.swift; sourceTree = "<group>"; };
@@ -240,6 +242,7 @@
 			isa = PBXGroup;
 			children = (
 				26DCE8B8D9D2BE263B41B01F /* ExploreMapView.swift */,
+				7BDFF40D6E51D6FB3F3A04DC /* RoutePlannerView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -323,6 +326,7 @@
 				2B54217FA3868DEE142FA19E /* OnboardingView.swift in Sources */,
 				FCD5EEB4F7D92BB9B9BDBD21 /* PayQrView.swift in Sources */,
 				EF1FACA4EF567D03B0DF050E /* ProfileSheetView.swift in Sources */,
+				F66CA07668F641E7061BD310 /* RoutePlannerView.swift in Sources */,
 				EA68497F4449657F9E3E2C8B /* WalletView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -404,6 +408,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Bus Conectado requiere acceso a la cámara para escanear el QR del bus o de validación SUNEDU.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bus Conectado utiliza tu ubicación para mostrarte los paraderos cercanos y el arribo del bus en tiempo real.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -485,6 +490,7 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Bus Conectado requiere acceso a la cámara para escanear el QR del bus o de validación SUNEDU.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bus Conectado utiliza tu ubicación para mostrarte los paraderos cercanos y el arribo del bus en tiempo real.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;

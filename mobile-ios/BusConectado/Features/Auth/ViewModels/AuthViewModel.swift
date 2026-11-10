@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import UIKit
+import CoreLocation
 
 enum OnboardingStep {
     case splash
@@ -44,14 +45,31 @@ final class AuthViewModel: ObservableObject {
     @Published var mapCategory: MapFilterCategory = .all
     @Published var searchQuery: String = ""
 
-    // MARK: - Estado de Viaje en Curso (CU-06) y Alertas de Paradero
+    // MARK: - Estado de Viaje en Curso (CU-06), Buscador Predictivo y Módulo "Ir / Cómo Llegar"
     @Published var activeTrip: ActiveTripState? = nil
     @Published var activeArrivalAlert: ArrivalAlertState? = nil
     @Published var showInsufficientBalanceModal: Bool = false
     @Published var requiredPointsForAttempt: Int = 0
 
+    // Estado del Buscador Predictivo y Pin de Destino Buscado
+    @Published var isSearchDropdownVisible: Bool = false
+    @Published var searchedDestinationPin: TacnaDestinationPlace? = nil
+    @Published var isEmptyTransitBannerDismissed: Bool = false
+
+    // Estado del Escenario Pantalla Completa "Ir / Cómo Llegar" (Sección 4.E del Mockup)
+    @Published var showRoutePlannerFullScreen: Bool = false
+    @Published var routePlannerInitialDestination: TacnaDestinationPlace? = nil
+    @Published var activeRouteGuidance: ActiveRouteGuidanceState? = nil
+    @Published var showCancelRouteGuidanceAlert: Bool = false
+
+    // Control de Cámara del Mapa en Tacna
+    @Published var mapFocusTrigger: UUID = UUID()
+    @Published var mapFocusTargetCoordinate: CLLocationCoordinate2D? = nil
+    @Published var mapFocusSpanDelta: Double = 0.018
+
     private var countdownTimer: AnyCancellable?
     private var arrivalAlertTimer: AnyCancellable?
+    private var routeGuidanceTimer: AnyCancellable?
 
     init() {
         if let savedHost = UserDefaults.standard.string(forKey: "bc_backend_host") {
@@ -97,6 +115,110 @@ final class AuthViewModel: ObservableObject {
     var filteredBuses: [ActiveBusModel] {
         guard mapCategory == .all || mapCategory == .routes else { return [] }
         return activeBuses
+    }
+
+    /// Catálogo predictivo para el buscador superior (#destination-suggestions en el mockup)
+    var filteredSearchDestinations: [TacnaDestinationPlace] {
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return TacnaDestinationPlace.catalog
+        }
+        return TacnaDestinationPlace.catalog.filter {
+            $0.name.localizedCaseInsensitiveContains(trimmed) ||
+            $0.shortName.localizedCaseInsensitiveContains(trimmed) ||
+            $0.subtitle.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    // MARK: - Acciones del Buscador Predictivo, Ubicación y Módulo "Ir / Cómo Llegar"
+    func selectPlaceFromSearch(_ place: TacnaDestinationPlace, startRouteImmediately: Bool) {
+        BCFeedbackManager.shared.impactLight()
+        isSearchDropdownVisible = false
+
+        if startRouteImmediately {
+            // Botón circular azul [Ir]: Abre directamente el escenario Pantalla Completa "Cómo Llegar" con destino fijado
+            routePlannerInitialDestination = place
+            showRoutePlannerFullScreen = true
+        } else {
+            // Pulsar en la fila: Centra el mapa en el lugar y suelta un pin rojo de ubicación
+            searchQuery = place.shortName
+            searchedDestinationPin = place
+            focusMap(on: place.coordinate, spanDelta: 0.010)
+        }
+    }
+
+    func clearSearchAndDismiss() {
+        BCFeedbackManager.shared.impactLight()
+        searchQuery = ""
+        isSearchDropdownVisible = false
+        searchedDestinationPin = nil
+    }
+
+    func centerMapOnUserLocation() {
+        BCFeedbackManager.shared.impactMedium()
+        focusMap(on: TacnaDestinationPlace.userOriginCoordinate, spanDelta: 0.014)
+    }
+
+    func focusMap(on coordinate: CLLocationCoordinate2D, spanDelta: Double = 0.015) {
+        mapFocusTargetCoordinate = coordinate
+        mapFocusSpanDelta = spanDelta
+        mapFocusTrigger = UUID()
+    }
+
+    func openRoutePlanner(with destination: TacnaDestinationPlace? = nil) {
+        BCFeedbackManager.shared.impactMedium()
+        isSearchDropdownVisible = false
+        routePlannerInitialDestination = destination ?? searchedDestinationPin
+        showRoutePlannerFullScreen = true
+    }
+
+    func startGuidedRoute(to destination: TacnaDestinationPlace, optionIndex: Int = 1) {
+        BCFeedbackManager.shared.notificationSuccess()
+        showRoutePlannerFullScreen = false
+        searchedDestinationPin = nil
+
+        // Inicia el Timer Circular Verde en 02:48 (168 segundos) tal cual el mockup
+        activeRouteGuidance = ActiveRouteGuidanceState(
+            destination: destination,
+            selectedOptionIndex: optionIndex,
+            remainingBusArrivalSeconds: 168
+        )
+
+        // Encuadrar cámara entre origen y destino en el mapa principal
+        let midLat = (TacnaDestinationPlace.userOriginCoordinate.latitude + destination.latitude) / 2.0
+        let midLon = (TacnaDestinationPlace.userOriginCoordinate.longitude + destination.longitude) / 2.0
+        let latDelta = max(abs(TacnaDestinationPlace.userOriginCoordinate.latitude - destination.latitude) * 1.9, 0.012)
+        let lonDelta = max(abs(TacnaDestinationPlace.userOriginCoordinate.longitude - destination.longitude) * 1.9, 0.012)
+        focusMap(
+            on: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
+            spanDelta: max(latDelta, lonDelta)
+        )
+
+        routeGuidanceTimer?.cancel()
+        routeGuidanceTimer = Timer.publish(every: 1.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self, var guidance = self.activeRouteGuidance else { return }
+                if guidance.remainingBusArrivalSeconds > 0 {
+                    guidance.remainingBusArrivalSeconds -= 1
+                    self.activeRouteGuidance = guidance
+                } else {
+                    guidance.remainingBusArrivalSeconds = 168
+                    self.activeRouteGuidance = guidance
+                }
+            }
+    }
+
+    func promptCancelGuidedRoute() {
+        BCFeedbackManager.shared.impactMedium()
+        showCancelRouteGuidanceAlert = true
+    }
+
+    func confirmCancelGuidedRoute() {
+        BCFeedbackManager.shared.impactLight()
+        routeGuidanceTimer?.cancel()
+        activeRouteGuidance = nil
+        showCancelRouteGuidanceAlert = false
     }
 
     // MARK: - Selección Rápida de Cuenta de Prueba (1 Toque en Modo Dev)
@@ -507,8 +629,8 @@ final class AuthViewModel: ObservableObject {
             ) as LogoutResponse
         }
 
-        _ = KeychainService.shared.delete(key: "access_token")
-        _ = KeychainService.shared.delete(key: "refresh_token")
+        KeychainService.shared.delete(key: "access_token")
+        KeychainService.shared.delete(key: "refresh_token")
         UserDefaults.standard.removeObject(forKey: "bc_active_user")
 
         self.currentUser = nil
@@ -518,6 +640,9 @@ final class AuthViewModel: ObservableObject {
         self.activeBuses = []
         self.activeTrip = nil
         self.activeArrivalAlert = nil
+        self.activeRouteGuidance = nil
+        self.searchedDestinationPin = nil
+        self.isEmptyTransitBannerDismissed = false
         self.isLoggedIn = false
         self.isGuestMode = false
         self.phoneNumber = ""

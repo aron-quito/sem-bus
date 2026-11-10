@@ -14,6 +14,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     INFOPLIST_KEY_CFBundleDisplayName: "Bus Conectado"
     INFOPLIST_KEY_UILaunchScreen_Generation: true
+    INFOPLIST_KEY_UIRequiresFullScreen: true
     INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait"
     INFOPLIST_KEY_NSCameraUsageDescription: "Bus Conectado requiere acceso a la cámara para escanear el QR del bus o de validación SUNEDU."
     INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Bus Conectado utiliza tu ubicación para mostrarte los paraderos cercanos y el arribo del bus en tiempo real."

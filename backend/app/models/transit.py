@@ -101,3 +101,4 @@ class Bus(Base):
     last_telemetry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     route: Mapped[Optional["BusRoute"]] = relationship("BusRoute", back_populates="buses")
+

@@ -50,3 +50,4 @@ class TransitNetworkResponse(BaseModel):
     active_buses: List[ActiveBusSchema] = []
     has_active_service: bool = False
     empty_reason: str = "No existen rutas, paraderos ni unidades en servicio activo actualmente."
+

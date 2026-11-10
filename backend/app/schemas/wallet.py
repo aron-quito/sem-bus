@@ -64,3 +64,4 @@ class QrPayResponse(BaseModel):
     total_pen_debited: float
     remaining_points: int
     transaction: LedgerTransactionSchema
+

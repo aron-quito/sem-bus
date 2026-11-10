@@ -91,7 +91,7 @@ final class APIClient: ObservableObject {
             }
 
             if httpResponse.statusCode == 401 {
-                _ = KeychainService.shared.delete(key: "access_token")
+                KeychainService.shared.delete(key: "access_token")
                 throw APIError.unauthorizedSessionRevoked
             }
 

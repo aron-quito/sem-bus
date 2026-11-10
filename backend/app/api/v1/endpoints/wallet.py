@@ -291,3 +291,4 @@ async def pay_qr_passage(
             created_at=tx.created_at.isoformat(),
         ),
     )
+

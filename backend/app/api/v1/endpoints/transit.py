@@ -124,3 +124,4 @@ async def get_transit_network(
         has_active_service=has_active,
         empty_reason="Sin paraderos ni unidades en ruta en este momento. Cuando se habiliten turnos y paraderos en el sistema, aparecerán automáticamente."
     )
+
