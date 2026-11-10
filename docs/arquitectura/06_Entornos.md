@@ -96,7 +96,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ../docs/modelo_datos/02_DDL_Script_PostgreSQL.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ../docs/modelo_datos/02_Script_SQL_DDL.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U bc_user -d bc_db"]
       interval: 5s

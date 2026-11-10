@@ -9,3 +9,4 @@ class UserProfileResponse(BaseModel):
     role: str
     points_balance: int = 0
     is_active: bool = True
+

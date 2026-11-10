@@ -48,3 +48,4 @@ class EncryptedStorage(context: Context) {
         private const val KEY_REFRESH_TOKEN = "refresh_token"
     }
 }
+

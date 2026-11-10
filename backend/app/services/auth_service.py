@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy import select, update
@@ -14,6 +15,22 @@ from app.core.security import (
     decode_token,
 )
 from app.core.config import settings
+
+
+def _parse_uuid(raw_id: Optional[str]) -> uuid.UUID:
+    """Convierte un string de UUID en objeto uuid.UUID validado o lanza 401."""
+    if not raw_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identificador de usuario ausente en el token."
+        )
+    try:
+        return uuid.UUID(str(raw_id))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identificador de usuario inválido en el token."
+        )
 
 
 class AuthService:
@@ -72,7 +89,7 @@ class AuthService:
             update(UserSession)
             .where(
                 UserSession.user_id == user.id,
-                UserSession.is_active == True,
+                UserSession.is_active.is_(True),
                 UserSession.jwt_jti != new_jti
             )
             .values(
@@ -146,14 +163,14 @@ class AuthService:
                 detail="Refresh token inválido o expirado"
             )
 
-        user_id = payload.get("sub")
+        user_uuid = _parse_uuid(payload.get("sub"))
         jti = payload.get("jti")
 
         # Verificar que la sesión continúe activa en base de datos
         stmt = select(UserSession).where(
-            UserSession.user_id == user_id,
+            UserSession.user_id == user_uuid,
             UserSession.jwt_jti == jti,
-            UserSession.is_active == True
+            UserSession.is_active.is_(True)
         )
         result = await db.execute(stmt)
         session = result.scalar_one_or_none()
@@ -165,7 +182,7 @@ class AuthService:
             )
 
         # Obtener datos de usuario
-        user_stmt = select(User).where(User.id == user_id)
+        user_stmt = select(User).where(User.id == user_uuid)
         user_res = await db.execute(user_stmt)
         user = user_res.scalar_one_or_none()
         if not user:
@@ -185,10 +202,11 @@ class AuthService:
         jti: str
     ) -> bool:
         """Cierra y revoca la sesión activa del usuario."""
+        user_uuid = _parse_uuid(user_id)
         stmt = (
             update(UserSession)
             .where(
-                UserSession.user_id == user_id,
+                UserSession.user_id == user_uuid,
                 UserSession.jwt_jti == jti
             )
             .values(
@@ -199,3 +217,4 @@ class AuthService:
         await db.execute(stmt)
         await db.commit()
         return True
+

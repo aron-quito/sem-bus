@@ -538,8 +538,8 @@ components:
           example: "Aron Mamani Quispe"
         role:
           type: string
-          enum: [PASSENGER, DRIVER, ADMIN]
-          example: "PASSENGER"
+          enum: [ADULT, STUDENT, CONADIS, DRIVER, ADMIN]
+          example: "ADULT"
         student_tier:
           type: object
           properties:

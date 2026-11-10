@@ -1,18 +1,24 @@
 import uuid
-from datetime import datetime
-from typing import Optional, List
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, text
-from sqlalchemy.dialects.postgresql import UUID, INET
+from datetime import datetime, timezone
+from typing import Optional, List, TYPE_CHECKING
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
+
+if TYPE_CHECKING:
+    from app.models.wallet import Wallet
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=text("gen_random_uuid()")
@@ -26,31 +32,41 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
+        default=utcnow,
         server_default=text("NOW()")
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         server_default=text("NOW()")
     )
 
     # Relaciones
-    wallet: Mapped[Optional["Wallet"]] = relationship("Wallet", back_populates="user", uselist=False, cascade="all, delete-orphan")
-    sessions: Mapped[List["UserSession"]] = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    wallet: Mapped[Optional["Wallet"]] = relationship(
+        "Wallet",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
+    sessions: Mapped[List["UserSession"]] = relationship(
+        "UserSession",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
 
 
 class UserSession(Base):
     __tablename__ = "user_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4,
         server_default=text("gen_random_uuid()")
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True
@@ -62,11 +78,10 @@ class UserSession(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=datetime.utcnow,
+        default=utcnow,
         server_default=text("NOW()")
     )
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Relación inversa
     user: Mapped["User"] = relationship("User", back_populates="sessions")
-

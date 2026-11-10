@@ -48,3 +48,4 @@ async def health_check():
         "environment": settings.ENV,
         "version": "1.0.0",
     }
+

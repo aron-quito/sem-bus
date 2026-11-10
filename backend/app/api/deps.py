@@ -1,12 +1,12 @@
+import uuid
 from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import redis.asyncio as aioredis
 
 from app.core.database import get_db
-from app.core.redis import get_redis
+from app.core.redis import get_redis  # noqa: F401 (re-exportado para endpoints y tests)
 from app.core.security import decode_token
 from app.models.user import User, UserSession
 
@@ -47,11 +47,19 @@ async def get_current_user(
             detail="Token malformado.",
         )
 
+    try:
+        user_uuid = uuid.UUID(str(user_id))
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Identificador de usuario inválido.",
+        )
+
     # Validar sesión activa en PostgreSQL (Regla de Sesión Única)
     stmt = select(UserSession).where(
-        UserSession.user_id == user_id,
+        UserSession.user_id == user_uuid,
         UserSession.jwt_jti == jti,
-        UserSession.is_active == True
+        UserSession.is_active.is_(True)
     )
     res = await db.execute(stmt)
     session = res.scalar_one_or_none()
@@ -64,7 +72,7 @@ async def get_current_user(
         )
 
     # Cargar usuario
-    user_stmt = select(User).where(User.id == user_id, User.is_active == True)
+    user_stmt = select(User).where(User.id == user_uuid, User.is_active.is_(True))
     user_res = await db.execute(user_stmt)
     user = user_res.scalar_one_or_none()
 
@@ -75,3 +83,4 @@ async def get_current_user(
         )
 
     return user
+

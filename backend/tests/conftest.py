@@ -15,11 +15,38 @@ test_engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 test_session_maker = async_sessionmaker(bind=test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
+class MockPipeline:
+    """Simulador de pipeline Redis donde los comandos se encolan de forma síncrona y se ejecutan con await execute()."""
+    def __init__(self, redis_mock: "MockRedis"):
+        self.redis_mock = redis_mock
+        self.ops = []
+
+    def incr(self, key: str):
+        self.ops.append(("incr", (key,)))
+        return self
+
+    def expire(self, key: str, seconds: int):
+        self.ops.append(("expire", (key, seconds)))
+        return self
+
+    async def execute(self):
+        results = []
+        for cmd, args in self.ops:
+            method = getattr(self.redis_mock, cmd)
+            results.append(await method(*args))
+        self.ops.clear()
+        return results
+
+
 class MockRedis:
     """Simulador en memoria de Redis para pruebas unitarias sin dependencias externas."""
     def __init__(self):
         self.store = {}
         self.ttls = {}
+
+    def clear(self):
+        self.store.clear()
+        self.ttls.clear()
 
     async def get(self, key: str):
         return self.store.get(key)
@@ -44,10 +71,7 @@ class MockRedis:
         self.ttls[key] = seconds
 
     def pipeline(self):
-        return self
-
-    async def execute(self):
-        return True
+        return MockPipeline(self)
 
     async def aclose(self):
         pass
@@ -71,9 +95,11 @@ app.dependency_overrides[get_redis] = override_get_redis
 
 @pytest_asyncio.fixture(scope="function", autouse=True)
 async def setup_test_db():
+    mock_redis_instance.clear()
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
+    mock_redis_instance.clear()
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 
@@ -85,3 +111,4 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
         base_url="http://test"
     ) as ac:
         yield ac
+

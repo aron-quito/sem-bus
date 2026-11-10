@@ -2,13 +2,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 import uuid
 import hashlib
+import hmac
 
 from jose import jwt, JWTError
-from passlib.context import CryptContext
 
 from app.core.config import settings
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def generate_jti() -> str:
@@ -36,8 +34,8 @@ def create_access_token(
         "role": role,
         "jti": jti,
         "type": "access",
-        "iat": now,
-        "exp": expire,
+        "iat": int(now.timestamp()),
+        "exp": int(expire.timestamp()),
     }
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
@@ -58,8 +56,8 @@ def create_refresh_token(
         "sub": str(user_id),
         "jti": jti,
         "type": "refresh",
-        "iat": now,
-        "exp": expire,
+        "iat": int(now.timestamp()),
+        "exp": int(expire.timestamp()),
     }
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
@@ -83,7 +81,6 @@ def hash_otp(code: str, salt: str = "bc_tacna_otp_salt") -> str:
 
 
 def verify_otp_hash(code: str, hashed: str, salt: str = "bc_tacna_otp_salt") -> bool:
-    """Compara en tiempo constante el código ingresado contra el hash en caché."""
+    """Compara en tiempo constante (hmac.compare_digest) el código ingresado contra el hash en caché."""
     candidate = hashlib.sha256(f"{code}:{salt}".encode("utf-8")).hexdigest()
-    return candidate == hashed
-
+    return hmac.compare_digest(candidate, hashed)

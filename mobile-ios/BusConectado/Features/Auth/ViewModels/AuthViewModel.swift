@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import UIKit
 
 enum OnboardingStep {
     case splash
@@ -96,7 +97,9 @@ final class AuthViewModel: ObservableObject {
 
         do {
             let req = VerifyRequest(phone: phoneNumber, code: otpCode, deviceId: deviceId, deviceName: deviceName)
-            let body = try JSONEncoder().encode(req)
+            let encoder = JSONEncoder()
+            encoder.keyEncodingStrategy = .convertToSnakeCase
+            let body = try encoder.encode(req)
             let res: TokenResponse = try await APIClient.shared.request(
                 endpoint: "auth/otp/verify",
                 method: "POST",
@@ -136,3 +139,4 @@ final class AuthViewModel: ObservableObject {
             }
     }
 }
+

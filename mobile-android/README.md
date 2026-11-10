@@ -38,3 +38,4 @@ mobile-android/app/src/main/java/pe/edu/unjbg/busconectado/
 * **Google ML Kit:** `com.google.mlkit:barcode-scanning:17.2.0`
 * **Retrofit / OkHttp:** 2.11.0 / 4.12.0
 * **Security Crypto:** `androidx.security:security-crypto:1.1.0-alpha06`
+

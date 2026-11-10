@@ -18,7 +18,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Cargar y ejecutar el DDL oficial de PostgreSQL 15+ de docs/modelo_datos/
-    ddl_path = Path(__file__).resolve().parents[4] / "docs" / "modelo_datos" / "02_Script_SQL_DDL.sql"
+    ddl_path = Path(__file__).resolve().parents[3] / "docs" / "modelo_datos" / "02_Script_SQL_DDL.sql"
     if ddl_path.exists():
         sql_content = ddl_path.read_text(encoding="utf-8")
         op.execute(sa.text(sql_content))

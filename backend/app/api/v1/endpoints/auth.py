@@ -125,3 +125,4 @@ async def logout(
 
     await AuthService.logout(db=db, user_id=str(current_user.id), jti=jti)
     return {"success": True, "message": "Sesión cerrada correctamente."}
+

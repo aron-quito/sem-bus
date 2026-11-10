@@ -91,3 +91,4 @@ class AuthViewModel(
         _uiState.value = _uiState.value.copy(isGuestMode = true)
     }
 }
+

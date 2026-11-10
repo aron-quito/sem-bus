@@ -70,12 +70,6 @@ class OtpService:
         """
         Verifica el código ingresado contra Redis, controlando intentos fallidos y eliminándolo al validar.
         """
-        # En modo desarrollo demo: "123456" siempre es válido
-        if settings.DEBUG and code == "123456":
-            if redis_client:
-                await redis_client.delete(f"otp:code:{phone}")
-            return True
-
         if not redis_client:
             return code == "123456"
 
@@ -97,8 +91,8 @@ class OtpService:
                 detail="Código OTP vencido o no solicitado. Solicita uno nuevo."
             )
 
-        # Comprobar código
-        if verify_otp_hash(code, stored_hash):
+        # Comprobar código (en desarrollo generate_and_dispatch_otp guarda el hash de "123456")
+        if verify_otp_hash(code, stored_hash) or (settings.DEBUG and code == "123456"):
             # Éxito: invalidar de inmediato para evitar reuso (Inclusión CU-00.2)
             await redis_client.delete(otp_key)
             await redis_client.delete(f"rate:otp:verify:{phone}")
@@ -122,3 +116,4 @@ class OtpService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Código incorrecto. Te quedan {remaining} intento(s)."
             )
+

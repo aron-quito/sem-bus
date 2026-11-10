@@ -117,3 +117,23 @@ app.*.symbols
 !**/ios/**/default.perspectivev3
 !/packages/flutter_tools/test/data/dart_dependencies_test/**/.packages
 !/dev/ci/**/Gemfile.lock
+
+# Python / FastAPI Backend
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+.env.local
+.pytest_cache/
+.coverage
+htmlcov/
+*.db
+*.sqlite3
+
+# macOS / IDEs
+.DS_Store
+.idea/
+.vscode/

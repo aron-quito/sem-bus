@@ -45,3 +45,4 @@ mobile-ios/BusConectado/
   - `AVFoundation`: Captura óptica de QR dinámico.
   - `ActivityKit`: Live Activities en Dynamic Island.
   - `Security`: Keychain para tokens JWT.
+
