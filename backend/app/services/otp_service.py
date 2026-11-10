@@ -23,6 +23,17 @@ class OtpService:
         """
         Genera un código OTP de 6 dígitos, aplica control de rate limit y lo almacena con TTL en Redis.
         """
+        # 0. Verificar si el teléfono está bloqueado por demasiados intentos fallidos previos
+        if redis_client:
+            lockout_key = f"lockout:otp:{phone}"
+            is_locked = await redis_client.get(lockout_key)
+            if is_locked:
+                ttl = await redis_client.ttl(lockout_key)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Cuenta temporalmente bloqueada por exceso de intentos erróneos. Espera {max(ttl, 1)} segundos antes de solicitar un nuevo código."
+                )
+
         # 1. Control de Tasa de Envíos (Rate Limiting anti-spam)
         if redis_client:
             send_count_key = f"rate:otp:send:{phone}"
@@ -48,11 +59,14 @@ class OtpService:
             otp_key = f"otp:code:{phone}"
             await redis_client.set(otp_key, hashed, ex=OTP_TTL_SECONDS)
 
-            # Incrementar contador de envíos
-            p = redis_client.pipeline()
-            p.incr(send_count_key)
-            p.expire(send_count_key, SEND_WINDOW_SECONDS)
-            await p.execute()
+            # Incrementar contador de envíos sin reiniciar ventana si ya existía
+            if not current_sends:
+                p = redis_client.pipeline()
+                p.incr(send_count_key)
+                p.expire(send_count_key, SEND_WINDOW_SECONDS)
+                await p.execute()
+            else:
+                await redis_client.incr(send_count_key)
 
         # 4. Despacho por SMS / WhatsApp
         # Aquí se invoca el cliente de Twilio si hay credenciales configuradas
@@ -92,7 +106,8 @@ class OtpService:
             )
 
         # Comprobar código (en desarrollo generate_and_dispatch_otp guarda el hash de "123456")
-        if verify_otp_hash(code, stored_hash) or (settings.DEBUG and code == "123456"):
+        is_dev_code = (settings.DEBUG and settings.ENV == "development" and code == "123456")
+        if verify_otp_hash(code, stored_hash) or is_dev_code:
             # Éxito: invalidar de inmediato para evitar reuso (Inclusión CU-00.2)
             await redis_client.delete(otp_key)
             await redis_client.delete(f"rate:otp:verify:{phone}")

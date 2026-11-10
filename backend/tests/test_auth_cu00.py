@@ -90,6 +90,11 @@ async def test_tc_auth_03_rechazo_codigo_otp_incorrecto_y_bloqueo(client: AsyncC
     )
     assert res4.status_code == 403
 
+    # Una cuenta bloqueada tampoco puede solicitar nuevos envíos de OTP durante el lockout (HTTP 403)
+    res_send_blocked = await client.post("/api/v1/auth/otp/send", json={"phone": "952777888"})
+    assert res_send_blocked.status_code == 403
+    assert "bloqueada" in res_send_blocked.json()["detail"].lower()
+
 
 @pytest.mark.asyncio
 async def test_tc_auth_04_sesion_unica_estilo_yape(client: AsyncClient):

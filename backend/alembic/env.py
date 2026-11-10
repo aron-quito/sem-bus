@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import settings
+import app.models  # noqa: F401 - Registra todas las entidades en Base.metadata
 from app.models.base import Base
 
 config = context.config

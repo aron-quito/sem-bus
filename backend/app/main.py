@@ -10,11 +10,18 @@ from app.core.redis import get_redis_pool
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Inicializar conexión con Redis
-    pool = get_redis_pool()
+    pool = None
+    try:
+        pool = get_redis_pool()
+    except Exception as e:
+        print(f"[WARN] No se pudo inicializar el pool de Redis: {e}")
     yield
     # Shutdown: Cerrar conexiones
     if pool:
-        await pool.disconnect()
+        try:
+            await pool.disconnect()
+        except Exception:
+            pass
 
 
 app = FastAPI(

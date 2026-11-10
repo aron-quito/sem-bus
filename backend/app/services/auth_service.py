@@ -5,7 +5,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import HTTPException, status
 
-from app.models.user import User, UserSession
+from app.models.user import User, UserSession, UserRole
 from app.models.wallet import Wallet
 from app.schemas.auth import TokenResponse, UserAuthProfile
 from app.core.security import (
@@ -59,7 +59,7 @@ class AuthService:
             user = User(
                 phone=phone,
                 name="Pasajero BC",
-                role="ADULT",
+                role=UserRole.ADULT.value,
                 current_device_id=device_id,
                 is_active=True,
             )
@@ -121,7 +121,12 @@ class AuthService:
         # 3. Obtener saldo de puntos del monedero
         wallet_stmt = select(Wallet.points_balance).where(Wallet.user_id == user.id)
         wallet_res = await db.execute(wallet_stmt)
-        points = wallet_res.scalar_one_or_none() or 0
+        points = wallet_res.scalar_one_or_none()
+        if points is None:
+            wallet = Wallet(user_id=user.id, points_balance=0)
+            db.add(wallet)
+            await db.flush()
+            points = 0
 
         # 4. Generar tokens seguros
         access_token = create_access_token(

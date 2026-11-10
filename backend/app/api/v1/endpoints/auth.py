@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as aioredis
+from typing import Optional
 
-from app.core.database import get_db
-from app.core.redis import get_redis
-from app.api.deps import get_current_user, security_scheme
+from app.api.deps import get_db, get_redis, get_current_user, security_scheme
+from app.core.config import settings
 from app.models.user import User
 from app.core.security import decode_token
 from app.schemas.auth import (
@@ -104,7 +105,7 @@ async def refresh_token(
     return RefreshTokenResponse(
         access_token=new_access_token,
         token_type="Bearer",
-        expires_in=3600
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
 
@@ -116,12 +117,22 @@ async def refresh_token(
 )
 async def logout(
     current_user: User = Depends(get_current_user),
-    credentials=Depends(security_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
     db: AsyncSession = Depends(get_db)
 ):
+    if not credentials or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciales de autenticación no proporcionadas.",
+        )
     token = credentials.credentials
     payload = decode_token(token)
-    jti = payload.get("jti") if payload else ""
+    jti = payload.get("jti") if payload else None
+    if not jti:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token malformado.",
+        )
 
     await AuthService.logout(db=db, user_id=str(current_user.id), jti=jti)
     return {"success": True, "message": "Sesión cerrada correctamente."}

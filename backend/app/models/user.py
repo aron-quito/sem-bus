@@ -1,13 +1,22 @@
 import uuid
+import enum
 from datetime import datetime, timezone
 from typing import Optional, List, TYPE_CHECKING
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Uuid, text
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, Uuid, text, Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
 
 if TYPE_CHECKING:
     from app.models.wallet import Wallet
+
+
+class UserRole(str, enum.Enum):
+    ADULT = "ADULT"
+    STUDENT = "STUDENT"
+    CONADIS = "CONADIS"
+    DRIVER = "DRIVER"
+    ADMIN = "ADMIN"
 
 
 def utcnow() -> datetime:
@@ -25,7 +34,17 @@ class User(Base):
     )
     phone: Mapped[str] = mapped_column(String(15), unique=True, nullable=False, index=True)
     name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    role: Mapped[str] = mapped_column(String(20), nullable=False, default="ADULT")
+    role: Mapped[str] = mapped_column(
+        SQLEnum(
+            UserRole,
+            name="user_role",
+            native_enum=True,
+            values_callable=lambda obj: [e.value for e in obj]
+        ),
+        nullable=False,
+        default=UserRole.ADULT.value,
+        server_default=text("'ADULT'")
+    )
     current_device_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     otp_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     otp_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
