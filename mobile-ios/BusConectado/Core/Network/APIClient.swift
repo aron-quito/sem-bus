@@ -23,13 +23,29 @@ enum APIError: LocalizedError {
     }
 }
 
-final class APIClient {
+final class APIClient: ObservableObject {
     static let shared = APIClient()
     #if DEBUG
-    private let baseURL = URL(string: "http://localhost:8000/api/v1")!
+    @Published var baseURLString: String = "http://localhost:8000/api/v1"
     #else
-    private let baseURL = URL(string: "https://api.bc-tacna.pe/api/v1")!
+    @Published var baseURLString: String = "https://api.bc-tacna.pe/api/v1"
     #endif
+
+    private var baseURL: URL {
+        URL(string: baseURLString) ?? URL(string: "http://localhost:8000/api/v1")!
+    }
+
+    func updateBaseURL(_ newURL: String) {
+        let trimmed = newURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasSuffix("/api/v1") {
+            baseURLString = trimmed
+        } else if trimmed.hasSuffix("/") {
+            baseURLString = "\(trimmed)api/v1"
+        } else {
+            baseURLString = "\(trimmed)/api/v1"
+        }
+        UserDefaults.standard.set(baseURLString, forKey: "bc_backend_url")
+    }
 
     private let session: URLSession
 
