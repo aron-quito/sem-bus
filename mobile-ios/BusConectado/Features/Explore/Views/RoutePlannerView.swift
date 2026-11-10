@@ -43,7 +43,7 @@ struct RoutePlannerView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var screenState: RoutePlannerScreenState = .selector
-    @State private var selectedDestination: TacnaDestinationPlace = TacnaDestinationPlace.catalog[3] // Mercadillo Bolognesi por defecto
+    @State private var selectedDestination: TacnaDestinationPlace = TacnaDestinationPlace.catalog[0] // Mercado Central por defecto
     @State private var isEndpointsSwapped: Bool = false
     @State private var selectedTransportTab: Int = 0 // 0 = Bus, 1 = A pie
     @State private var destinationSearchText: String = ""
@@ -52,7 +52,7 @@ struct RoutePlannerView: View {
     // Estado de la Hoja Inferior de 3 Niveles (Peek / Medium / Full)
     @State private var sheetSnap: RouteSheetSnapLevel = .compact
     @State private var sheetDragTranslation: CGFloat = 0
-    @State private var selectedOptionIndex: Int = 1 // 1 = BUS 01 (Recomendada), 2 = BUS 07, 3 = Caminata directa
+    @State private var selectedOptionIndex: Int = 1 // 1 = Ruta principal (Recomendada), 2 = Ruta alterna, 3 = Caminata directa
     @State private var selectedFilter: RouteQuickFilter = .fastest
 
     @State private var routeMapCamera: MapCameraPosition = .region(
@@ -216,10 +216,10 @@ struct RoutePlannerView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     savedPlacePill(icon: "house.fill", title: "Casa", subtitle: "Definir lugar") {
-                        selectDestinationAndShowRoute(TacnaDestinationPlace.catalog[1]) // Plaza Zela
+                        selectDestinationAndShowRoute(TacnaDestinationPlace.catalog[1]) // Mercado 2 de Mayo
                     }
                     savedPlacePill(icon: "briefcase.fill", title: "Universidad / Trabajo", subtitle: "Campus UNJBG") {
-                        selectDestinationAndShowRoute(TacnaDestinationPlace.catalog[2]) // P. UNJBG
+                        selectDestinationAndShowRoute(TacnaDestinationPlace.catalog.first(where: { $0.id == "stop-unjbg" }) ?? TacnaDestinationPlace.catalog[0])
                     }
                 }
                 .padding(.horizontal, 16)
@@ -422,7 +422,7 @@ struct RoutePlannerView: View {
     private var routeMapScreenView: some View {
         GeometryReader { geo in
             ZStack(alignment: .top) {
-                // 1. Mapa de Fondo con Polilíneas Multimodales (Caminata + Bus Línea 10 + Pin Rojo)
+                // 1. Mapa de Fondo con Polilíneas Multimodales (Caminata + Bus + Pin Rojo)
                 Map(position: $routeMapCamera) {
                     // Pin de Origen ("Tu ubicación")
                     Annotation("Tu ubicación", coordinate: TacnaDestinationPlace.userOriginCoordinate) {
@@ -455,23 +455,23 @@ struct RoutePlannerView: View {
                         )
 
                     // Si el destino usa Bus (Caso 2 y Caso 3) y no eligió la Opción 3 (Caminata Directa)
-                    if selectedDestination.routeCase != .walkOnlyPlazaZela && selectedOptionIndex != 3 {
-                        // Tramo 2: Recorrido en Bus por la Línea 10 (Azul Eléctrico continuo)
+                    if selectedDestination.routeCase != .walkOnlyNearby && selectedOptionIndex != 3 {
+                        // Tramo 2: Recorrido en Bus (Azul Eléctrico continuo)
                         MapPolyline(coordinates: selectedDestination.busTransitCoordinates)
                             .stroke(
                                 BCTheme.royalBlue,
                                 style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
                             )
 
-                        // Marcador de Paradero de Abordaje (Plaza Zela)
-                        Annotation("Plaza Zela", coordinate: TacnaDestinationPlace.plazaZelaCoordinate) {
+                        // Marcador de Paradero de Abordaje
+                        Annotation(selectedDestination.boardingStopName, coordinate: selectedDestination.boardingCoordinate) {
                             HStack(spacing: 4) {
                                 Circle()
                                     .fill(BCTheme.royalBlue)
                                     .frame(width: 18, height: 18)
                                     .overlay(Circle().stroke(Color.white, lineWidth: 2))
 
-                                Text("Subir aquí: \(selectedOptionIndex == 2 ? "BUS 07" : "BUS 01")")
+                                Text("Subir aquí: \(selectedRouteLabel)")
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundColor(BCTheme.emerald)
                                     .padding(.horizontal, 6)
@@ -485,30 +485,17 @@ struct RoutePlannerView: View {
                             }
                         }
 
-                        // Marcador de Parada Intermedia o de Bajada
-                        if selectedDestination.routeCase == .busToUnjbg {
-                            Annotation("P. Mercado", coordinate: TacnaDestinationPlace.pMercadoCoordinate) {
-                                Text("Parada intermedia • P. Mercado")
+                        // Marcador de Parada Intermedia (si la ruta pasa por un paradero clave antes del destino)
+                        if let intermediate = selectedDestination.intermediateStopName,
+                           selectedDestination.busTransitCoordinates.count >= 2 {
+                            Annotation(intermediate, coordinate: selectedDestination.busTransitCoordinates[1]) {
+                                Text("Parada intermedia • \(intermediate)")
                                     .font(.system(size: 8.5, weight: .semibold))
                                     .foregroundColor(.white.opacity(0.85))
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 3)
                                     .background(BCTheme.elevatedSurface.opacity(0.95))
                                     .clipShape(RoundedRectangle(cornerRadius: 5))
-                            }
-                        } else {
-                            Annotation("Bajar aquí", coordinate: TacnaDestinationPlace.pMercadoCoordinate) {
-                                Text("Bajar aquí (P. Mercado)")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(BCTheme.amber)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(Color(hex: "#451A03").opacity(0.95))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(BCTheme.amber.opacity(0.8), lineWidth: 1)
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                         }
                     }
@@ -701,7 +688,7 @@ struct RoutePlannerView: View {
 
             // Píldora Multimodal Flotante (#gm-route-steps-bar)
             HStack(spacing: 6) {
-                if selectedDestination.routeCase == .walkOnlyPlazaZela || selectedOptionIndex == 3 {
+                if selectedDestination.routeCase == .walkOnlyNearby || selectedOptionIndex == 3 {
                     HStack(spacing: 5) {
                         Image(systemName: "figure.walk")
                             .font(.caption2.weight(.bold))
@@ -727,7 +714,7 @@ struct RoutePlannerView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "bus.fill")
                                 .font(.system(size: 9, weight: .bold))
-                            Text("\(selectedOptionIndex == 2 ? "BUS 07" : "BUS 01") (\(selectedDestination.busRideMinutes)m)")
+                            Text("\(selectedRouteLabel) (\(selectedDestination.busRideMinutes)m)")
                                 .font(.system(size: 10, weight: .bold).monospaced())
                         }
                         .foregroundColor(Color(hex: "#93C5FD"))
@@ -856,7 +843,7 @@ struct RoutePlannerView: View {
             // Pestañas de Duración Rápida
             HStack(spacing: 18) {
                 durationTabPill(minutes: selectedDestination.totalDurationMinutes, index: 1)
-                if selectedDestination.routeCase != .walkOnlyPlazaZela {
+                if selectedDestination.routeCase != .walkOnlyNearby {
                     durationTabPill(minutes: selectedDestination.secondaryDurationMinutes, index: 2)
                     durationTabPill(minutes: selectedDestination.walkingDirectMinutes, index: 3)
                 }
@@ -1007,7 +994,7 @@ struct RoutePlannerView: View {
 
                 // Tarjeta de Próximo Bus / Estado de Flota
                 VStack(alignment: .leading, spacing: 4) {
-                    if selectedDestination.routeCase == .walkOnlyPlazaZela || selectedOptionIndex == 3 {
+                    if selectedDestination.routeCase == .walkOnlyNearby || selectedOptionIndex == 3 {
                         Text("🚶‍♂️ Trayecto directo a pie")
                             .font(.caption.weight(.bold))
                             .foregroundColor(.white)
@@ -1016,7 +1003,7 @@ struct RoutePlannerView: View {
                             .foregroundColor(.white.opacity(0.65))
                     } else {
                         HStack {
-                            Text("🚌 Próximo bus · \(selectedOptionIndex == 2 ? "BUS 07" : "BUS 01") (Línea 10)")
+                            Text("🚌 Próximo bus · \(selectedRouteLabel)")
                                 .font(.caption.weight(.bold))
                                 .foregroundColor(.white)
                             Spacer()
@@ -1030,7 +1017,7 @@ struct RoutePlannerView: View {
                                     .clipShape(Capsule())
                             }
                         }
-                        Text("Abordaje en \(selectedDestination.boardingStopName) · Arribo estimado en ~3 min")
+                        Text("Abordaje en \(selectedDestination.boardingStopName) · \(liveEtaShortLabel)")
                             .font(.caption2)
                             .foregroundColor(.white.opacity(0.75))
                         Text("Descenso en \(selectedDestination.alightingStopName) · Tarifa aplicable: \(formattedUserFare)")
@@ -1052,12 +1039,12 @@ struct RoutePlannerView: View {
                         text: "Camina \(selectedDestination.walkInitialMinutes) min hasta \(selectedDestination.boardingStopName)"
                     )
 
-                    if selectedDestination.routeCase != .walkOnlyPlazaZela && selectedOptionIndex != 3 {
+                    if selectedDestination.routeCase != .walkOnlyNearby && selectedOptionIndex != 3 {
                         stepRow(
                             icon: "bus.fill",
                             bgHex: "#14532D",
                             iconColor: Color(hex: "#86EFAC"),
-                            text: "Toma \(selectedOptionIndex == 2 ? "BUS 07" : "BUS 01") · Línea 10 · \(formattedUserFare)"
+                            text: "Toma \(selectedRouteLabel) · \(formattedUserFare)"
                         )
 
                         stepRow(
@@ -1150,36 +1137,36 @@ struct RoutePlannerView: View {
                         }
                     }
 
-                    // OPCIÓN 1: Recomendada (BUS 01 o Caminata Directa a Plaza Zela)
+                    // OPCIÓN 1: Recomendada (Ruta principal o Caminata Directa)
                     routeOptionCard(
                         index: 1,
-                        badge: "L10",
-                        title: selectedDestination.routeCase == .walkOnlyPlazaZela ? "Caminata Directa" : "BUS 01",
+                        badge: "BUS",
+                        title: selectedDestination.routeCase == .walkOnlyNearby ? "Caminata Directa" : selectedDestination.primaryRouteName,
                         isRecommended: true,
-                        subtitle: selectedDestination.routeCase == .walkOnlyPlazaZela
+                        subtitle: selectedDestination.routeCase == .walkOnlyNearby
                             ? "Paradero más próximo · \(selectedDestination.distanceLabel) a pie"
-                            : "Próximo en ~3 min · \(selectedDestination.boardingStopName) → \(selectedDestination.alightingStopName)",
+                            : "\(liveEtaShortLabel) · \(selectedDestination.boardingStopName) → \(selectedDestination.alightingStopName)",
                         durationMinutes: selectedDestination.totalDurationMinutes,
-                        footerText: selectedDestination.routeCase == .walkOnlyPlazaZela
+                        footerText: selectedDestination.routeCase == .walkOnlyNearby
                             ? "Sin costo (Gratis) · 0 emisiones"
-                            : "Tarifa: \(formattedUserFare) · 68% aforo · 🌿 Eco"
+                            : "Tarifa: \(formattedUserFare) · \(liveEtaShortLabel) · 🌿 Eco"
                     )
 
-                    // OPCIÓN 2: BUS 07 (Menos concurrido)
-                    if selectedDestination.routeCase != .walkOnlyPlazaZela {
+                    // OPCIÓN 2: Ruta alterna
+                    if selectedDestination.routeCase != .walkOnlyNearby {
                         routeOptionCard(
                             index: 2,
-                            badge: "L10",
-                            title: "BUS 07",
+                            badge: "BUS",
+                            title: secondaryRouteName,
                             isRecommended: false,
-                            subtitle: "Llega en ~11 min · 43% aforo garantizado",
+                            subtitle: "Ruta alterna · \(liveEtaShortLabel)",
                             durationMinutes: selectedDestination.secondaryDurationMinutes,
-                            footerText: "Tarifa: \(formattedUserFare) · Asientos disponibles"
+                            footerText: "Tarifa: \(formattedUserFare) · Alternativa por otra vía"
                         )
                     }
 
                     // OPCIÓN 3: Caminata Directa
-                    if selectedDestination.routeCase != .walkOnlyPlazaZela {
+                    if selectedDestination.routeCase != .walkOnlyNearby {
                         routeOptionCard(
                             index: 3,
                             badge: "PIE",
@@ -1423,6 +1410,25 @@ struct RoutePlannerView: View {
         }
     }
 
+    /// Ruta principal o alterna según la opción elegida (Ej: "Ruta 14" / "Ruta 10B")
+    private var selectedRouteLabel: String {
+        selectedOptionIndex == 2 ? secondaryRouteName : selectedDestination.primaryRouteName
+    }
+
+    private var secondaryRouteName: String {
+        selectedDestination.routesPassing.count > 1
+            ? selectedDestination.routesPassing[1]
+            : selectedDestination.primaryRouteName
+    }
+
+    /// ETA real solo cuando existen unidades en operación; en cuentas de prueba no se inventan buses
+    private var liveEtaShortLabel: String {
+        if let bus = viewModel.activeBuses.first {
+            return "Próximo bus en ~\(bus.nextStopEtaMinutes) min · \(bus.occupancyPercentage)% aforo"
+        }
+        return "ETA en vivo al activarse unidades"
+    }
+
     private var formattedUserFare: String {
         if let user = viewModel.currentUser {
             return String(format: "S/. %.2f", user.roleType.farePen)
@@ -1472,3 +1478,4 @@ struct RoutePlannerView: View {
         }
     }
 }
+

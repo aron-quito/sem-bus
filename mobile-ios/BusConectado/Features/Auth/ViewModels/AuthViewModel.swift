@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import UIKit
 import CoreLocation
+import MapKit
 
 enum OnboardingStep {
     case splash
@@ -55,6 +56,8 @@ final class AuthViewModel: ObservableObject {
     @Published var isSearchDropdownVisible: Bool = false
     @Published var searchedDestinationPin: TacnaDestinationPlace? = nil
     @Published var isEmptyTransitBannerDismissed: Bool = false
+    @Published var liveMapSearchResults: [TacnaDestinationPlace] = []
+    @Published var activeRouteOverlayOnMap: TacnaOfficialRouteCatalogItem? = nil
 
     // Estado del Escenario Pantalla Completa "Ir / Cómo Llegar" (Sección 4.E del Mockup)
     @Published var showRoutePlannerFullScreen: Bool = false
@@ -70,6 +73,7 @@ final class AuthViewModel: ObservableObject {
     private var countdownTimer: AnyCancellable?
     private var arrivalAlertTimer: AnyCancellable?
     private var routeGuidanceTimer: AnyCancellable?
+    private var searchDebounceCancellable: AnyCancellable?
 
     init() {
         if let savedHost = UserDefaults.standard.string(forKey: "bc_backend_host") {
@@ -88,6 +92,17 @@ final class AuthViewModel: ObservableObject {
                 }
             }
         }
+
+        // Búsqueda en vivo de cualquier lugar del mapa de Tacna mediante Apple MapKit (MKLocalSearch)
+        searchDebounceCancellable = $searchQuery
+            .removeDuplicates()
+            .debounce(for: .milliseconds(280), scheduler: RunLoop.main)
+            .sink { [weak self] query in
+                guard let self = self else { return }
+                Task {
+                    await self.performLiveMapKitSearchInTacna(query: query)
+                }
+            }
     }
 
     var isValidPhone: Bool {
@@ -117,16 +132,70 @@ final class AuthViewModel: ObservableObject {
         return activeBuses
     }
 
-    /// Catálogo predictivo para el buscador superior (#destination-suggestions en el mockup)
+    /// Catálogo predictivo para el buscador superior: combina los 34 Paraderos Oficiales/Propuestos de Tacna + Lugares del Mapa en vivo (MapKit)
     var filteredSearchDestinations: [TacnaDestinationPlace] {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return TacnaDestinationPlace.catalog
         }
-        return TacnaDestinationPlace.catalog.filter {
+        let catalogMatches = TacnaDestinationPlace.catalog.filter {
             $0.name.localizedCaseInsensitiveContains(trimmed) ||
             $0.shortName.localizedCaseInsensitiveContains(trimmed) ||
-            $0.subtitle.localizedCaseInsensitiveContains(trimmed)
+            $0.subtitle.localizedCaseInsensitiveContains(trimmed) ||
+            $0.category.rawValue.localizedCaseInsensitiveContains(trimmed) ||
+            $0.routesPassing.joined(separator: " ").localizedCaseInsensitiveContains(trimmed)
+        }
+        // Evitar duplicados por nombre con los resultados de MapKit
+        let existingNames = Set(catalogMatches.map { $0.name.lowercased() })
+        let uniqueMapMatches = liveMapSearchResults.filter { !existingNames.contains($0.name.lowercased()) }
+        return catalogMatches + uniqueMapMatches
+    }
+
+    func performLiveMapKitSearchInTacna(query: String) async {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            self.liveMapSearchResults = []
+            return
+        }
+
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = "\(trimmed) Tacna"
+        request.region = MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: -18.0135, longitude: -70.2519),
+            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
+        )
+
+        let search = MKLocalSearch(request: request)
+        do {
+            let response = try await search.start()
+            let mapped: [TacnaDestinationPlace] = response.mapItems.prefix(6).compactMap { item in
+                guard let name = item.name else { return nil }
+                let coord = item.placemark.coordinate
+                // Filtrar que esté dentro del departamento de Tacna
+                guard coord.latitude < -17.5 && coord.latitude > -18.5 else { return nil }
+                let thoroughfare = item.placemark.thoroughfare ?? item.placemark.locality ?? "Tacna"
+                return TacnaDestinationPlace.fromMapItem(
+                    name: name,
+                    subtitle: "\(thoroughfare) • Ubicación del Mapa en Tacna",
+                    coordinate: coord
+                )
+            }
+            self.liveMapSearchResults = mapped
+        } catch {
+            self.liveMapSearchResults = []
+        }
+    }
+
+    /// Proyecta una Ruta Oficial de Tacna desde la pestaña Líneas directamente sobre el mapa principal
+    func projectRouteOnMainMap(_ route: TacnaOfficialRouteCatalogItem) {
+        BCFeedbackManager.shared.impactMedium()
+        self.activeRouteOverlayOnMap = route
+        self.selectedTab = 0
+        if let first = route.resolvedStops.first, let last = route.resolvedStops.last {
+            let midLat = (first.latitude + last.latitude) / 2.0
+            let midLon = (first.longitude + last.longitude) / 2.0
+            let span = max(abs(first.latitude - last.latitude) * 1.6, 0.032)
+            focusMap(on: CLLocationCoordinate2D(latitude: midLat, longitude: midLon), spanDelta: span)
         }
     }
 
@@ -504,7 +573,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// Ejecuta el pago de pasaje con QR en puerta + acompañantes (CU-01 / RN-07)
-    func payPassageWithQr(companionsCount: Int, busUnit: String = "BUS 01", busPlate: String = "Z1A-780") -> Bool {
+    func payPassageWithQr(companionsCount: Int, busUnit: String = "BUS 01", busPlate: String = "Z1A-780", lineNumber: String = "14") -> Bool {
         guard var user = currentUser else { return false }
 
         let holderFare = user.roleType.farePoints
@@ -534,7 +603,7 @@ final class AuthViewModel: ObservableObject {
         let newTx = LedgerTransactionItem(
             id: UUID().uuidString,
             type: "TRIP_DEBIT",
-            title: "Línea 10 • \(busUnit)\(companionSuffix)",
+            title: "Ruta \(lineNumber) • \(busUnit)\(companionSuffix)",
             subtitle: "Abordaje validado en puerta",
             plateBadge: busPlate,
             timestampLabel: timeStr,
@@ -552,7 +621,7 @@ final class AuthViewModel: ObservableObject {
             id: UUID().uuidString,
             busUnit: busUnit,
             busPlate: busPlate,
-            lineNumber: "10",
+            lineNumber: lineNumber,
             boardingStopName: "Paradero de Abordaje",
             destinationStopName: "Paradero de Destino",
             companionsCount: companionsCount,

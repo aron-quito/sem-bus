@@ -12,6 +12,7 @@
 		2B54217FA3868DEE142FA19E /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC123187CC731F86C0E93ECD /* OnboardingView.swift */; };
 		2E42F38F83718CDD92C14646 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F393F685F83E954717B6D902 /* MainTabView.swift */; };
 		49AAD7CE1BACE87F848162B9 /* ExploreMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26DCE8B8D9D2BE263B41B01F /* ExploreMapView.swift */; };
+		4A6F5EA9AF921A2834D1A1C6 /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C26ABD5932AAFE88C1D3FC29 /* LocationService.swift */; };
 		4DB02799D9CA4244441EC9C8 /* DomainModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06C092B36697177DAACE3294 /* DomainModels.swift */; };
 		8D3028B84F939483AA84110B /* BusConectadoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A4A10934172C4821A69508 /* BusConectadoApp.swift */; };
 		E05D525157770B3A65BF1241 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76270BC8EAEFB19145AE99BD /* APIClient.swift */; };
@@ -35,6 +36,7 @@
 		7BDFF40D6E51D6FB3F3A04DC /* RoutePlannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePlannerView.swift; sourceTree = "<group>"; };
 		8376E41DB2FBF8009AD1F631 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
 		A1632A0EA0FC2DB0AA673F7D /* PayQrView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PayQrView.swift; sourceTree = "<group>"; };
+		C26ABD5932AAFE88C1D3FC29 /* LocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationService.swift; sourceTree = "<group>"; };
 		D7A4A10934172C4821A69508 /* BusConectadoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BusConectadoApp.swift; sourceTree = "<group>"; };
 		DC123187CC731F86C0E93ECD /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		E3E266DBFEDC29AE6135141D /* WalletView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletView.swift; sourceTree = "<group>"; };
@@ -92,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				4CD6310A136504B515CBA521 /* DesignSystem */,
+				9378187795653FD468F63BFA /* Location */,
 				B484B9DAABC26A580A7E5019 /* Models */,
 				8397C31ABBAFB68CCA5A0CF6 /* Network */,
 				2A420B3440B321895C88C7D4 /* Storage */,
@@ -163,6 +166,14 @@
 				464917B66713A61D87FF6F88 /* Features */,
 			);
 			path = BusConectado;
+			sourceTree = "<group>";
+		};
+		9378187795653FD468F63BFA /* Location */ = {
+			isa = PBXGroup;
+			children = (
+				C26ABD5932AAFE88C1D3FC29 /* LocationService.swift */,
+			);
+			path = Location;
 			sourceTree = "<group>";
 		};
 		B484B9DAABC26A580A7E5019 /* Models */ = {
@@ -322,6 +333,7 @@
 				49AAD7CE1BACE87F848162B9 /* ExploreMapView.swift in Sources */,
 				0A79A40E648B949A9455FF3E /* KeychainService.swift in Sources */,
 				062C24E8AB2A1705E3915567 /* LinesView.swift in Sources */,
+				4A6F5EA9AF921A2834D1A1C6 /* LocationService.swift in Sources */,
 				2E42F38F83718CDD92C14646 /* MainTabView.swift in Sources */,
 				2B54217FA3868DEE142FA19E /* OnboardingView.swift in Sources */,
 				FCD5EEB4F7D92BB9B9BDBD21 /* PayQrView.swift in Sources */,
@@ -410,6 +422,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -419,6 +432,7 @@
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -492,6 +506,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UIRequiresFullScreen = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
@@ -500,6 +515,7 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
