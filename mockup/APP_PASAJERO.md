@@ -38,11 +38,13 @@ La **App Pasajero** del sistema **Bus Conectado (BC)** es la interfaz primaria d
 
 | Código CU | Nombre del Caso de Uso | Implementación en la App Móvil |
 | :--- | :--- | :--- |
+| **CU-00** | *Autenticación OTP y Onboarding* | Flujo de bienvenida, registro por celular (+51), validación de código de 6 dígitos y modo invitado. |
 | **CU-01** | *Pago de Pasaje con QR Dinámico* | Pantalla de escaneo de cámara, selección de acompañantes, débito en monedero y feedback acústico (880Hz). |
+| **CU-03** | *Acreditación de Carné SUNEDU* | Aplicación automática de tarifa universitaria (7 pts / S/. 0.70) basada en carné SUNEDU verificado. |
 | **CU-05** | *Recarga de Saldo Prepago* | Módulo de monedero con paquetes de S/. 5, S/. 10, S/. 20 y S/. 50 vía Yape / Plin. |
 | **CU-06** | *Seguimiento de Viaje en Curso* | Hoja flotante (*In-Trip Sheet*) minimizable en *Explorar*, Dynamic Island y desacoplamiento por geofencing (>150m). |
-| **CU-07** | *Consulta de Rutas y Paraderos* | Mapa interactivo de Tacna, marcadores de 2 buses, 3 paraderos oficiales y cálculo de ETA del bus más cercano. |
-| **CU-08** | *Validación de Identificación Estudiantil* | Aplicación automática de tarifa universitaria (7 pts / S/. 0.70) basada en carné SUNEDU validado. |
+| **CU-07** | *Monitoreo de Rutas en Modo Invitado* | Mapa interactivo de Tacna, marcadores de 2 buses, 3 paraderos oficiales y cálculo de ETA del bus más cercano. |
+| **CU-08** | *Historial de Gastos y Recargas* | Registro auditable cronológico de viajes realizados, recargas Yape/Plin y ahorro acumulado. |
 | **CU-11** | *Gestión de Perfil y Eliminación de Cuenta* | Menú de perfil, advertencia de liquidación de saldo y baja con período de gracia de 15 días. |
 
 ---
@@ -166,22 +168,6 @@ Al tocar el botón de dirección (FAB cian `[↱]` o el botón circular `[Ir]` e
     - Cierra la ficha del paradero.
     - Despliega **únicamente el pop-up circular verde con el Timer** en la esquina superior izquierda (sin marcar ruta ni mostrar el botón rojo de cancelación), manteniendo el mapa limpio con el recordatorio del bus aproximándose.
 
-#### F. Hoja Flotante de Viaje en Curso (In-Trip Sheet)
-* Cuando el usuario está a bordo (por pago QR o detección automática), la pestaña *Explorar* despliega un bottom sheet emergente que no bloquea la navegación general:
-  - **Minimizable:** Botón *"Minimizar"* que contrae el viaje a una píldora flotante inferior (`BUS 01 • Próxima: P. Mercado ~2 min`), liberando el mapa completo.
-  - **Selector de Destino Opcional:** Permite fijar el paradero de desembarque deseado (*P. Mercado*, *P. UNJBG*, etc.).
-  - **Alarma a 400 Metros:** Alarma sonora melódica (C5 ➔ E5 ➔ G5 ➔ C6) que avisa con 400 metros de anticipación antes de la parada fijada.
-  - **Descenso por Geofencing:** Botón de simulación de bajada que ejecuta el desacoplamiento al alejarse >150 metros del bus.
-    * **Temporizador 2 (Alerta Inminente):** Checkbox para activar notificación y vibración háptica de inminencia (cuando el bus esté a escasos metros o frenando en el paradero).
-
-#### E. Botón Flotante Circular de Direcciones (FAB Inferior Derecho)
-* Botón circular azul con flecha de dirección (`corner-up-right`) ubicado sobre la esquina inferior derecha del mapa.
-* Abre la pantalla de navegación integral con:
-  - **Origen:** Por defecto *"📍 Tu ubicación actual"* (editable).
-  - **Destino:** Campo de búsqueda de destino deseado.
-  - **Botón de Invertir (⇅):** Intercambia origen y destino instantáneamente.
-  - **Selector de Modo de Transporte:** Transporte público (Línea 10) vs A pie.
-
 #### F. Opciones de Ruta y Comparativa de Itinerarios
 * El sistema calcula y ofrece múltiples alternativas de desplazamiento:
   - **Opción 1 (Más rápida):** Línea 10 (`BUS 01`) • **12 min** (2 min a pie + 8 min en bus + 2 min a pie) • Próximo bus en ~3 min • Tarifa S/. 0.70 / S/. 1.40.
@@ -196,10 +182,11 @@ Al tocar el botón de dirección (FAB cian `[↱]` o el botón circular `[Ir]` e
 
 #### G. Hoja Flotante de Viaje en Curso (In-Trip Sheet)
 * Cuando el usuario está a bordo (por pago QR o detección automática), la pestaña *Explorar* despliega un bottom sheet emergente que no bloquea la navegación general:
-  - **Minimizable:** Botón *"Minimizar"* que contrae el viaje a una píldora flotante inferior (`BUS 01 • Próxima: Paseo Cívico ~2 min`), liberando el mapa completo.
-  - **Selector de Destino Opcional:** Permite fijar el paradero de desembarque deseado (*Mercado Central*, *UNJBG*, etc.).
+  - **Minimizable:** Botón *"Minimizar"* que contrae el viaje a una píldora flotante inferior (`BUS 01 • Próxima: P. Mercado ~2 min`), liberando el mapa completo.
+  - **Selector de Destino Opcional:** Permite fijar el paradero de desembarque deseado (*P. Mercado*, *P. UNJBG*, etc.).
   - **Alarma a 400 Metros:** Alarma sonora melódica (C5 ➔ E5 ➔ G5 ➔ C6) que avisa con 400 metros de anticipación antes de la parada fijada.
   - **Descenso por Geofencing:** Botón de simulación de bajada que ejecuta el desacoplamiento al alejarse >150 metros del bus.
+    * **Temporizador 2 (Alerta Inminente):** Checkbox para activar notificación y vibración háptica de inminencia (cuando el bus esté a escasos metros o frenando en el paradero).
 
 ---
 
@@ -242,9 +229,9 @@ Al tocar el botón de dirección (FAB cian `[↱]` o el botón circular `[Ir]` e
   - `+S/. 20` (+200 pts)
   - `+S/. 50` (+500 pts)
   - Sonido de confirmación de monedas (987Hz ➔ 1318Hz).
-* **Tarjeta de Identificación Estudiantil (CU-08):**  
+* **Tarjeta de Identificación Estudiantil (CU-03):**  
   Muestra el estado de la validación del Carné Universitario emitido por SUNEDU, fecha de vencimiento y vigencia de la prórroga anual configurada en el backoffice.
-* **Historial de Viajes y Movimientos (CU-10):**
+* **Historial de Viajes y Movimientos (CU-08):**
   - **Filtros Interactivos:** Segmentación rápida por chips: *"Todos (4)"*, *"Viajes (3)"*, y *"Recargas (1)"*.
   - **Detalle de Viajes Realizados:** Registros exhaustivos con línea, número de unidad, placa oficial, paradero de origen y destino, timestamp exacto, duración, monto debitado en puntos y soles, y estado (*Completado*).
   - **Detalle de Recargas Acreditadas:** Identificador de operación, canal de recarga (Yape/Plin/Agente), timestamp y puntos agregados.
