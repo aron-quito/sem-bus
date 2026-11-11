@@ -26,20 +26,15 @@ enum APIError: LocalizedError {
 final class APIClient: ObservableObject {
     static let shared = APIClient()
 
-    /// URL del backend en red local (Mac: 172.20.10.11 / USB / Hotspot iPhone o localhost en simulador)
+    /// URL del backend (Servidor Cloud: 34.61.17.233 o local en desarrollo)
     @Published var baseURLString: String
 
     private var baseURL: URL {
-        URL(string: baseURLString) ?? URL(string: "http://172.20.10.11:8000/api/v1")!
+        URL(string: baseURLString) ?? URL(string: "http://34.61.17.233/api/v1")!
     }
 
     var canReachRemoteBackend: Bool {
-        #if targetEnvironment(simulator)
-        return true
-        #else
-        // En un iPhone físico, verificar que la URL apunte a la IP de la Mac en la red local (172.20.10.11 / Wi-Fi)
         return !baseURLString.isEmpty
-        #endif
     }
 
     func updateBaseURL(_ newURL: String) {
@@ -58,7 +53,7 @@ final class APIClient: ObservableObject {
 
     private init() {
         let savedURL = UserDefaults.standard.string(forKey: "bc_backend_url")
-        self.baseURLString = savedURL ?? "http://172.20.10.11:8000/api/v1"
+        self.baseURLString = savedURL ?? "http://34.61.17.233/api/v1"
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 4.0

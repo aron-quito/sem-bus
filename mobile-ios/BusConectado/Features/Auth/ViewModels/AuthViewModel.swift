@@ -30,7 +30,7 @@ final class AuthViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
     @Published var countdownSeconds: Int = 59
-    @Published var backendHost: String = "localhost:8000"
+    @Published var backendHost: String = "34.61.17.233"
     @Published var isConnectedToBackend: Bool = false
 
     // MARK: - Estado del Monedero y Movimientos (CU-05 / CU-08)
@@ -82,6 +82,9 @@ final class AuthViewModel: ObservableObject {
         if let savedHost = UserDefaults.standard.string(forKey: "bc_backend_host") {
             self.backendHost = savedHost
             APIClient.shared.updateBaseURL("http://\(savedHost)")
+        } else {
+            self.backendHost = "34.61.17.233"
+            APIClient.shared.updateBaseURL("http://34.61.17.233")
         }
 
         // Cargar paraderos cacheados previamente de la última sincronización con el Administrador Web
@@ -319,7 +322,7 @@ final class AuthViewModel: ObservableObject {
             .replacingOccurrences(of: "http://", with: "")
             .replacingOccurrences(of: "https://", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        self.backendHost = cleaned.isEmpty ? "localhost:8000" : cleaned
+        self.backendHost = cleaned.isEmpty ? "34.61.17.233" : cleaned
         UserDefaults.standard.set(self.backendHost, forKey: "bc_backend_host")
         APIClient.shared.updateBaseURL("http://\(self.backendHost)")
         Task {
