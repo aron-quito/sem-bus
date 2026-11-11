@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bus Conectado • Panel de Gestión y Reubicación de Paraderos (Tacna)</title>
+  
+  <!-- Estilos Leaflet Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <!-- Fuente Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- BARRA LATERAL (DIRECTORIO Y CONTROLES) -->
+    <aside class="sidebar" aria-label="Directorio y Controles">
+      <header class="sidebar-header">
+        <div class="brand">
+          <div class="brand-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 6v6"/>
+              <path d="M15 6v6"/>
+              <path d="M2 12h19.6"/>
+              <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.6-.3-1.1-.8-1.4-.4-.2-1-.3-1.6-.3H4.4c-.6 0-1.2.1-1.6.3-.5.3-.8.8-.8 1.4 0 .4.1.8.2 1.2.3 1.1.8 2.8.8 2.8h3"/>
+              <circle cx="7" cy="18" r="2"/>
+              <path d="M9 18h5"/>
+              <circle cx="16" cy="18" r="2"/>
+            </svg>
+          </div>
+          <div>
+            <h1 class="brand-title">Bus Conectado</h1>
+            <p class="brand-subtitle">Gestor Oficial de Paraderos de Tacna</p>
+          </div>
+        </div>
+
+        <!-- Estadísticas Rápidas -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <span class="stat-number" id="stat-total">34</span>
+            <span class="stat-label">Total</span>
+          </div>
+          <div class="stat-card official">
+            <span class="stat-number" id="stat-official">27</span>
+            <span class="stat-label">Oficiales</span>
+          </div>
+          <div class="stat-card proposal">
+            <span class="stat-number" id="stat-proposals">7</span>
+            <span class="stat-label">Propuestas</span>
+          </div>
+        </div>
+
+        <!-- Barra de Acciones Principales -->
+        <div class="actions-toolbar">
+          <button type="button" class="btn btn-primary" id="btn-add-stop">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Nuevo Paradero
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-export-swift" title="Generar código Swift para DomainModels.swift">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+            Exportar a iOS
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-export-json" title="Descargar base de datos en JSON">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Descargar JSON
+          </button>
+        </div>
+
+        <!-- Barra de Búsqueda -->
+        <div class="search-box">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="search" id="search-input" placeholder="Buscar por nombre, calle o ruta (Ej: Mercado Central, Ruta 14)..." aria-label="Buscar paradero">
+          <button type="button" class="search-clear" id="search-clear" aria-label="Limpiar búsqueda" hidden>&times;</button>
+        </div>
+
+        <!-- Filtros por Categoría -->
+        <nav class="category-chips" aria-label="Filtrar por categoría">
+          <button type="button" class="chip active" data-category="all">Todos (34)</button>
+          <button type="button" class="chip" data-category="marketsCommercial">Mercados (9)</button>
+          <button type="button" class="chip" data-category="plazasCentral">Plazas (10)</button>
+          <button type="button" class="chip" data-category="institutionsTerminals">Instituciones (8)</button>
+          <button type="button" class="chip" data-category="proposals">Propuestas (7)</button>
+        </nav>
+      </header>
+
+      <!-- Lista Scrollable de Paraderos -->
+      <section class="stops-list-container" aria-label="Lista de Paraderos">
+        <div class="list-meta">
+          <span id="showing-count-text">Mostrando 34 paraderos</span>
+          <span class="drag-hint">💡 Arrastra los pines en el mapa para reubicarlos</span>
+        </div>
+        <ul class="stops-list" id="stops-list">
+          <!-- Renderizado dinámico desde app.js -->
+        </ul>
+      </section>
+
+      <!-- Pie de Barra Lateral -->
+      <footer class="sidebar-footer">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-catalog" title="Restablecer coordenadas originales curadas">
+          ↺ Restablecer valores predeterminados
+        </button>
+        <div class="sync-status" id="sync-status">
+          <span class="status-dot"></span> Sincronizado en tiempo real
+        </div>
+      </footer>
+    </aside>
+
+    <!-- ÁREA DEL MAPA INTERACTIVO -->
+    <main class="map-viewport" aria-label="Mapa Interactivo de Tacna">
+      <div id="tacna-map"></div>
+
+      <!-- Barra Flotante Superior en el Mapa -->
+      <div class="map-top-bar">
+        <div class="map-mode-indicator">
+          <span class="mode-pulse"></span>
+          <span id="current-mode-label">Modo: Visualización & Reubicación Directa (Arrastra cualquier pin)</span>
+        </div>
+
+        <div class="map-layer-selector">
+          <button type="button" class="layer-btn active" data-layer="dark" title="Estilo Oscuro Apple">Oscuro</button>
+          <button type="button" class="layer-btn" data-layer="streets" title="Calles OpenStreetMap">Calles</button>
+          <button type="button" class="layer-btn" data-layer="satellite" title="Satélite Real">Satélite</button>
+        </div>
+      </div>
+
+      <!-- Indicador de Coordenadas del Cursor en Vivo -->
+      <div class="coordinates-badge" id="live-coords">
+        <span>Tacna: -18.0135, -70.2519</span>
+      </div>
+
+      <!-- Toast de Notificaciones -->
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </main>
+  </div>
+
+  <!-- DIÁLOGO MODAL: CREAR / EDITAR PARADERO (Conforme a modern-web-guidance) -->
+  <dialog id="stop-dialog" aria-labelledby="dialog-title" closedby="any">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <div class="dialog-header-left">
+          <span class="dialog-badge" id="dialog-badge">OFICIAL</span>
+          <h2 id="dialog-title">Editar Paradero</h2>
+        </div>
+        <button type="button" class="dialog-close-btn" id="dialog-close-x" aria-label="Cerrar ventana">&times;</button>
+      </div>
+
+      <form id="stop-form" method="dialog" class="dialog-form">
+        <input type="hidden" id="field-id">
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="field-name">Nombre Completo del Paradero <span class="req">*</span></label>
+            <input type="text" id="field-name" required placeholder="Ej: Mercado Central" autofocus>
+          </div>
+          <div class="form-group flex-1">
+            <label for="field-shortname">Nombre Corto <span class="req">*</span></label>
+            <input type="text" id="field-shortname" required placeholder="Ej: Mercado Central">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="field-subtitle">Dirección / Avenidas de Referencia <span class="req">*</span></label>
+          <input type="text" id="field-subtitle" required placeholder="Ej: Av. Bolognesi cdra 8 / Calle Zela • Centro Histórico">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="field-category">Categoría Urbana <span class="req">*</span></label>
+            <select id="field-category" required>
+              <optgroup label="Paraderos Oficiales Clave">
+                <option value="marketsCommercial">Mercados y Zonas Comerciales</option>
+                <option value="plazasCentral">Plazas y Zonas Céntricas</option>
+                <option value="institutionsTerminals">Instituciones y Terminales</option>
+              </optgroup>
+              <optgroup label="Propuestas para Oficializar (Modernización)">
+                <option value="proposedHospitals">Propuesta: Hospitales y Salud</option>
+                <option value="proposedUrbanGrowth">Propuesta: Cono Sur y Cono Norte</option>
+                <option value="proposedEducation">Propuesta: Zonas Educativas (Geofencing)</option>
+                <option value="proposedTouristBorder">Propuesta: Zonas Turísticas y Frontera</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <div class="form-group flex-1">
+            <label for="field-routes">Rutas que Abordan (separadas por coma)</label>
+            <input type="text" id="field-routes" placeholder="Ruta 14, Ruta 10B, Ruta 101">
+          </div>
+        </div>
+
+        <div class="form-row coords-group">
+          <div class="form-group flex-1">
+            <label for="field-lat">Latitud (Decimal) <span class="req">*</span></label>
+            <input type="number" step="0.000001" id="field-lat" required placeholder="-18.013580">
+          </div>
+          <div class="form-group flex-1">
+            <label for="field-lng">Longitud (Decimal) <span class="req">*</span></label>
+            <input type="number" step="0.000001" id="field-lng" required placeholder="-70.250550">
+          </div>
+          <div class="form-group align-end">
+            <button type="button" class="btn btn-accent btn-sm" id="btn-pick-coords" title="Capturar coordenadas haciendo clic en el mapa">
+              📍 Marcar en mapa
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="field-note">Nota de Estado / Propuesta (Opcional)</label>
+          <input type="text" id="field-note" placeholder="Ej: Propuesta Oficialización: Accesibilidad Adulto Mayor">
+        </div>
+
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-destructive" id="btn-delete-stop">
+            Eliminar Paradero
+          </button>
+          <div class="dialog-actions-right">
+            <button type="button" class="btn btn-ghost" id="btn-cancel-dialog">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-stop">Guardar Cambios</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- DIÁLOGO MODAL: EXPORTAR A SWIFT (DomainModels.swift) -->
+  <dialog id="export-dialog" aria-labelledby="export-dialog-title" closedby="any">
+    <div class="dialog-content export-content">
+      <div class="dialog-header">
+        <div>
+          <span class="dialog-badge official">SWIFT 5 / IOS 17</span>
+          <h2 id="export-dialog-title">Código Generado para DomainModels.swift</h2>
+        </div>
+        <button type="button" class="dialog-close-btn" id="export-dialog-close-x" aria-label="Cerrar ventana">&times;</button>
+      </div>
+      <p class="export-desc">
+        Copia este bloque o haz clic en <strong>"Copiar Código Swift"</strong> para actualizar directamente tu archivo <code>mobile-ios/.../DomainModels.swift</code> con las coordenadas exactas calibradas en el mapa.
+      </p>
+
+      <div class="code-container">
+        <pre><code id="export-code-block"></code></pre>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" id="btn-download-swift-file">Descargar archivo .swift</button>
+        <div class="dialog-actions-right">
+          <button type="button" class="btn btn-ghost" id="btn-close-export">Cerrar</button>
+          <button type="button" class="btn btn-primary" id="btn-copy-swift">Copiar Código Swift</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- DIÁLOGO MODAL: CONFIRMACIÓN DE ELIMINACIÓN -->
+  <dialog id="confirm-dialog" aria-labelledby="confirm-dialog-title" closedby="any">
+    <div class="dialog-content confirm-content">
+      <div class="dialog-header">
+        <h2 id="confirm-dialog-title">¿Eliminar este paradero?</h2>
+        <button type="button" class="dialog-close-btn" id="confirm-dialog-close-x" aria-label="Cerrar">&times;</button>
+      </div>
+      <p id="confirm-dialog-desc">Esta acción eliminará el paradero del catálogo oficial. Podrás restablecerlo en cualquier momento si lo necesitas.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-cancel-confirm">Cancelar</button>
+        <button type="button" class="btn btn-destructive" id="btn-confirm-delete">Sí, Eliminar Paradero</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Lógica de la Aplicación -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
+
