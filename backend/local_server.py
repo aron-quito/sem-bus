@@ -286,12 +286,27 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def send_json(self, data, status_code=200):
+    def send_json(self, data, status_code=200, cacheable=False):
         try:
             body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+            etag = f'"{hashlib.md5(body).hexdigest()}"'
+
+            # Si el cliente ya tiene esta versión exacta en su caché (ETag), responde 304 Not Modified (0 bytes transferidos)
+            if cacheable and status_code == 200 and self.headers.get("If-None-Match") == etag:
+                self.send_response(304)
+                self.send_cors_headers()
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "public, max-age=60")
+                self.end_headers()
+                return
+
             self.send_response(status_code)
             self.send_cors_headers()
-            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            if cacheable:
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "public, max-age=60")
+            else:
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
@@ -321,7 +336,7 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
         # ── API: Lista de Paraderos Oficiales y Propuestas (34 Paraderos de Tacna) ──
         if path == "/api/v1/transit/stops":
             stops = load_paraderos()
-            return self.send_json(stops)
+            return self.send_json(stops, cacheable=True)
 
         # ── API: Red de Transporte Completa (CU-07 / AuthViewModel.refreshStateFromBackend) ──
         if path == "/api/v1/transit/network":
@@ -370,7 +385,7 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 "routes": routes,
                 "stops": bus_stops,
                 "active_buses": []
-            })
+            }, cacheable=True)
 
         # ── API: Saldo de Monedero ──
         if path == "/api/v1/wallet/balance":

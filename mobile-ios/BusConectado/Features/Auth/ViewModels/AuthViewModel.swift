@@ -76,8 +76,9 @@ final class AuthViewModel: ObservableObject {
     private var countdownTimer: AnyCancellable?
     private var arrivalAlertTimer: AnyCancellable?
     private var routeGuidanceTimer: AnyCancellable?
-    private var syncPollingTimer: AnyCancellable?
+    private var appForegroundCancellable: AnyCancellable?
     private var searchDebounceCancellable: AnyCancellable?
+    private var lastSyncDate: Date? = nil
 
     init() {
         if let savedHost = UserDefaults.standard.string(forKey: "bc_backend_host") {
@@ -107,10 +108,10 @@ final class AuthViewModel: ObservableObject {
 
         // Sincronización automática de paraderos al arrancar la app
         Task {
-            await self.refreshStateFromBackendIfAvailable()
+            await self.refreshStateFromBackendIfAvailable(isManual: false)
         }
 
-        startPeriodicSync()
+        setupSmartSync()
 
         // Búsqueda en vivo de cualquier lugar del mapa de Tacna mediante Apple MapKit (MKLocalSearch)
         searchDebounceCancellable = $searchQuery
@@ -489,21 +490,28 @@ final class AuthViewModel: ObservableObject {
         self.selectedTab = 0
     }
 
-    private func startPeriodicSync() {
-        syncPollingTimer?.cancel()
-        syncPollingTimer = Timer.publish(every: 8.0, on: .main, in: .common)
-            .autoconnect()
+    private func setupSmartSync() {
+        appForegroundCancellable?.cancel()
+        appForegroundCancellable = NotificationCenter.default
+            .publisher(for: UIApplication.willEnterForegroundNotification)
             .sink { [weak self] _ in
                 guard let self = self else { return }
                 Task {
+                    // Sincroniza al volver de segundo plano solo si pasaron al menos 3 minutos (ahorro de batería)
                     await self.refreshStateFromBackendIfAvailable(isManual: false)
                 }
             }
     }
 
-    // MARK: - Sincronización de Red de Transporte y Monedero con Backend
+    // MARK: - Sincronización Inteligente de Red y Paraderos (Smart Sync & Battery Saver)
     func refreshStateFromBackendIfAvailable(isManual: Bool = false) async {
         guard APIClient.shared.canReachRemoteBackend else { return }
+
+        // Protección de batería y datos móviles: throttle de 3 minutos para sincronizaciones automáticas
+        if !isManual, let last = lastSyncDate, Date().timeIntervalSince(last) < 180 {
+            return
+        }
+        self.lastSyncDate = Date()
 
         // 1. Sincronizar paraderos calibrados en tiempo real desde el Administrador Web y Servidor Cloud
         do {
