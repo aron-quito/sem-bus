@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------
+  # API BACKEND (FastAPI / Python 3.12)
+  # -------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bc_backend_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV=development
+      - DEBUG=true
+      - DATABASE_URL=postgresql+asyncpg://bc_user:bc_password@postgres:5432/bc_db
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=dev_secret_key_bus_conectado_tacna_peru_2026_super_secure_64_bytes
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # -------------------------------------------------------------
+  # BASE DE DATOS (PostgreSQL 15 + PostGIS)
+  # -------------------------------------------------------------
+  postgres:
+    image: postgis/postgis:15-3.4-alpine
+    container_name: bc_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bc_user
+      POSTGRES_PASSWORD: bc_password
+      POSTGRES_DB: bc_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - bc_pgdata:/var/lib/postgresql/data
+      - ../docs/modelo_datos/02_Script_SQL_DDL.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bc_user -d bc_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # CACHE & PUB/SUB (Redis 7.2 Alpine)
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: bc_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - bc_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  bc_pgdata:
+  bc_redisdata:
+

@@ -1,0 +1,656 @@
+openapi: 3.0.3
+info:
+  title: Bus Conectado (BC) - API Central de Transporte Urbano
+  description: |
+    Contrato maestro OpenAPI 3.0 para el sistema Bus Conectado en Tacna, Perú.
+    Gobierna la interoperabilidad entre App Pasajero (iOS/Android), App Conductor (Tablet),
+    Validador POS en puerta y Webhooks bancarios (Yape/Plin).
+  version: 1.0.0
+  contact:
+    name: Equipo de Arquitectura BC
+    email: aron.mamani@unjbg.edu.pe
+
+servers:
+  - url: https://api.bc-tacna.pe
+    description: Servidor de Producción (Tacna Cloud)
+  - url: https://staging-api.bc-tacna.pe
+    description: Servidor de Pruebas y QA (Staging)
+  - url: http://localhost:8000
+    description: Servidor de Desarrollo Local (Docker Compose)
+
+tags:
+  - name: Autenticación (CU-00)
+    description: Registro telefónico e inicio de sesión por OTP SMS/WhatsApp
+  - name: Usuarios y Perfil (CU-11)
+    description: Gestión del perfil de pasajero y baja de cuenta
+  - name: Monedero BC (CU-05 / CU-08)
+    description: Consulta de saldo, historial de movimientos y recarga de puntos
+  - name: Pago de Pasaje (CU-01 / CU-02)
+    description: Validación de código QR en puerta y cobro atómico
+  - name: Rutas y Flota (CU-07)
+    description: Consulta de paraderos oficiales y telemetría de buses en tiempo real
+  - name: Operación Conductor (CU-04)
+    description: Turnos de cabina, ajuste de aforo semafórico y declaración de averías
+  - name: Acreditación SUNEDU (CU-03)
+    description: Validación de Carné Universitario oficial
+  - name: Webhooks Bancarios
+    description: Receptores de confirmación instantánea de Yape y Plin
+
+paths:
+  # ==========================================
+  # AUTENTICACIÓN
+  # ==========================================
+  /api/v1/auth/otp/send:
+    post:
+      tags:
+        - Autenticación (CU-00)
+      summary: Despachar código OTP de 6 dígitos por SMS o WhatsApp
+      operationId: sendOtpCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+              properties:
+                phone:
+                  type: string
+                  example: "952123456"
+                  pattern: "^9\\d{8}$"
+                  description: Número celular de 9 dígitos de Perú
+      responses:
+        "200":
+          description: Código despachado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Código enviado vía SMS al +51 952 123 456"
+                  expires_in_seconds:
+                    type: integer
+                    example: 300
+        "422":
+          description: Formato de teléfono inválido
+        "429":
+          description: Límite de envíos superado (Anti-brute force)
+
+  /api/v1/auth/otp/verify:
+    post:
+      tags:
+        - Autenticación (CU-00)
+      summary: Validar código OTP y emitir par de tokens JWT
+      operationId: verifyOtpCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - phone
+                - code
+                - device_id
+              properties:
+                phone:
+                  type: string
+                  example: "952123456"
+                code:
+                  type: string
+                  example: "123456"
+                  minLength: 6
+                  maxLength: 6
+                device_id:
+                  type: string
+                  example: "IPHONE16-DEV-UUID-941"
+      responses:
+        "200":
+          description: Autenticación exitosa y sesión única creada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                    example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  refresh_token:
+                    type: string
+                    example: "dGhpcy1pcy1hLXJlZnJlc2gtdG9rZW4..."
+                  token_type:
+                    type: string
+                    example: "Bearer"
+                  user:
+                    $ref: "#/components/schemas/UserProfile"
+        "400":
+          description: Código incorrecto o expirado
+        "403":
+          description: Teléfono temporalmente bloqueado por intentos fallidos
+
+  /api/v1/auth/refresh:
+    post:
+      tags:
+        - Autenticación (CU-00)
+      summary: Renovar Access Token mediante Refresh Token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        "200":
+          description: Nuevo Access Token emitido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                    example: 3600
+
+  /api/v1/auth/logout:
+    delete:
+      tags:
+        - Autenticación (CU-00)
+      summary: Revocar sesión activa del dispositivo
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Sesión cerrada exitosamente
+
+  # ==========================================
+  # PERFIL DE USUARIO
+  # ==========================================
+  /api/v1/users/me:
+    get:
+      tags:
+        - Usuarios y Perfil (CU-11)
+      summary: Obtener perfil del usuario autenticado
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Datos del perfil y beneficios vigentes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+    delete:
+      tags:
+        - Usuarios y Perfil (CU-11)
+      summary: Solicitar baja y eliminación definitiva de cuenta (CU-11)
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Cuenta en período de gracia de 15 días para anonimización
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "PENDING_DELETION"
+                  grace_period_days:
+                    type: integer
+                    example: 15
+
+  # ==========================================
+  # MONEDERO BC Y RECARGAS
+  # ==========================================
+  /api/v1/wallet/balance:
+    get:
+      tags:
+        - Monedero BC (CU-05 / CU-08)
+      summary: Consultar saldo disponible en Puntos BC y Soles
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Saldo exacto consultado desde el libro mayor
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  points:
+                    type: integer
+                    example: 85
+                  currency_pen:
+                    type: number
+                    format: float
+                    example: 8.50
+                  rate:
+                    type: string
+                    example: "1 PEN = 10 Puntos BC"
+
+  /api/v1/wallet/history:
+    get:
+      tags:
+        - Monedero BC (CU-05 / CU-08)
+      summary: Historial auditable de viajes realizados y recargas
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [all, trip, recharge]
+            default: all
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Lista paginada de movimientos del monedero
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                    example: 4
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WalletTransaction"
+
+  /api/v1/wallet/recharge:
+    post:
+      tags:
+        - Monedero BC (CU-05 / CU-08)
+      summary: Iniciar orden de recarga con Yape / Plin
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amount_pen
+                - provider
+              properties:
+                amount_pen:
+                  type: number
+                  enum: [5.00, 10.00, 20.00, 50.00]
+                  example: 10.00
+                provider:
+                  type: string
+                  enum: [YAPE, PLIN]
+                  example: "YAPE"
+      responses:
+        "201":
+          description: Orden generada con QR dinámico de pago
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  order_id:
+                    type: string
+                    example: "ORD-REC-2026-9921"
+                  qr_payload:
+                    type: string
+                    example: "00020101021226...540510.005802PE5909BUS_CONEC"
+                  points_to_credit:
+                    type: integer
+                    example: 100
+
+  # ==========================================
+  # PAGO DE PASAJE EN PUERTA
+  # ==========================================
+  /api/v1/payment/scan:
+    post:
+      tags:
+        - Pago de Pasaje (CU-01 / CU-02)
+      summary: Escanear y validar código QR dinámico del POS del bus
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - qr_code
+              properties:
+                qr_code:
+                  type: string
+                  example: "bc://pay?bus=1&line=L10&nonce=UUID_V4&exp=1794276000"
+                companions_count:
+                  type: integer
+                  minimum: 0
+                  maximum: 5
+                  default: 0
+                  description: Pasajeros adicionales a cobrar en la misma transacción (Tarifa adulto 15 pts)
+      responses:
+        "200":
+          description: Pasaje cobrado y viaje iniciado atómicamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TripValidationResult"
+        "400":
+          description: QR expirado (>30s) o firma alterada
+        "402":
+          description: Saldo insuficiente en el monedero de Puntos BC
+
+  # ==========================================
+  # RUTAS Y BUSES EN TIEMPO REAL
+  # ==========================================
+  /api/v1/buses:
+    get:
+      tags:
+        - Rutas y Flota (CU-07)
+      summary: Listar flota activa en circulación con última coordenada GPS
+      responses:
+        "200":
+          description: Lista de buses en ruta de la Línea 10
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BusTelemetry"
+
+  /api/v1/stops:
+    get:
+      tags:
+        - Rutas y Flota (CU-07)
+      summary: Listar paraderos oficiales de Tacna
+      responses:
+        "200":
+          description: Paraderos oficiales con coordenadas y tiempos de llegada
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BusStop"
+
+  # ==========================================
+  # OPERACIÓN CONDUCTOR (TABLET CABINA)
+  # ==========================================
+  /api/v1/driver/shift/start:
+    post:
+      tags:
+        - Operación Conductor (CU-04)
+      summary: Iniciar turno de chofer y vincular tablet al bus
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - driver_pin
+                - bus_id
+              properties:
+                driver_pin:
+                  type: string
+                  example: "4421"
+                bus_id:
+                  type: integer
+                  example: 1
+      responses:
+        "200":
+          description: Turno iniciado con éxito
+
+  /api/v1/driver/shift/end:
+    post:
+      tags:
+        - Operación Conductor (CU-04)
+      summary: Cerrar turno de chofer con arqueo digital
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Cuadre de caja y cierre de turno confirmado
+
+  /api/v1/driver/breakdown:
+    post:
+      tags:
+        - Operación Conductor (CU-04)
+      summary: Declarar avería de unidad y reembolsar puntos a pasajeros activos
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  example: "Falla mecánica de motor en Av. Bolognesi"
+      responses:
+        "200":
+          description: Avería reportada y reembolsos ejecutados
+
+  # ==========================================
+  # ACREDITACIÓN CARNÉ SUNEDU
+  # ==========================================
+  /api/v1/accreditation/sunedu:
+    post:
+      tags:
+        - Acreditación SUNEDU (CU-03)
+      summary: Validar carné universitario físico escaneando su QR oficial
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - sunedu_qr_raw
+              properties:
+                sunedu_qr_raw:
+                  type: string
+                  example: "https://enlinea.sunedu.gob.pe/verificar?c=CARNE-UNJBG-2026-991"
+      responses:
+        "200":
+          description: Carné verificado y tarifa de 7 puntos activada
+        "409":
+          description: Carné ya asociado a otra cuenta (Regla de unicidad)
+
+  # ==========================================
+  # WEBHOOKS BANCARIOS
+  # ==========================================
+  /api/v1/webhooks/yape:
+    post:
+      tags:
+        - Webhooks Bancarios
+      summary: Receptor de notificaciones instantáneas de pago Yape
+      parameters:
+        - name: X-Signature-SHA256
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Webhook procesado y saldo acreditado en el ledger
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+        phone:
+          type: string
+          example: "+51 952 123 456"
+        name:
+          type: string
+          example: "Aron Mamani Quispe"
+        role:
+          type: string
+          enum: [ADULT, STUDENT, CONADIS, DRIVER, ADMIN]
+          example: "ADULT"
+        student_tier:
+          type: object
+          properties:
+            active:
+              type: boolean
+              example: true
+            university:
+              type: string
+              example: "UNJBG Tacna"
+            expires_at:
+              type: string
+              format: date
+              example: "2026-12-31"
+
+    WalletTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [TRIP_PAYMENT, RECHARGE, REFUND]
+          example: "TRIP_PAYMENT"
+        points:
+          type: integer
+          example: -7
+        amount_pen:
+          type: number
+          example: -0.70
+        description:
+          type: string
+          example: "Línea 10 • BUS 01 (Plaza Zela ➔ P. Mercado)"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-11-09T18:30:00Z"
+
+    TripValidationResult:
+      type: object
+      properties:
+        trip_id:
+          type: string
+          format: uuid
+        bus_number:
+          type: string
+          example: "BUS 01"
+        line:
+          type: string
+          example: "Línea 10"
+        debited_points:
+          type: integer
+          example: 7
+        remaining_balance_points:
+          type: integer
+          example: 78
+        status:
+          type: string
+          example: "ONBOARD_ACTIVE"
+
+    BusTelemetry:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        number:
+          type: string
+          example: "BUS 01"
+        plate:
+          type: string
+          example: "Z1A-780"
+        driver_name:
+          type: string
+          example: "Juan Mamani Quispe"
+        lat:
+          type: number
+          example: -17.0142
+        lng:
+          type: number
+          example: -70.2519
+        speed_kmh:
+          type: number
+          example: 24.5
+        occupancy_pct:
+          type: integer
+          example: 68
+        status:
+          type: string
+          enum: [SEATS_AVAILABLE, FEW_SEATS, FULL, OUT_OF_SERVICE]
+          example: "SEATS_AVAILABLE"
+
+    BusStop:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "Plaza Zela"
+        address:
+          type: string
+          example: "Av. San Martín / Plaza Zela"
+        lat:
+          type: number
+          example: -17.0125
+        lng:
+          type: number
+          example: -70.2505
+        eta_minutes:
+          type: integer
+          example: 3
+

@@ -1,7 +1,9 @@
 # Proyecto BC - Catálogo y Diagramas UML de Casos de Uso (UML 2.5)
 **Ubicación:** `docs/casos_de_uso/README.md`  
 **Archivo Fuente PlantUML:** [diagrama_casos_de_uso.puml](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/diagrama_casos_de_uso.puml)  
-**Versión:** 2.2 (Suite Completa y Auditada: CU-00 a CU-10)
+**Versión:** 2.3 (Suite Completa y Auditada: CU-00 a CU-12 con Mapeo al Prototipo Interactivo)
+
+> **Nota Metodológica SWEBOK v4:** El prototipo interactivo ejecutable [`mockup/index.html`](file:///Users/aron/githubRepo/sem-bus/mockup/index.html) actúa como el **artefacto de validación visual y ergonómica** de estos 13 Casos de Uso. Cada flujo ha sido simulado interactivamente antes de proceder a la codificación nativa en iOS, Android y Backend.
 
 ---
 
@@ -27,9 +29,29 @@ Cada caso de uso está especificado formalmente bajo la plantilla RUP/Cockburn c
 | **CU-04** | **Operar Turno en Tablet (Ida/Vuelta y Pausa Mapa)** | Cabina y Flota | [CU04/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU04/) | [CU04_Operacion_Turno_Conductor_Tablet.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU04/CU04_Operacion_Turno_Conductor_Tablet.md) | [CU04.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU04/CU04_Operacion_Turno_Conductor_Tablet.png) |
 | **CU-05** | **Recargar Puntos BC mediante Pasarela** | Monedero Digital | [CU05/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU05/) | [CU05_Recarga_Puntos_BC.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU05/CU05_Recarga_Puntos_BC.md) | [CU05.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU05/CU05_Recarga_Puntos_BC.png) |
 | **CU-06** | **Descenso y Desacoplamiento GPS (Anti-Jitter)** | Telemetría Autónoma | [CU06/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU06/) | [CU06_Descenso_Desacoplamiento_Geofencing.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU06/CU06_Descenso_Desacoplamiento_Geofencing.md) | [CU06.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU06/CU06_Descenso_Desacoplamiento_Geofencing.png) |
-| **CU-07** | **Consultar Rutas en Vivo con Filtro de Líneas** | Exploración y Mapa | [CU07/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU07/) | [CU07_Monitoreo_Rutas_Modo_Invitado.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU07/CU07_Monitoreo_Rutas_Modo_Invitado.md) | [CU07.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU07/CU07_Monitoreo_Rutas_Modo_Invitado.png) |
+| **CU-07** | **Monitoreo de Rutas en Modo Invitado** | Exploración y Mapa | [CU07/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU07/) | [CU07_Monitoreo_Rutas_Modo_Invitado.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU07/CU07_Monitoreo_Rutas_Modo_Invitado.md) | [CU07.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU07/CU07_Monitoreo_Rutas_Modo_Invitado.png) |
 | **CU-08** | **Consultar Historial de Gastos y Recargas** | Auditoría y Monedero | [CU08/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU08/) | [CU08_Historial_Gastos_Recargas.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU08/CU08_Historial_Gastos_Recargas.md) | [CU08.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU08/CU08_Historial_Gastos_Recargas.png) |
 | **CU-09** | **Enviar Reportes, Sugerencias y Soporte** | Atención al Pasajero | [CU09/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU09/) | [CU09_Reportes_Sugerencias_Soporte.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU09/CU09_Reportes_Sugerencias_Soporte.md) | [CU09.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU09/CU09_Reportes_Sugerencias_Soporte.png) |
 | **CU-10** | **Vinculación Segura de Hardware (POS + Tablet)** | Flota y Ciberseguridad | [CU10/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU10/) | [CU10_Vinculacion_Segura_Hardware_Admin.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU10/CU10_Vinculacion_Segura_Hardware_Admin.md) | [CU10.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU10/CU10_Vinculacion_Segura_Hardware_Admin.png) |
 | **CU-11** | **Gestión de Perfil y Eliminación de Cuenta** | Privacidad y Normativa | [CU11/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU11/) | [CU11_Gestion_Perfil_Eliminacion_Cuenta.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU11/CU11_Gestion_Perfil_Eliminacion_Cuenta.md) | [CU11.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU11/CU11_Gestion_Perfil_Eliminacion_Cuenta.png) |
 | **CU-12** | **Administración del Sistema (Backoffice Web)** | Supervisión y Flota | [CU12/](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU12/) | [CU12_Panel_Administracion_Backoffice_Web.md](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU12/CU12_Panel_Administracion_Backoffice_Web.md) | [CU12.png](file:///Users/aron/githubRepo/sem-bus/docs/casos_de_uso/CU12/CU12_Panel_Administracion_Backoffice_Web.png) |
+
+---
+
+## 3. Matriz de Validación Visual (CU ➔ Prototipo Interactivo)
+
+| Caso de Uso | Pantalla / Componente en `mockup/index.html` | Estado de Prototipado |
+| :---: | :--- | :---: |
+| **CU-00** | `#screen-onboarding` (Pasos Splash, Celular +51, 6 cajas OTP y Éxito) | ✅ 100% Funcional |
+| **CU-01** | `#screen-scan` (Retícula de cámara, selector de acompañantes y débito acústico) | ✅ 100% Funcional |
+| **CU-02** | Vista `#view-pos` (QR dinámico institucional por S/. 1.50 e indicador de espera) | ✅ 100% Funcional |
+| **CU-03** | `#screen-wallet` (Tarjeta de Carné Universitario SUNEDU con tarifa 7 pts) | ✅ 100% Funcional |
+| **CU-04** | `#view-driver` (Tablet de chofer con aforo semafórico, [+1 CONADIS] y avería) | ✅ 100% Funcional |
+| **CU-05** | `#screen-wallet` (Botones de recarga rápida S/. 5, 10, 20, 50 con sonido de monedas) | ✅ 100% Funcional |
+| **CU-06** | `#trip-expanded-sheet` (In-Trip Sheet minimizable, alarma a 400m y desacoplamiento) | ✅ 100% Funcional |
+| **CU-07** | `#screen-map` (Mapa en vivo, 2 buses, 3 paraderos, ruteo Google Maps y Modo Invitado) | ✅ 100% Funcional |
+| **CU-08** | `#screen-wallet` (Historial con chips de filtro: Todos, Viajes y Recargas) | ✅ 100% Funcional |
+| **CU-09** | Diálogo modal en perfil Google-Style (Centro de ayuda y reportes de unidad) | ✅ 100% Funcional |
+| **CU-10** | Cabina `#view-driver` (Vinculación de Tablet con `BUS 01` Z1A-780) | ✅ 100% Funcional |
+| **CU-11** | Modal de eliminación de cuenta con confirmación y período de gracia de 15 días | ✅ 100% Funcional |
+| **CU-12** | `#view-backoffice` (Consola de monitoreo de flota, aforo consolidado y kilometraje) | ✅ 100% Funcional |
