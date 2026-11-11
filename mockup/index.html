@@ -1727,11 +1727,24 @@
               <p class="text-xs text-slate-400">Placa: Z1A-780 • Chofer: Juan Mamani Quispe</p>
             </div>
           </div>
+          <!-- PARADERO ACTUAL FLECHA PARADERO SIGUIENTE (Se actualiza automáticamente y manualmente) -->
           <div class="flex items-center gap-2">
-            <div class="flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-blue-950/80 text-blue-300 border border-blue-800">
-              <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
-              <span>Ruta: Cono Norte ➔ Terminal Terrestre</span>
+            <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-900 border border-slate-700/80 shadow-inner">
+              <span class="flex items-center gap-1.5 text-emerald-400">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                <span class="text-slate-400 font-normal text-[10px] uppercase">Actual:</span>
+                <strong id="drv-current-stop" class="text-white font-extrabold font-mono">P. Cono Norte</strong>
+              </span>
+              <span class="text-blue-400 font-extrabold mx-0.5">➔</span>
+              <span class="flex items-center gap-1.5 text-blue-300">
+                <span class="text-slate-400 font-normal text-[10px] uppercase">Siguiente:</span>
+                <strong id="drv-next-stop" class="text-blue-300 font-extrabold font-mono">P. Plaza Zela</strong>
+              </span>
             </div>
+            <button onclick="advanceDriverStop()" title="Avanzar manualmente al siguiente paradero" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold flex items-center gap-1 transition active:scale-95">
+              <i data-lucide="step-forward" class="w-3.5 h-3.5 text-blue-400"></i>
+              <span>Siguiente Paradero</span>
+            </button>
           </div>
         </div>
 
@@ -1750,7 +1763,11 @@
                     </span>
                     <span class="text-[11px] text-slate-400" id="driver-last-time">Hace unos segundos</span>
                   </div>
-                  <h3 id="driver-last-fare-passenger" class="text-sm font-bold text-white mt-0.5">Aron Mamani Quispe</h3>
+                  <!-- Información del medio de pago en lugar de nombre por privacidad -->
+                  <div id="driver-last-payment-method" class="text-sm font-bold text-slate-200 mt-0.5 flex items-center gap-1.5">
+                    <i data-lucide="smartphone" class="w-4 h-4 text-blue-400"></i>
+                    <span>Aplicativo Móvil</span>
+                  </div>
                 </div>
               </div>
 
@@ -1774,14 +1791,20 @@
                 <!-- Mini simuladores de prueba rápida -->
                 <div class="flex items-center gap-1.5 text-[10px]">
                   <span class="text-slate-500 mr-0.5">Probar:</span>
-                  <button onclick="simulateDriverFare('adult')" class="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 hover:bg-emerald-900 font-bold">
-                    + Adulto (Verde)
+                  <button onclick="simulateDriverFare('adult', 'Aplicativo Móvil', 'S/. 1.50')" class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 hover:bg-emerald-900 font-bold">
+                    + Adulto App
                   </button>
-                  <button onclick="simulateDriverFare('student')" class="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 hover:bg-amber-900 font-bold">
-                    + Univ (Amarillo)
+                  <button onclick="simulateDriverFare('student', 'Yape / Plin (QR)', 'S/. 0.70')" class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 hover:bg-amber-900 font-bold">
+                    + Univ Yape
                   </button>
-                  <button onclick="simulateDriverFare('insufficient')" class="px-2 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 hover:bg-rose-900 font-bold">
-                    + Insuficiente (Rojo)
+                  <button onclick="simulateDriverFare('adult', 'Validador POS', 'S/. 1.50')" class="px-1.5 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800 hover:bg-blue-900 font-bold">
+                    + Adulto POS
+                  </button>
+                  <button onclick="simulateDriverFare('conadis', 'Pase Libre (Carnet)', 'S/. 0.00')" class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800 hover:bg-amber-900 font-bold">
+                    + CONADIS
+                  </button>
+                  <button onclick="simulateDriverFare('insufficient', 'Aplicativo Móvil', 'NO PASA')" class="px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 border border-rose-800 hover:bg-rose-900 font-bold">
+                    + Rechazo
                   </button>
                 </div>
               </div>
@@ -1790,13 +1813,13 @@
               <div class="grid grid-cols-12 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3.5 py-1.5 bg-slate-950/70 border-b border-slate-800/80 shrink-0">
                 <div class="col-span-2">Hora</div>
                 <div class="col-span-3">Tarifa / Tipo</div>
-                <div class="col-span-4">Pasajero / Referencia</div>
+                <div class="col-span-4">Medio de Pago</div>
                 <div class="col-span-3 text-right">Importe</div>
               </div>
 
               <!-- List / Rows -->
               <div id="driver-validation-feed" class="flex-1 overflow-y-auto divide-y divide-slate-800/50 text-xs font-medium">
-                <!-- Fila 1: Universitario (Amarillo) -->
+                <!-- Fila 1: Universitario (Amarillo - App Móvil) -->
                 <div class="grid grid-cols-12 items-center px-3.5 py-2 hover:bg-slate-800/30 transition">
                   <div class="col-span-2 text-slate-400 font-mono text-[11px]">19:24:12</div>
                   <div class="col-span-3">
@@ -1804,11 +1827,13 @@
                       UNIVERSITARIO
                     </span>
                   </div>
-                  <div class="col-span-4 text-slate-200 truncate">Aron Mamani Quispe</div>
+                  <div class="col-span-4 text-slate-200 flex items-center gap-1.5 truncate">
+                    <i data-lucide="smartphone" class="w-3.5 h-3.5 text-blue-400"></i> Aplicativo Móvil
+                  </div>
                   <div class="col-span-3 text-right font-mono font-bold text-amber-400">S/. 0.70</div>
                 </div>
 
-                <!-- Fila 2: Adulto (Verde) -->
+                <!-- Fila 2: Adulto (Verde - Yape/Plin) -->
                 <div class="grid grid-cols-12 items-center px-3.5 py-2 hover:bg-slate-800/30 transition">
                   <div class="col-span-2 text-slate-400 font-mono text-[11px]">19:22:45</div>
                   <div class="col-span-3">
@@ -1816,11 +1841,27 @@
                       PASAJE ADULTO
                     </span>
                   </div>
-                  <div class="col-span-4 text-slate-200 truncate">Pasajero General (+1)</div>
+                  <div class="col-span-4 text-slate-200 flex items-center gap-1.5 truncate">
+                    <i data-lucide="qr-code" class="w-3.5 h-3.5 text-purple-400"></i> Yape / Plin (QR)
+                  </div>
                   <div class="col-span-3 text-right font-mono font-bold text-emerald-400">S/. 1.50</div>
                 </div>
 
-                <!-- Fila 3: Saldo Insuficiente (Rojo) -->
+                <!-- Fila 3: CONADIS (Pase Libre - Carnet) -->
+                <div class="grid grid-cols-12 items-center px-3.5 py-2 hover:bg-slate-800/30 transition bg-amber-950/10">
+                  <div class="col-span-2 text-slate-400 font-mono text-[11px]">19:21:10</div>
+                  <div class="col-span-3">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800">
+                      CONADIS
+                    </span>
+                  </div>
+                  <div class="col-span-4 text-slate-200 flex items-center gap-1.5 truncate">
+                    <i data-lucide="accessibility" class="w-3.5 h-3.5 text-amber-400"></i> Pase Libre (Carnet)
+                  </div>
+                  <div class="col-span-3 text-right font-mono font-bold text-amber-400">S/. 0.00</div>
+                </div>
+
+                <!-- Fila 4: Saldo Insuficiente (Rojo - App) -->
                 <div class="grid grid-cols-12 items-center px-3.5 py-2 hover:bg-slate-800/30 transition bg-rose-950/10">
                   <div class="col-span-2 text-slate-400 font-mono text-[11px]">19:20:18</div>
                   <div class="col-span-3">
@@ -1828,11 +1869,13 @@
                       INSUFICIENTE
                     </span>
                   </div>
-                  <div class="col-span-4 text-rose-300 truncate">App Móvil (Sin Saldo)</div>
+                  <div class="col-span-4 text-rose-300 flex items-center gap-1.5 truncate">
+                    <i data-lucide="smartphone" class="w-3.5 h-3.5 text-rose-400"></i> Aplicativo Móvil
+                  </div>
                   <div class="col-span-3 text-right font-mono font-bold text-rose-400">NO PASA</div>
                 </div>
 
-                <!-- Fila 4: Adulto (Verde) -->
+                <!-- Fila 5: Adulto (Verde - Validador POS) -->
                 <div class="grid grid-cols-12 items-center px-3.5 py-2 hover:bg-slate-800/30 transition">
                   <div class="col-span-2 text-slate-400 font-mono text-[11px]">19:18:02</div>
                   <div class="col-span-3">
@@ -1840,9 +1883,12 @@
                       PASAJE ADULTO
                     </span>
                   </div>
-                  <div class="col-span-4 text-slate-200 truncate">Pasajero General</div>
+                  <div class="col-span-4 text-slate-200 flex items-center gap-1.5 truncate">
+                    <i data-lucide="scan" class="w-3.5 h-3.5 text-emerald-400"></i> Validador POS
+                  </div>
                   <div class="col-span-3 text-right font-mono font-bold text-emerald-400">S/. 1.50</div>
                 </div>
+              </div>
               </div>
             </div>
 
@@ -2701,6 +2747,9 @@
       const pct = Math.round((occupancy / 32) * 100);
       document.getElementById('occupancy-progress').style.width = `${pct}%`;
 
+      // Registrar pasaje CONADIS en el feed de detalles y banner de la tablet
+      simulateDriverFare('conadis', 'Pase Libre (Carnet)', 'S/. 0.00');
+
       playBeep(true);
       showToast('Pasaje CONADIS registrado (+1 aforo, S/. 0.00)', 'success');
     }
@@ -2796,12 +2845,26 @@
       closeBreakdownSubmodule();
     }
 
-    // SIMULACIÓN Y REGISTRO DE PASAJES EN TABLET (Colores: Amarillo=Univ, Verde=Adulto, Rojo=Insuficiente)
-    function simulateDriverFare(type, customName = null, customAmount = null) {
+    // HELPER: FORMATEO DE MEDIO DE PAGO CON ICONOGRAFÍA (PROTECCIÓN DE DATOS PERSONALES)
+    function getPaymentMethodHTML(method) {
+      const m = (method || 'Aplicativo Móvil').toLowerCase();
+      if (m.includes('yape') || m.includes('plin') || m.includes('qr')) {
+        return `<span class="flex items-center gap-1.5 text-purple-300 font-semibold truncate"><i data-lucide="qr-code" class="w-3.5 h-3.5 text-purple-400"></i> Yape / Plin (QR)</span>`;
+      } else if (m.includes('pos') || m.includes('validador')) {
+        return `<span class="flex items-center gap-1.5 text-emerald-300 font-semibold truncate"><i data-lucide="scan" class="w-3.5 h-3.5 text-emerald-400"></i> Validador POS</span>`;
+      } else if (m.includes('conadis') || m.includes('carnet') || m.includes('libre')) {
+        return `<span class="flex items-center gap-1.5 text-amber-300 font-semibold truncate"><i data-lucide="accessibility" class="w-3.5 h-3.5 text-amber-400"></i> Pase Libre (Carnet)</span>`;
+      } else {
+        return `<span class="flex items-center gap-1.5 text-blue-300 font-semibold truncate"><i data-lucide="smartphone" class="w-3.5 h-3.5 text-blue-400"></i> Aplicativo Móvil</span>`;
+      }
+    }
+
+    // SIMULACIÓN Y REGISTRO DE PASAJES EN TABLET (Colores: Amarillo=Univ, Verde=Adulto, Rojo=Insuficiente, Amarillo=CONADIS)
+    function simulateDriverFare(type, paymentMethod = null, customAmount = null) {
       const card = document.getElementById('driver-confirm-card');
       const iconContainer = document.getElementById('driver-status-icon');
       const pill = document.getElementById('driver-last-pill');
-      const passenger = document.getElementById('driver-last-fare-passenger');
+      const methodContainer = document.getElementById('driver-last-payment-method');
       const amount = document.getElementById('driver-last-amount');
       const statusLabel = document.getElementById('driver-last-status-label');
       const timerBar = document.getElementById('driver-timer-bar');
@@ -2815,14 +2878,14 @@
       let amountStr = '';
       let amountColor = '';
       let isSuccess = true;
-      let nameStr = customName || 'Pasajero General';
+      let methodStr = paymentMethod || 'Aplicativo Móvil';
 
       if (type === 'student') {
         typeLabel = 'UNIVERSITARIO';
         badgeClass = 'bg-amber-950 text-amber-300 border-amber-800';
         amountStr = customAmount || 'S/. 0.70';
         amountColor = 'text-amber-400';
-        nameStr = customName || 'Aron Mamani Quispe';
+        methodStr = paymentMethod || 'Aplicativo Móvil';
         
         card.className = 'rounded-2xl bg-slate-900/90 border-2 border-amber-500/80 p-3.5 flex items-center justify-between shadow-xl relative overflow-hidden transition-all duration-300 shrink-0';
         iconContainer.className = 'w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-bold text-lg';
@@ -2838,6 +2901,7 @@
         badgeClass = 'bg-emerald-950 text-emerald-300 border-emerald-800';
         amountStr = customAmount || 'S/. 1.50';
         amountColor = 'text-emerald-400';
+        methodStr = paymentMethod || 'Aplicativo Móvil';
         
         card.className = 'rounded-2xl bg-slate-900/90 border-2 border-emerald-500/80 p-3.5 flex items-center justify-between shadow-xl relative overflow-hidden transition-all duration-300 shrink-0';
         iconContainer.className = 'w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-bold text-lg';
@@ -2848,6 +2912,22 @@
         statusLabel.className = 'text-[11px] text-emerald-300/80 font-medium';
         timerBar.className = 'bg-emerald-500 h-full w-full rounded-full transition-all duration-3000 ease-linear';
         playBeep(true);
+      } else if (type === 'conadis') {
+        typeLabel = 'CONADIS';
+        badgeClass = 'bg-amber-950 text-amber-300 border-amber-800';
+        amountStr = customAmount || 'S/. 0.00';
+        amountColor = 'text-amber-400';
+        methodStr = paymentMethod || 'Pase Libre (Carnet)';
+        
+        card.className = 'rounded-2xl bg-slate-900/90 border-2 border-amber-500/80 p-3.5 flex items-center justify-between shadow-xl relative overflow-hidden transition-all duration-300 shrink-0';
+        iconContainer.className = 'w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-bold text-lg';
+        iconContainer.innerHTML = '<i data-lucide="accessibility" class="w-5 h-5"></i>';
+        pill.className = `text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${badgeClass}`;
+        pill.textContent = typeLabel;
+        statusLabel.textContent = 'Registrado en cabina';
+        statusLabel.className = 'text-[11px] text-amber-300/80 font-medium';
+        timerBar.className = 'bg-amber-500 h-full w-full rounded-full transition-all duration-3000 ease-linear';
+        playBeep(true);
       } else {
         // Insufficient funds / Error
         isSuccess = false;
@@ -2855,7 +2935,7 @@
         badgeClass = 'bg-rose-950 text-rose-300 border-rose-800';
         amountStr = 'NO PASA';
         amountColor = 'text-rose-400';
-        nameStr = customName || 'App Móvil (Sin Saldo)';
+        methodStr = paymentMethod || 'Aplicativo Móvil';
 
         card.className = 'rounded-2xl bg-slate-900/90 border-2 border-rose-500/80 p-3.5 flex items-center justify-between shadow-xl relative overflow-hidden transition-all duration-300 shrink-0';
         iconContainer.className = 'w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 font-bold text-lg';
@@ -2868,7 +2948,9 @@
         playBeep(false);
       }
 
-      passenger.textContent = nameStr;
+      if (methodContainer) {
+        methodContainer.innerHTML = getPaymentMethodHTML(methodStr);
+      }
       amount.className = `text-3xl font-extrabold font-mono ${amountColor}`;
       amount.textContent = amountStr;
 
@@ -2887,7 +2969,7 @@
               ${typeLabel}
             </span>
           </div>
-          <div class="col-span-4 text-slate-200 truncate">${nameStr}</div>
+          <div class="col-span-4 text-slate-200 truncate">${getPaymentMethodHTML(methodStr)}</div>
           <div class="col-span-3 text-right font-mono font-bold ${amountColor}">${amountStr}</div>
         `;
         feed.insertBefore(row, feed.firstChild);
@@ -3010,6 +3092,39 @@
       const el = document.getElementById('qr-refresh-seconds');
       if (el) el.textContent = `${posSec}s`;
     }, 1000);
+
+    // PARADEROS DINÁMICOS EN CABINA (Paradero Actual ➔ Paradero Siguiente)
+    const linea10DriverStops = [
+      'P. Cono Norte',
+      'P. Plaza Zela',
+      'P. Mercado Central',
+      'P. Universidad UNJBG',
+      'P. Terminal Terrestre',
+      'P. Bolognesi'
+    ];
+    let driverCurrentStopIndex = 0;
+
+    function updateDriverStopsDisplay() {
+      const currentStop = linea10DriverStops[driverCurrentStopIndex];
+      const nextStop = linea10DriverStops[(driverCurrentStopIndex + 1) % linea10DriverStops.length];
+      
+      const elCurrent = document.getElementById('drv-current-stop');
+      const elNext = document.getElementById('drv-next-stop');
+      if (elCurrent) elCurrent.textContent = currentStop;
+      if (elNext) elNext.textContent = nextStop;
+    }
+
+    function advanceDriverStop() {
+      driverCurrentStopIndex = (driverCurrentStopIndex + 1) % linea10DriverStops.length;
+      updateDriverStopsDisplay();
+      const currentStop = linea10DriverStops[driverCurrentStopIndex];
+      const nextStop = linea10DriverStops[(driverCurrentStopIndex + 1) % linea10DriverStops.length];
+      showToast(`🚏 Arribo a: ${currentStop} • Próximo: ${nextStop}`, 'info');
+    }
+
+    // Actualización automática cíclica cada 20 segundos
+    setInterval(advanceDriverStop, 20000);
+    updateDriverStopsDisplay();
 
     // Iniciar directamente en la vista de la Tablet del Chofer
     switchDevice('driver');
