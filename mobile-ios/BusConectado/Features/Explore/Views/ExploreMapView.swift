@@ -338,7 +338,7 @@ struct ExploreMapView: View {
                             BCFeedbackManager.shared.impactLight()
                             onDismissSearchFocus?()
                             Task {
-                                await viewModel.refreshStateFromBackendIfAvailable()
+                                await viewModel.refreshStateFromBackendIfAvailable(isManual: true)
                             }
                         } label: {
                             HStack(spacing: 5) {

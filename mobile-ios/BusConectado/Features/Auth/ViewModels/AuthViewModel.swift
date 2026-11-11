@@ -76,6 +76,7 @@ final class AuthViewModel: ObservableObject {
     private var countdownTimer: AnyCancellable?
     private var arrivalAlertTimer: AnyCancellable?
     private var routeGuidanceTimer: AnyCancellable?
+    private var syncPollingTimer: AnyCancellable?
     private var searchDebounceCancellable: AnyCancellable?
 
     init() {
@@ -107,6 +108,8 @@ final class AuthViewModel: ObservableObject {
         Task {
             await self.refreshStateFromBackendIfAvailable()
         }
+
+        startPeriodicSync()
 
         // Búsqueda en vivo de cualquier lugar del mapa de Tacna mediante Apple MapKit (MKLocalSearch)
         searchDebounceCancellable = $searchQuery
@@ -485,11 +488,23 @@ final class AuthViewModel: ObservableObject {
         self.selectedTab = 0
     }
 
+    private func startPeriodicSync() {
+        syncPollingTimer?.cancel()
+        syncPollingTimer = Timer.publish(every: 8.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                Task {
+                    await self.refreshStateFromBackendIfAvailable(isManual: false)
+                }
+            }
+    }
+
     // MARK: - Sincronización de Red de Transporte y Monedero con Backend
-    func refreshStateFromBackendIfAvailable() async {
+    func refreshStateFromBackendIfAvailable(isManual: Bool = false) async {
         guard APIClient.shared.canReachRemoteBackend else { return }
 
-        // 1. Sincronizar paraderos calibrados en tiempo real desde el Administrador Web y Backend Local
+        // 1. Sincronizar paraderos calibrados en tiempo real desde el Administrador Web y Servidor Cloud
         do {
             let adminStops: [AdminStopDTO] = try await APIClient.shared.request(
                 endpoint: "transit/stops",
@@ -499,16 +514,22 @@ final class AuthViewModel: ObservableObject {
             if !adminStops.isEmpty {
                 let converted = adminStops.map { $0.toDestinationPlace() }
                 await MainActor.run {
-                    self.dynamicCatalogStops = converted
-                    if let rawData = try? JSONEncoder().encode(adminStops) {
-                        UserDefaults.standard.set(rawData, forKey: "bc_cached_stops")
+                    let hasChanged = (self.dynamicCatalogStops.count != converted.count) ||
+                        zip(self.dynamicCatalogStops, converted).contains { $0.latitude != $1.latitude || $0.longitude != $1.longitude || $0.shortName != $1.shortName || $0.resolvedIconName != $1.resolvedIconName }
+                    if hasChanged {
+                        self.dynamicCatalogStops = converted
+                        if let rawData = try? JSONEncoder().encode(adminStops) {
+                            UserDefaults.standard.set(rawData, forKey: "bc_cached_stops")
+                        }
                     }
                     self.isConnectedToBackend = true
-                    BCFeedbackManager.shared.notificationSuccess()
+                    if isManual {
+                        BCFeedbackManager.shared.notificationSuccess()
+                    }
                 }
             }
         } catch {
-            print("[SYNC] Error sincronizando paraderos desde backend local: \(error)")
+            print("[SYNC] Error sincronizando paraderos desde backend: \(error)")
         }
 
         // 2. Sincronizar red de transporte
