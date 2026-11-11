@@ -3128,7 +3128,6 @@
                   <div class="col-span-3 text-right font-mono font-bold text-emerald-400">S/. 1.50</div>
                 </div>
               </div>
-              </div>
             </div>
 
             <!-- 3. SENSORES DEL VEHÍCULO, CONADIS Y MÓDULO DE AVERÍA -->
@@ -3412,23 +3411,32 @@
 
     function playBeep(isSuccess) {
       if (audioCtx.state === 'suspended') audioCtx.resume();
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
 
       if (isSuccess) {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
         osc.frequency.setValueAtTime(880, audioCtx.currentTime);
         gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
         osc.start();
         osc.stop(audioCtx.currentTime + 0.8);
       } else {
-        osc.frequency.setValueAtTime(280, audioCtx.currentTime);
-        gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.22);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.22);
+        // Tono grave de alerta / saldo insuficiente característico de validador de bus (doble pulso)
+        [0, 0.16].forEach((delay, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sawtooth';
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          const t = audioCtx.currentTime + delay;
+          osc.frequency.setValueAtTime(idx === 0 ? 300 : 210, t);
+          gain.gain.setValueAtTime(0.35, t);
+          gain.gain.exponentialRampToValueAtTime(0.01, t + 0.13);
+          osc.start(t);
+          osc.stop(t + 0.13);
+        });
       }
     }
 
@@ -4402,8 +4410,7 @@
       const totalPts = userFare + (companions * companionFare);
 
       if (walletPoints < totalPts) {
-        playBeep(false);
-        simulateDriverFare('insufficient', 'Aron Mamani Quispe', 'NO PASA');
+        simulateDriverFare('insufficient', 'Aplicativo Móvil', 'NO PASA');
         showToast('Saldo insuficiente. Recarga en tu Monedero.', 'error');
         return;
       }
@@ -4428,9 +4435,9 @@
 
       // Notificar a la tablet del chofer con código de color (Amarillo=Univ S/. 0.70, Verde=Adulto S/. 1.50)
       if (userFare === 7) {
-        simulateDriverFare('student', 'Aron Mamani Quispe', 'S/. 0.70');
+        simulateDriverFare('student', 'Aplicativo Móvil', 'S/. 0.70');
       } else {
-        simulateDriverFare('adult', 'Aron Mamani Quispe', 'S/. 1.50');
+        simulateDriverFare('adult', 'Aplicativo Móvil', 'S/. 1.50');
       }
 
       isUserSubscribed = true;
