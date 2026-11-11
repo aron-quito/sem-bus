@@ -77,6 +77,16 @@ SERVICE
 # Permisos para Nginx
 chmod 755 /home/admin /home/admin/sem-bus /home/admin/sem-bus/admin-web
 
+# Configurar lista de IPs autorizadas si no existe
+if [ ! -f /etc/nginx/admin_allowed_ips.conf ]; then
+  sudo tee /etc/nginx/admin_allowed_ips.conf > /dev/null << 'IPS'
+# IPs Autorizadas para el Panel Administrador
+allow 127.0.0.1;
+allow 38.250.158.151; # Aron (IP actual)
+deny all;
+IPS
+fi
+
 # Configurar Nginx Reverse Proxy (Puerto 80 público hacia Web Admin + Backend + WebSockets)
 sudo tee /etc/nginx/sites-available/busconectado > /dev/null << 'NGINX'
 server {
@@ -87,8 +97,9 @@ server {
     root /home/admin/sem-bus/admin-web;
     index index.html;
 
-    # Panel Web de Administración (Protegido con Contraseña para admin y admin2)
+    # Panel Web de Administración (Protegido con IP + Contraseña)
     location / {
+        include /etc/nginx/admin_allowed_ips.conf;
         auth_basic "Acceso Restringido • Panel Administrador Bus Conectado";
         auth_basic_user_file /etc/nginx/.htpasswd;
 
@@ -98,6 +109,7 @@ server {
 
     # Canal WebSocket para Colaboración en Tiempo Real (Estilo Google Docs)
     location /ws {
+        include /etc/nginx/admin_allowed_ips.conf;
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
