@@ -29,7 +29,7 @@ struct ExploreMapView: View {
             return projectedRoute.resolvedStops
         }
         if viewModel.mapCategory == .stops {
-            return TacnaDestinationPlace.catalog
+            return viewModel.dynamicCatalogStops
         }
         return []
     }
@@ -38,8 +38,21 @@ struct ExploreMapView: View {
         ZStack(alignment: .top) {
             // 1. Mapa Nativo de Tacna a Pantalla Completa hasta el borde superior (detrás de la hora/batería/Dynamic Island)
             Map(position: $cameraPosition, selection: $selectedMapFeature) {
-                // Ubicación Real del Usuario en Tiempo Real (Punto azul nativo de Apple Maps con cono direccional)
-                UserAnnotation()
+                // Ubicación Real del Usuario en Tiempo Real (Renderizado vectorial ligero que evita LittleGlowView y caídas de Metal)
+                UserAnnotation {
+                    ZStack {
+                        Circle()
+                            .fill(BCTheme.cyanAccent.opacity(0.28))
+                            .frame(width: 30, height: 30)
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 16, height: 16)
+                            .shadow(color: .black.opacity(0.35), radius: 2)
+                        Circle()
+                            .fill(BCTheme.royalBlue)
+                            .frame(width: 12, height: 12)
+                    }
+                }
 
                 // Trazado de Ruta Oficial Proyectada desde la pestaña "Líneas" (Ej: Ruta 14, Ruta 10B, etc.)
                 if let projectedRoute = viewModel.activeRouteOverlayOnMap {
@@ -53,84 +66,83 @@ struct ExploreMapView: View {
                     }
                 }
 
-                // Marcadores Interactivos de los 34 Paraderos de Tacna (Cuando se activa filtro "Paraderos" o una Ruta)
+                // Marcadores Interactivos de los 34 Paraderos de Tacna (Optimizado para que pellizcar y zoom NO se bloqueen)
                 ForEach(visibleCatalogStopsOnMap) { catalogStop in
                     Annotation(catalogStop.shortName, coordinate: catalogStop.coordinate) {
-                        Button {
-                            BCFeedbackManager.shared.impactLight()
-                            selectedCatalogStop = catalogStop
-                        } label: {
-                            VStack(spacing: 2) {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color(hex: catalogStop.iconColorHex))
-                                        .frame(width: 30, height: 30)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.white, lineWidth: 2)
-                                        )
-                                        .shadow(color: .black.opacity(0.45), radius: 4)
-                                    Image(systemName: catalogStop.iconName)
-                                        .font(.system(size: 12, weight: .bold))
-                                        .foregroundColor(.white)
-                                }
-
-                                Text(catalogStop.shortName)
-                                    .font(.system(size: 8.5, weight: .bold))
+                        VStack(spacing: 2) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color(hex: catalogStop.iconColorHex))
+                                    .frame(width: 30, height: 30)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(Color.white, lineWidth: 2)
+                                    )
+                                    .shadow(color: .black.opacity(0.45), radius: 4)
+                                Image(systemName: catalogStop.resolvedIconName)
+                                    .font(.system(size: 12, weight: .bold))
                                     .foregroundColor(.white)
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1.5)
-                                    .background(BCTheme.elevatedSurface.opacity(0.92))
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
                             }
+                            .contentShape(Circle())
+                            .onTapGesture {
+                                BCFeedbackManager.shared.impactLight()
+                                selectedCatalogStop = catalogStop
+                            }
+
+                            Text(catalogStop.shortName)
+                                .font(.system(size: 8.5, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
+                                .background(BCTheme.elevatedSurface.opacity(0.92))
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                .allowsHitTesting(false) // Permite que los dedos pellizquen libremente sobre el mapa sin que la etiqueta lo impida
                         }
-                        .buttonStyle(.plain)
-                        .contentShape(Circle())
                     }
                 }
 
                 // Pin Rojo Dinámico cuando el usuario selecciona un Paradero o Lugar desde el Buscador Predictivo
                 if let searchedPlace = viewModel.searchedDestinationPin {
                     Annotation(searchedPlace.shortName, coordinate: searchedPlace.coordinate) {
-                        Button {
-                            selectedCatalogStop = searchedPlace
-                        } label: {
-                            VStack(spacing: 3) {
-                                HStack(spacing: 5) {
-                                    Text(searchedPlace.shortName)
-                                        .font(.system(size: 10, weight: .heavy))
-                                        .foregroundColor(.white)
-                                    Button {
-                                        viewModel.openRoutePlanner(with: searchedPlace)
-                                    } label: {
-                                        Text("Ir ↱")
-                                            .font(.system(size: 9, weight: .black))
-                                            .foregroundColor(.black)
-                                            .padding(.horizontal, 6)
-                                            .padding(.vertical, 2.5)
-                                            .background(BCTheme.cyanAccent)
-                                            .clipShape(Capsule())
-                                    }
+                        VStack(spacing: 3) {
+                            HStack(spacing: 5) {
+                                Text(searchedPlace.shortName)
+                                    .font(.system(size: 10, weight: .heavy))
+                                    .foregroundColor(.white)
+                                Button {
+                                    viewModel.openRoutePlanner(with: searchedPlace)
+                                } label: {
+                                    Text("Ir ↱")
+                                        .font(.system(size: 9, weight: .black))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2.5)
+                                        .background(BCTheme.cyanAccent)
+                                        .clipShape(Capsule())
                                 }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(BCTheme.destructiveRed)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.white.opacity(0.65), lineWidth: 1)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                                .shadow(color: .black.opacity(0.45), radius: 5)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(BCTheme.destructiveRed)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.white.opacity(0.65), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .shadow(color: .black.opacity(0.45), radius: 5)
 
-                                ZStack {
-                                    Circle()
-                                        .fill(BCTheme.destructiveRed)
-                                        .frame(width: 26, height: 26)
-                                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                                    Image(systemName: "mappin.and.ellipse")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.white)
-                                }
+                            ZStack {
+                                Circle()
+                                    .fill(BCTheme.destructiveRed)
+                                    .frame(width: 26, height: 26)
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                                Image(systemName: "mappin.and.ellipse")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .contentShape(Circle())
+                            .onTapGesture {
+                                selectedCatalogStop = searchedPlace
                             }
                         }
                     }
@@ -206,43 +218,24 @@ struct ExploreMapView: View {
                     }
                 }
 
-                // Marcadores dinámicos del Servidor (Vacío en cuentas de prueba hasta que entren buses reales en operación)
-                ForEach(viewModel.filteredStops) { stop in
-                    Annotation(stop.name, coordinate: stop.coordinate) {
-                        Button {
-                            BCFeedbackManager.shared.impactLight()
-                            selectedStop = stop
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(stop.isKeyStop ? BCTheme.royalBlue : BCTheme.emerald)
-                                    .frame(width: 34, height: 34)
-                                    .shadow(color: .black.opacity(0.35), radius: 5)
-                                Image(systemName: "mappin.and.ellipse")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundColor(.white)
-                            }
-                        }
-                    }
-                }
-
+                // Buses activos en operación (Se renderizan cuando las unidades transmiten telemetría GPS)
                 ForEach(viewModel.filteredBuses) { bus in
                     Annotation("\(bus.unitNumber) · \(bus.plate)", coordinate: bus.coordinate) {
-                        Button {
+                        ZStack {
+                            Circle()
+                                .fill(BCTheme.emerald.opacity(0.28))
+                                .frame(width: 44, height: 44)
+                            Circle()
+                                .fill(BCTheme.emerald)
+                                .frame(width: 28, height: 28)
+                            Image(systemName: "bus.fill")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(.black)
+                        }
+                        .contentShape(Circle())
+                        .onTapGesture {
                             BCFeedbackManager.shared.impactLight()
                             selectedBus = bus
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(BCTheme.emerald.opacity(0.28))
-                                    .frame(width: 44, height: 44)
-                                Circle()
-                                    .fill(BCTheme.emerald)
-                                    .frame(width: 28, height: 28)
-                                Image(systemName: "bus.fill")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundColor(.black)
-                            }
                         }
                     }
                 }
@@ -505,12 +498,12 @@ struct ExploreMapView: View {
         }
         .sheet(item: $selectedCatalogStop) { catalogPlace in
             catalogStopDetailSheet(catalogPlace)
-                .presentationDetents([.height(catalogPlace.statusNote != nil ? 315 : 270)])
+                .presentationDetents([.height(catalogPlace.statusNote != nil ? 270 : 230)])
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedStop) { stop in
             stopDetailSheet(stop)
-                .presentationDetents([.height(290)])
+                .presentationDetents([.height(260)])
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedBus) { bus in
@@ -540,29 +533,30 @@ struct ExploreMapView: View {
     private func catalogStopDetailSheet(_ place: TacnaDestinationPlace) -> some View {
         ZStack {
             BCTheme.elevatedSurface.ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(place.category.badgeTitle)
                             .font(.system(size: 9.5, weight: .heavy))
                             .foregroundColor(place.category.isProposedModernization ? BCTheme.amber : BCTheme.emerald)
                             .tracking(0.5)
 
                         Text(place.name)
-                            .font(.title3.weight(.bold))
+                            .font(.headline.weight(.bold))
                             .foregroundColor(.white)
 
                         Text(place.subtitle)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundColor(.white.opacity(0.65))
+                            .lineLimit(1)
                     }
                     Spacer()
 
                     Text(place.distanceLabel)
-                        .font(.caption.weight(.bold).monospacedDigit())
+                        .font(.caption2.weight(.bold).monospacedDigit())
                         .foregroundColor(BCTheme.cyanAccent)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
                         .background(BCTheme.cyanAccent.opacity(0.15))
                         .clipShape(Capsule())
                 }
@@ -574,31 +568,30 @@ struct ExploreMapView: View {
                         .foregroundColor(.white.opacity(0.6))
                     ForEach(place.routesPassing, id: \.self) { routeCode in
                         Text(routeCode)
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2.5)
                             .background(BCTheme.royalBlue)
                             .clipShape(Capsule())
                     }
                 }
 
                 if let note = place.statusNote {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: "sparkles")
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundColor(BCTheme.amber)
                         Text(note)
-                            .font(.caption2)
+                            .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.85))
+                            .lineLimit(2)
                     }
-                    .padding(10)
+                    .padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(BCTheme.amber.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-
-                Divider().background(BCTheme.hairlineBorder)
 
                 // Botón Principal: Trazar Cómo Llegar ("Ir") a este Paradero
                 Button {
@@ -616,9 +609,9 @@ struct ExploreMapView: View {
                     }
                     .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
+                    .frame(height: 44)
                     .background(BCTheme.cyanAccent)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
 
                 // Botón Secundario: Activar Alerta de Llegada (2 Timers)
@@ -649,16 +642,18 @@ struct ExploreMapView: View {
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 44)
+                    .frame(height: 38)
                     .background(Color.white.opacity(0.08))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .stroke(BCTheme.hairlineBorder, lineWidth: 1)
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
         }
     }
 

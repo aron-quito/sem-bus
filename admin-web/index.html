@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=3">
 </head>
 <body>
   <div class="app-layout">
@@ -116,13 +116,34 @@
       <div class="map-top-bar">
         <div class="map-mode-indicator">
           <span class="mode-pulse"></span>
-          <span id="current-mode-label">Modo: Visualización & Reubicación Directa (Arrastra cualquier pin)</span>
+          <span id="current-mode-label">Modo: Selección & Gestión Oficial (Haz clic en un paradero)</span>
         </div>
 
         <div class="map-layer-selector">
           <button type="button" class="layer-btn active" data-layer="dark" title="Estilo Oscuro Apple">Oscuro</button>
           <button type="button" class="layer-btn" data-layer="streets" title="Calles OpenStreetMap">Calles</button>
           <button type="button" class="layer-btn" data-layer="satellite" title="Satélite Real">Satélite</button>
+        </div>
+      </div>
+
+      <!-- Barra Flotante de Reubicación de Paradero (Aparece al activar "¿Deseas mover el paradero?") -->
+      <div class="relocation-action-bar hidden" id="relocation-bar" role="region" aria-label="Confirmación de reubicación de paradero">
+        <div class="relocation-info">
+          <div class="relocation-pulse"></div>
+          <div>
+            <div class="relocation-title">
+              Moviendo paradero: <strong id="relocation-stop-name">Mercado Central</strong>
+            </div>
+            <div class="relocation-coords" id="relocation-coords-display">
+              Arrastra el marcador a la nueva esquina o haz clic en el mapa
+            </div>
+          </div>
+        </div>
+        <div class="relocation-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-relocation" title="Descartar y volver a la posición original">Cancelar</button>
+          <button type="button" class="btn btn-primary btn-sm btn-establish" id="btn-establish-relocation" title="Confirmar y guardar nueva ubicación">
+            ✓ Establecer
+          </button>
         </div>
       </div>
 
@@ -185,9 +206,23 @@
           </div>
 
           <div class="form-group flex-1">
-            <label for="field-routes">Rutas que Abordan (separadas por coma)</label>
-            <input type="text" id="field-routes" placeholder="Ruta 14, Ruta 10B, Ruta 101">
+            <label for="field-icon">Símbolo / Icono en App <span class="req">*</span></label>
+            <select id="field-icon" required>
+              <option value="bus.fill">🚌 Autobús (Por defecto)</option>
+              <option value="parkingsign.circle.fill">🚏 Señal de Paradero</option>
+              <option value="storefront.fill">🛒 Mercado / Comercio</option>
+              <option value="cross.case.fill">🏥 Salud / Hospital</option>
+              <option value="graduationcap.fill">🎓 Universidad / Escuela</option>
+              <option value="building.columns.fill">🏛️ Institución / Terminal</option>
+              <option value="tree.fill">🌳 Plaza / Parque</option>
+              <option value="mappin.and.ellipse">📍 Marcador General</option>
+            </select>
           </div>
+        </div>
+
+        <div class="form-group">
+          <label for="field-routes">Rutas que Abordan (separadas por coma)</label>
+          <input type="text" id="field-routes" placeholder="Ruta 14, Ruta 10B, Ruta 101">
         </div>
 
         <div class="form-row coords-group">
@@ -270,7 +305,7 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Lógica de la Aplicación -->
-  <script type="module" src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>
 

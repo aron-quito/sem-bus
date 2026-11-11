@@ -52,6 +52,9 @@ final class AuthViewModel: ObservableObject {
     @Published var showInsufficientBalanceModal: Bool = false
     @Published var requiredPointsForAttempt: Int = 0
 
+    // Catálogo Dinámico de Paraderos (Sincronizado en tiempo real con el Administrador Web y Backend Local)
+    @Published var dynamicCatalogStops: [TacnaDestinationPlace] = TacnaDestinationPlace.catalog
+
     // Estado del Buscador Predictivo y Pin de Destino Buscado
     @Published var isSearchDropdownVisible: Bool = false
     @Published var searchedDestinationPin: TacnaDestinationPlace? = nil
@@ -81,16 +84,25 @@ final class AuthViewModel: ObservableObject {
             APIClient.shared.updateBaseURL("http://\(savedHost)")
         }
 
+        // Cargar paraderos cacheados previamente de la última sincronización con el Administrador Web
+        if let stopsData = UserDefaults.standard.data(forKey: "bc_cached_stops"),
+           let cachedDTOs = try? JSONDecoder().decode([AdminStopDTO].self, from: stopsData),
+           !cachedDTOs.isEmpty {
+            self.dynamicCatalogStops = cachedDTOs.map { $0.toDestinationPlace() }
+        }
+
         if let token = KeychainService.shared.get(key: "access_token"), !token.isEmpty {
             if let userData = UserDefaults.standard.data(forKey: "bc_active_user"),
                let profile = try? JSONDecoder().decode(UserAuth.self, from: userData) {
                 self.currentUser = profile
                 self.isLoggedIn = true
                 self.loadLocalTransactions(for: profile.phone)
-                Task {
-                    await refreshStateFromBackendIfAvailable()
-                }
             }
+        }
+
+        // Sincronización automática de paraderos al arrancar la app
+        Task {
+            await self.refreshStateFromBackendIfAvailable()
         }
 
         // Búsqueda en vivo de cualquier lugar del mapa de Tacna mediante Apple MapKit (MKLocalSearch)
@@ -136,9 +148,9 @@ final class AuthViewModel: ObservableObject {
     var filteredSearchDestinations: [TacnaDestinationPlace] {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return TacnaDestinationPlace.catalog
+            return dynamicCatalogStops
         }
-        let catalogMatches = TacnaDestinationPlace.catalog.filter {
+        let catalogMatches = dynamicCatalogStops.filter {
             $0.name.localizedCaseInsensitiveContains(trimmed) ||
             $0.shortName.localizedCaseInsensitiveContains(trimmed) ||
             $0.subtitle.localizedCaseInsensitiveContains(trimmed) ||
@@ -402,8 +414,8 @@ final class AuthViewModel: ObservableObject {
                     requiresAuth: false
                 )
 
-                _ = KeychainService.shared.save(key: "access_token", value: res.accessToken)
-                _ = KeychainService.shared.save(key: "refresh_token", value: res.refreshToken)
+                KeychainService.shared.save(key: "access_token", value: res.accessToken)
+                KeychainService.shared.save(key: "refresh_token", value: res.refreshToken)
 
                 self.currentUser = res.user
                 self.saveActiveUserLocally(res.user)
@@ -434,8 +446,8 @@ final class AuthViewModel: ObservableObject {
 
         let phoneKey = normalizedPhone
         let user = loadOrCreateLocalAccount(phone: phoneKey)
-        _ = KeychainService.shared.save(key: "access_token", value: "local_jwt_\(user.id)")
-        _ = KeychainService.shared.save(key: "refresh_token", value: "local_refresh_\(user.id)")
+        KeychainService.shared.save(key: "access_token", value: "local_jwt_\(user.id)")
+        KeychainService.shared.save(key: "refresh_token", value: "local_refresh_\(user.id)")
 
         self.currentUser = user
         self.saveActiveUserLocally(user)
@@ -474,6 +486,29 @@ final class AuthViewModel: ObservableObject {
     func refreshStateFromBackendIfAvailable() async {
         guard APIClient.shared.canReachRemoteBackend else { return }
 
+        // 1. Sincronizar paraderos calibrados en tiempo real desde el Administrador Web y Backend Local
+        do {
+            let adminStops: [AdminStopDTO] = try await APIClient.shared.request(
+                endpoint: "transit/stops",
+                method: "GET",
+                requiresAuth: false
+            )
+            if !adminStops.isEmpty {
+                let converted = adminStops.map { $0.toDestinationPlace() }
+                await MainActor.run {
+                    self.dynamicCatalogStops = converted
+                    if let rawData = try? JSONEncoder().encode(adminStops) {
+                        UserDefaults.standard.set(rawData, forKey: "bc_cached_stops")
+                    }
+                    self.isConnectedToBackend = true
+                    BCFeedbackManager.shared.notificationSuccess()
+                }
+            }
+        } catch {
+            print("[SYNC] Error sincronizando paraderos desde backend local: \(error)")
+        }
+
+        // 2. Sincronizar red de transporte
         struct NetworkDTO: Decodable {
             let routes: [BusRouteModel]
             let stops: [BusStopModel]
@@ -486,12 +521,14 @@ final class AuthViewModel: ObservableObject {
                 method: "GET",
                 requiresAuth: false
             )
-            self.routes = net.routes
-            self.stops = net.stops
-            self.activeBuses = net.activeBuses
-            self.isConnectedToBackend = true
+            await MainActor.run {
+                self.routes = net.routes
+                self.stops = net.stops
+                self.activeBuses = net.activeBuses
+                self.isConnectedToBackend = true
+            }
         } catch {
-            self.isConnectedToBackend = false
+            // Se mantiene el estado local si el endpoint no tiene buses asignados
         }
     }
 

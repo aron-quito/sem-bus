@@ -546,12 +546,24 @@ html, body {
   flex: 1;
   height: 100%;
   position: relative;
-  background: #000000;
+  background: var(--bg-main);
 }
 
 #tacna-map {
   width: 100%;
   height: 100%;
+  background: var(--bg-main);
+}
+
+/* ── FILTRO MODO OSCURO PARA OPENSTREETMAP (100% Libre sin API Key ni marcas de agua) ── */
+.map-tiles-dark .leaflet-tile,
+.leaflet-tile.map-tiles-dark,
+.leaflet-layer.map-tiles-dark .leaflet-tile {
+  filter: brightness(0.62) invert(1) contrast(2.4) hue-rotate(200deg) saturate(0.35) brightness(0.85);
+}
+
+.leaflet-container {
+  background-color: var(--bg-main) !important;
 }
 
 .map-top-bar {
@@ -656,18 +668,14 @@ html, body {
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  cursor: grab;
-  transition: transform 0.18s ease;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
   position: relative;
 }
 
 .pin-container:hover {
   transform: scale(1.18);
-  cursor: grab;
-}
-
-.pin-container:active {
-  cursor: grabbing;
+  cursor: pointer;
 }
 
 .pin-container.is-official {
@@ -680,10 +688,30 @@ html, body {
   border: 2px solid #FFFFFF;
 }
 
+/* Estado de arrastre y reubicación activa */
 .pin-container.is-dragging {
   transform: scale(1.3);
   box-shadow: 0 8px 24px rgba(56, 189, 248, 0.6);
   border-color: var(--color-accent);
+  cursor: grabbing !important;
+}
+
+.pin-container.is-relocating {
+  cursor: grab !important;
+  transform: scale(1.35) !important;
+  border: 3px solid #38BDF8 !important;
+  box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.35), 0 12px 28px rgba(0, 0, 0, 0.7) !important;
+  animation: pulse-relocating-pin 1.4s infinite alternate ease-in-out;
+  z-index: 99999 !important;
+}
+
+.pin-container.is-relocating:active {
+  cursor: grabbing !important;
+}
+
+@keyframes pulse-relocating-pin {
+  0% { box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.25), 0 8px 20px rgba(0, 0, 0, 0.6); }
+  100% { box-shadow: 0 0 0 10px rgba(56, 189, 248, 0.5), 0 16px 36px rgba(0, 0, 0, 0.85); }
 }
 
 .pin-label {
@@ -900,5 +928,209 @@ dialog::backdrop {
 .toast.show {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BARRA FLOTANTE DE REUBICACIÓN ("¿Deseas mover?" ➔ "Establecer")
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.relocation-action-bar {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1050;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: var(--radius-lg);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 24px rgba(56, 189, 248, 0.2);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+  max-width: 90vw;
+}
+
+.relocation-action-bar.hidden {
+  display: none !important;
+}
+
+.relocation-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.relocation-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 10px var(--color-accent);
+  animation: pulse-dot 1.4s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+.relocation-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.relocation-title strong {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.relocation-coords {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+.relocation-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-establish {
+  background: #10B981 !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.4) !important;
+  border: none !important;
+  padding: 8px 16px !important;
+}
+
+.btn-establish:hover {
+  background: #059669 !important;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.6) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POPUP DE SELECCIÓN DE PARADERO (LEAFLET DARK THEME)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.leaflet-popup-content-wrapper {
+  background: rgba(15, 23, 42, 0.96) !important;
+  backdrop-filter: blur(16px) !important;
+  color: #F8FAFC !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65) !important;
+  padding: 0 !important;
+}
+
+.leaflet-popup-content {
+  margin: 14px 16px !important;
+  line-height: 1.4 !important;
+}
+
+.leaflet-popup-tip {
+  background: rgba(15, 23, 42, 0.96) !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  color: #94A3B8 !important;
+  padding: 6px !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+  color: #FFFFFF !important;
+}
+
+.stop-popup-card {
+  font-family: var(--font-sans);
+  min-width: 240px;
+  max-width: 290px;
+}
+
+.popup-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 6px;
+}
+
+.popup-badge.official {
+  background: rgba(37, 99, 235, 0.2);
+  color: #60A5FA;
+  border: 1px solid rgba(37, 99, 235, 0.4);
+}
+
+.popup-badge.proposal {
+  background: rgba(245, 158, 11, 0.2);
+  color: #FBBF24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.popup-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #F8FAFC;
+  margin-bottom: 3px;
+}
+
+.popup-subtitle {
+  font-size: 0.72rem;
+  color: #94A3B8;
+  margin-bottom: 6px;
+}
+
+.popup-coords {
+  font-size: 0.68rem;
+  color: #64748B;
+  font-family: var(--font-mono);
+  margin-bottom: 10px;
+}
+
+.popup-move-cta {
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 10px 0 12px 0;
+  text-align: center;
+}
+
+.popup-move-question {
+  font-size: 0.72rem;
+  color: #94A3B8;
+  margin-bottom: 7px;
+  font-weight: 500;
+}
+
+.btn-start-move {
+  width: 100%;
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+  background: #2563EB !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+  padding: 6px 12px !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4) !important;
+}
+
+.btn-start-move:hover {
+  background: #1D4ED8 !important;
+}
+
+.popup-actions-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+  margin-top: 6px;
 }
 

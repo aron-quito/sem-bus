@@ -1392,10 +1392,11 @@ struct RoutePlannerView: View {
     // MARK: - Helpers de Estado
     private var filteredDestinationsInPlanner: [TacnaDestinationPlace] {
         let trimmed = destinationSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceList = viewModel.dynamicCatalogStops.isEmpty ? TacnaDestinationPlace.catalog : viewModel.dynamicCatalogStops
         if trimmed.isEmpty {
-            return TacnaDestinationPlace.catalog
+            return sourceList
         }
-        return TacnaDestinationPlace.catalog.filter {
+        return sourceList.filter {
             $0.name.localizedCaseInsensitiveContains(trimmed) ||
             $0.shortName.localizedCaseInsensitiveContains(trimmed) ||
             $0.subtitle.localizedCaseInsensitiveContains(trimmed)

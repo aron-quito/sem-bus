@@ -279,6 +279,66 @@ enum DestinationRouteCase: String, Codable, Equatable {
     case busRoute203
 }
 
+// MARK: - DTO para Sincronización en Tiempo Real con Backend Local y Web Admin
+struct AdminStopDTO: Codable, Identifiable {
+    let id: String
+    let name: String
+    let shortName: String
+    let subtitle: String?
+    let category: String
+    let categoryLabel: String?
+    let isOfficial: Bool?
+    let latitude: Double
+    let longitude: Double
+    let routesPassing: [String]?
+    let colorHex: String?
+    let iconName: String?
+    let statusNote: String?
+
+    func toDestinationPlace() -> TacnaDestinationPlace {
+        let cat: TacnaStopCategory
+        switch category {
+        case "marketsCommercial": cat = .marketsCommercial
+        case "plazasCentral": cat = .plazasCentral
+        case "institutionsTerminals": cat = .institutionsTerminals
+        case "proposedHospitals": cat = .proposedHospitals
+        case "proposedUrbanGrowth": cat = .proposedUrbanGrowth
+        case "proposedEducation": cat = .proposedEducation
+        case "proposedTouristBorder": cat = .proposedTouristBorder
+        default: cat = (isOfficial == false) ? .proposedUrbanGrowth : .institutionsTerminals
+        }
+
+        let routes = routesPassing ?? ["Ruta 14"]
+        let defaultIcon = "bus.fill"
+        let defaultColor = cat.isProposedModernization ? "#F59E0B" : "#2563EB"
+
+        return TacnaDestinationPlace(
+            id: id,
+            name: name,
+            shortName: shortName,
+            subtitle: subtitle ?? "Tacna, Perú",
+            category: cat,
+            routesPassing: routes,
+            iconName: iconName ?? defaultIcon,
+            iconColorHex: colorHex ?? defaultColor,
+            latitude: latitude,
+            longitude: longitude,
+            routeCase: .busRoute14,
+            totalDurationMinutes: 8,
+            secondaryDurationMinutes: 12,
+            walkingDirectMinutes: 5,
+            distanceLabel: "600 m",
+            walkInitialMinutes: 2,
+            busRideMinutes: 5,
+            walkFinalMinutes: 1,
+            boardingStopName: "Tacna Centro",
+            alightingStopName: shortName,
+            intermediateStopName: nil,
+            statusNote: statusNote
+        )
+    }
+}
+
 // MARK: - Modelo de Paradero / Lugar Real de Tacna
 struct TacnaDestinationPlace: Identifiable, Equatable {
     let id: String
@@ -317,15 +377,27 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
         return !category.isProposedModernization && category != .mapCustomPlace
     }
 
-    /// Icono visual estandarizado: autobús para paraderos oficiales, destello para propuestas, marcador para puntos del mapa
-    var displayIconName: String {
-        if isOfficialParadero {
-            return "bus.fill"
-        } else if category.isProposedModernization {
-            return "sparkles"
-        } else {
-            return "mappin.and.ellipse"
+    /// Icono visual: por defecto es el símbolo unificado oficial de bus ('bus.fill'); se puede personalizar individualmente desde el Panel Administrador Web
+    var resolvedIconName: String {
+        return Self.mapToSFSymbol(raw: iconName)
+    }
+
+    static func mapToSFSymbol(raw: String) -> String {
+        switch raw {
+        case "bus", "bus.fill": return "bus.fill"
+        case "stop", "sign", "parkingsign", "parkingsign.circle.fill": return "parkingsign.circle.fill"
+        case "store", "storefront", "storefront.fill", "cart", "cart.fill", "bag.fill": return "storefront.fill"
+        case "hospital", "cross", "cross.case.fill": return "cross.case.fill"
+        case "school", "education", "graduationcap", "graduationcap.fill", "academiccap": return "graduationcap.fill"
+        case "terminal", "building", "building.columns.fill", "building.2.fill": return "building.columns.fill"
+        case "tree", "park", "tree.fill": return "tree.fill"
+        case "pin", "mappin", "mappin.and.ellipse": return "mappin.and.ellipse"
+        default: return raw.contains(".") ? raw : "bus.fill"
         }
+    }
+
+    var displayIconName: String {
+        resolvedIconName
     }
 
     /// Color común y unificado para que el usuario identifique inmediatamente un paradero
@@ -410,7 +482,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: subtitle.isEmpty ? "Punto seleccionado en el mapa de Tacna" : subtitle,
             category: .mapCustomPlace,
             routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "mappin.and.ellipse",
+            iconName: "bus.fill",
             iconColorHex: "#38BDF8",
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
@@ -441,7 +513,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Bolognesi cdra 8 / Calle Zela • Centro Histórico",
             category: .marketsCommercial,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta 101"],
-            iconName: "storefront.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01358,
             longitude: -70.25055,
@@ -465,7 +537,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Calle 2 de Mayo / Av. Leguía • Cercado",
             category: .marketsCommercial,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta 203"],
-            iconName: "storefront.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01085,
             longitude: -70.24865,
@@ -489,7 +561,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Saucini / Av. Industrial • Mayorista",
             category: .marketsCommercial,
             routesPassing: ["Ruta 14", "Ruta 101", "Ruta A"],
-            iconName: "cart.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.02420,
             longitude: -70.26210,
@@ -513,7 +585,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Los Próceres / Av. Cenepa • Gregorio Albarracín",
             category: .marketsCommercial,
             routesPassing: ["Ruta 14", "Ruta 203"],
-            iconName: "storefront.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.04360,
             longitude: -70.24520,
@@ -537,7 +609,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Pinto cdra 11 / Jorge Chávez • Alto de la Alianza",
             category: .marketsCommercial,
             routesPassing: ["Ruta 10B", "Ruta 101"],
-            iconName: "bag.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00695,
             longitude: -70.24590,
@@ -561,7 +633,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Santa Rosa de Lima • Cono Sur (Viñani)",
             category: .marketsCommercial,
             routesPassing: ["Ruta 14", "Ruta 203"],
-            iconName: "storefront.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.04870,
             longitude: -70.24230,
@@ -585,7 +657,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Internacional • Ciudad Nueva",
             category: .marketsCommercial,
             routesPassing: ["Ruta 101"],
-            iconName: "fish.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00240,
             longitude: -70.24210,
@@ -609,7 +681,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Cusco / Panamericana Sur",
             category: .marketsCommercial,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta A"],
-            iconName: "cart.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.02120,
             longitude: -70.25320,
@@ -633,7 +705,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Coronel Mendoza cdra 12",
             category: .marketsCommercial,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta 101"],
-            iconName: "bag.circle.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00790,
             longitude: -70.24670,
@@ -661,7 +733,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Miguel Grau / 8 de Octubre • Centro Histórico",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta A"],
-            iconName: "tram.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01640,
             longitude: -70.25475,
@@ -685,7 +757,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Calle Zela / Calle San Francisco • Cercado",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "leaf.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01190,
             longitude: -70.25460,
@@ -709,7 +781,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Los Molles / Av. Humboldt • Gregorio Albarracín",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 101"],
-            iconName: "mappin.circle.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.03470,
             longitude: -70.24920,
@@ -733,7 +805,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Pinto / Calle Tarata • Alto de la Alianza",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "mappin.circle.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00860,
             longitude: -70.24410,
@@ -757,7 +829,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Pinto / Calle Vigil / Calle San Martín",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta 203"],
-            iconName: "leaf.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00910,
             longitude: -70.24730,
@@ -781,7 +853,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Jorge Basadre Norte / Av. Aviación • Alto de la Alianza",
             category: .plazasCentral,
             routesPassing: ["Ruta 10B"],
-            iconName: "airplane.circle.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00430,
             longitude: -70.24060,
@@ -805,7 +877,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Calle Jorge Chávez / Juan Velasco • Cono Norte",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 203"],
-            iconName: "mappin.circle.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00290,
             longitude: -70.24970,
@@ -829,7 +901,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Augusto B. Leguía / Calle San Martín",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "drop.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00960,
             longitude: -70.25560,
@@ -853,7 +925,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Paseo Cívico / Arco Parabólico / Catedral de Tacna",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta A"],
-            iconName: "building.2.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01380,
             longitude: -70.25190,
@@ -877,7 +949,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Pasaje Peatonal Vigil entre Bolognesi y San Martín",
             category: .plazasCentral,
             routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "mappin.and.ellipse",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01260,
             longitude: -70.25090,
@@ -905,7 +977,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Miraflores s/n / Calle Los Pinos • Ciudad Universitaria",
             category: .institutionsTerminals,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta 101"],
-            iconName: "graduationcap.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.02610,
             longitude: -70.24960,
@@ -929,7 +1001,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Hipólito Unanue / Panamericana Sur",
             category: .institutionsTerminals,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta 101", "Ruta 203"],
-            iconName: "bus.doubledecker.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00660,
             longitude: -70.25760,
@@ -977,7 +1049,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Calle Gregoria Albarracín 526",
             category: .institutionsTerminals,
             routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "building.columns.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01960,
             longitude: -70.25910,
@@ -1001,7 +1073,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Calle Inclán / Presbítero Andía • Corte Superior",
             category: .institutionsTerminals,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta A"],
-            iconName: "scalemass.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01560,
             longitude: -70.25360,
@@ -1025,7 +1097,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Arias y Aragüez / Olga Grohmann",
             category: .institutionsTerminals,
             routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "sportscourt.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.00560,
             longitude: -70.25090,
@@ -1049,7 +1121,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Calle Apurímac / Calle Patricio Meléndez",
             category: .institutionsTerminals,
             routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "antenna.radiowaves.left.and.right",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01510,
             longitude: -70.25160,
@@ -1073,7 +1145,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Bolognesi 300 / Calle Miller",
             category: .institutionsTerminals,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta A"],
-            iconName: "building.fill",
+            iconName: "bus.fill",
             iconColorHex: "#2563EB",
             latitude: -18.01760,
             longitude: -70.25610,
@@ -1102,7 +1174,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Calle Blondell / Calle 2 de Mayo • Accesibilidad Prioritaria",
             category: .proposedHospitals,
             routesPassing: ["Ruta 10B", "Ruta 14"],
-            iconName: "cross.case.fill",
+            iconName: "bus.fill",
             iconColorHex: "#F59E0B",
             latitude: -18.01010,
             longitude: -70.24360,
@@ -1126,7 +1198,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Carretera a Calana Km 7 • Valle Viejo",
             category: .proposedHospitals,
             routesPassing: ["Ruta 10B"],
-            iconName: "cross.case.fill",
+            iconName: "bus.fill",
             iconColorHex: "#F59E0B",
             latitude: -17.97160,
             longitude: -70.20110,
@@ -1150,7 +1222,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Municipal con Calle 10 • Gregorio Albarracín",
             category: .proposedHospitals,
             routesPassing: ["Ruta 14", "Ruta 101"],
-            iconName: "heart.text.square.fill",
+            iconName: "bus.fill",
             iconColorHex: "#F59E0B",
             latitude: -18.05510,
             longitude: -70.24010,
@@ -1176,7 +1248,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Municipal cdra 20 • Asoc. Nuevas Cono Sur",
             category: .proposedUrbanGrowth,
             routesPassing: ["Ruta 14"],
-            iconName: "house.and.flag.fill",
+            iconName: "bus.fill",
             iconColorHex: "#F59E0B",
             latitude: -18.06110,
             longitude: -70.23810,
@@ -1200,7 +1272,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Plaza José Olaya / Av. Internacional • Cono Norte",
             category: .proposedUrbanGrowth,
             routesPassing: ["Ruta 10B"],
-            iconName: "building.2.crop.circle.fill",
+            iconName: "bus.fill",
             iconColorHex: "#F59E0B",
             latitude: -17.99810,
             longitude: -70.23910,
@@ -1226,7 +1298,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Av. Jorge Basadre Grohmann Poniente / Capanique",
             category: .proposedEducation,
             routesPassing: ["Ruta 10B", "Ruta 203"],
-            iconName: "graduationcap.circle.fill",
+            iconName: "bus.fill",
             iconColorHex: "#F59E0B",
             latitude: -18.04110,
             longitude: -70.26410,
@@ -1252,7 +1324,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             subtitle: "Panamericana Sur Km 1336 • Frontera Perú - Chile",
             category: .proposedTouristBorder,
             routesPassing: ["Corredor Turístico-Fronterizo"],
-            iconName: "globe.americas.fill",
+            iconName: "bus.fill",
             iconColorHex: "#F59E0B",
             latitude: -18.31510,
             longitude: -70.32010,

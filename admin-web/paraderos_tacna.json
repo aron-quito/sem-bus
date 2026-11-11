@@ -9,9 +9,13 @@
     "isOfficial": true,
     "latitude": -18.01358,
     "longitude": -70.25055,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta 101"],
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 101"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "storefront",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -24,9 +28,13 @@
     "isOfficial": true,
     "latitude": -18.01085,
     "longitude": -70.24865,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta 203"],
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 203"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "storefront",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -37,11 +45,16 @@
     "category": "marketsCommercial",
     "categoryLabel": "Mercados y Zonas Comerciales",
     "isOfficial": true,
-    "latitude": -18.02420,
-    "longitude": -70.26210,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta 101", "Ruta 203"],
+    "latitude": -18.0242,
+    "longitude": -70.2621,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 101",
+      "Ruta 203"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "cart.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -52,11 +65,14 @@
     "category": "marketsCommercial",
     "categoryLabel": "Mercados y Zonas Comerciales",
     "isOfficial": true,
-    "latitude": -18.04360,
-    "longitude": -70.24520,
-    "routesPassing": ["Ruta 14", "Ruta 101"],
+    "latitude": -18.0436,
+    "longitude": -70.2452,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 101"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "storefront",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -68,10 +84,13 @@
     "categoryLabel": "Mercados y Zonas Comerciales",
     "isOfficial": true,
     "latitude": -18.00695,
-    "longitude": -70.24590,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "longitude": -70.2459,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "bag.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -82,11 +101,13 @@
     "category": "marketsCommercial",
     "categoryLabel": "Mercados y Zonas Comerciales",
     "isOfficial": true,
-    "latitude": -18.04870,
-    "longitude": -70.24230,
-    "routesPassing": ["Ruta 14"],
+    "latitude": -18.0487,
+    "longitude": -70.2423,
+    "routesPassing": [
+      "Ruta 14"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "storefront",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -97,11 +118,13 @@
     "category": "marketsCommercial",
     "categoryLabel": "Mercados y Zonas Comerciales",
     "isOfficial": true,
-    "latitude": -18.00240,
-    "longitude": -70.24210,
-    "routesPassing": ["Ruta 10B"],
+    "latitude": -18.0024,
+    "longitude": -70.2421,
+    "routesPassing": [
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "fish.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -112,11 +135,14 @@
     "category": "marketsCommercial",
     "categoryLabel": "Mercados y Zonas Comerciales",
     "isOfficial": true,
-    "latitude": -18.02120,
-    "longitude": -70.25320,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0212,
+    "longitude": -70.2532,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "cart.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -127,11 +153,15 @@
     "category": "marketsCommercial",
     "categoryLabel": "Mercados y Zonas Comerciales",
     "isOfficial": true,
-    "latitude": -18.00790,
-    "longitude": -70.24670,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta 203"],
+    "latitude": -18.0079,
+    "longitude": -70.2467,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 203"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "bag.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -142,11 +172,15 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.01640,
+    "latitude": -18.0164,
     "longitude": -70.25475,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta A"],
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta A"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "tram.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -157,11 +191,14 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.01190,
-    "longitude": -70.25460,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0119,
+    "longitude": -70.2546,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "tree.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -172,11 +209,14 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.03470,
-    "longitude": -70.24920,
-    "routesPassing": ["Ruta 14", "Ruta 101"],
+    "latitude": -18.0347,
+    "longitude": -70.2492,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 101"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "tree.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -187,11 +227,14 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.00860,
-    "longitude": -70.24410,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0086,
+    "longitude": -70.2441,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "tree.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -202,11 +245,15 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.00910,
-    "longitude": -70.24730,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta 203"],
+    "latitude": -18.0091,
+    "longitude": -70.2473,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 203"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "tree.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -217,11 +264,13 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.00430,
-    "longitude": -70.24060,
-    "routesPassing": ["Ruta 10B"],
+    "latitude": -18.0043,
+    "longitude": -70.2406,
+    "routesPassing": [
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "airplane",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -232,11 +281,14 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.00290,
-    "longitude": -70.24970,
-    "routesPassing": ["Ruta 14", "Ruta 203"],
+    "latitude": -18.0029,
+    "longitude": -70.2497,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 203"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "tree.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -247,11 +299,14 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.00960,
-    "longitude": -70.25560,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0096,
+    "longitude": -70.2556,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "drop.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -262,11 +317,15 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.01380,
-    "longitude": -70.25190,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta A"],
+    "latitude": -18.0138,
+    "longitude": -70.2519,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta A"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "building.columns.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -277,11 +336,14 @@
     "category": "plazasCentral",
     "categoryLabel": "Plazas y Zonas Céntricas",
     "isOfficial": true,
-    "latitude": -18.01260,
-    "longitude": -70.25090,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0126,
+    "longitude": -70.2509,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "figure.walk",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -292,11 +354,15 @@
     "category": "institutionsTerminals",
     "categoryLabel": "Instituciones y Terminales",
     "isOfficial": true,
-    "latitude": -18.02610,
-    "longitude": -70.24960,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta 101"],
+    "latitude": -18.023346,
+    "longitude": -70.24927,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 101"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "graduationcap.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -307,9 +373,14 @@
     "category": "institutionsTerminals",
     "categoryLabel": "Instituciones y Terminales",
     "isOfficial": true,
-    "latitude": -18.00660,
-    "longitude": -70.25760,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta 101", "Ruta 203"],
+    "latitude": -18.0066,
+    "longitude": -70.2576,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 101",
+      "Ruta 203"
+    ],
     "colorHex": "#2563EB",
     "iconName": "bus.fill",
     "statusNote": null
@@ -322,9 +393,12 @@
     "category": "institutionsTerminals",
     "categoryLabel": "Instituciones y Terminales",
     "isOfficial": true,
-    "latitude": -18.01410,
-    "longitude": -70.24610,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0141,
+    "longitude": -70.2461,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
     "iconName": "bus.fill",
     "statusNote": null
@@ -337,11 +411,14 @@
     "category": "institutionsTerminals",
     "categoryLabel": "Instituciones y Terminales",
     "isOfficial": true,
-    "latitude": -18.01960,
-    "longitude": -70.25910,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0196,
+    "longitude": -70.2591,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "building.2.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -352,11 +429,14 @@
     "category": "institutionsTerminals",
     "categoryLabel": "Instituciones y Terminales",
     "isOfficial": true,
-    "latitude": -18.01560,
-    "longitude": -70.25360,
-    "routesPassing": ["Ruta 14", "Ruta A"],
+    "latitude": -18.0156,
+    "longitude": -70.2536,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta A"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "building.columns.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -367,11 +447,14 @@
     "category": "institutionsTerminals",
     "categoryLabel": "Instituciones y Terminales",
     "isOfficial": true,
-    "latitude": -18.00560,
-    "longitude": -70.25090,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0056,
+    "longitude": -70.2509,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "sportscourt.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -382,11 +465,14 @@
     "category": "institutionsTerminals",
     "categoryLabel": "Instituciones y Terminales",
     "isOfficial": true,
-    "latitude": -18.01510,
-    "longitude": -70.25160,
-    "routesPassing": ["Ruta 14", "Ruta 10B"],
+    "latitude": -18.0151,
+    "longitude": -70.2516,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "antenna.radiowaves.left.and.right",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -397,11 +483,15 @@
     "category": "institutionsTerminals",
     "categoryLabel": "Instituciones y Terminales",
     "isOfficial": true,
-    "latitude": -18.01760,
-    "longitude": -70.25610,
-    "routesPassing": ["Ruta 14", "Ruta 10B", "Ruta A"],
+    "latitude": -18.0176,
+    "longitude": -70.2561,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta A"
+    ],
     "colorHex": "#2563EB",
-    "iconName": "building.fill",
+    "iconName": "bus.fill",
     "statusNote": null
   },
   {
@@ -412,11 +502,14 @@
     "category": "proposedHospitals",
     "categoryLabel": "Propuesta: Hospitales y Salud",
     "isOfficial": false,
-    "latitude": -18.01010,
-    "longitude": -70.24360,
-    "routesPassing": ["Ruta 10B", "Ruta 14"],
+    "latitude": -18.0101,
+    "longitude": -70.2436,
+    "routesPassing": [
+      "Ruta 10B",
+      "Ruta 14"
+    ],
     "colorHex": "#F59E0B",
-    "iconName": "cross.case.fill",
+    "iconName": "bus.fill",
     "statusNote": "Propuesta Oficialización: Accesibilidad Adulto Mayor / CONADIS"
   },
   {
@@ -427,11 +520,13 @@
     "category": "proposedHospitals",
     "categoryLabel": "Propuesta: Hospitales y Salud",
     "isOfficial": false,
-    "latitude": -17.97160,
-    "longitude": -70.20110,
-    "routesPassing": ["Ruta 10B"],
+    "latitude": -17.9716,
+    "longitude": -70.2011,
+    "routesPassing": [
+      "Ruta 10B"
+    ],
     "colorHex": "#F59E0B",
-    "iconName": "cross.case.fill",
+    "iconName": "bus.fill",
     "statusNote": "Propuesta Oficialización: Prioridad Adulto Mayor"
   },
   {
@@ -442,11 +537,14 @@
     "category": "proposedHospitals",
     "categoryLabel": "Propuesta: Hospitales y Salud",
     "isOfficial": false,
-    "latitude": -18.05510,
-    "longitude": -70.24010,
-    "routesPassing": ["Ruta 14", "Ruta 101"],
+    "latitude": -18.0551,
+    "longitude": -70.2401,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 101"
+    ],
     "colorHex": "#F59E0B",
-    "iconName": "cross.case.fill",
+    "iconName": "bus.fill",
     "statusNote": "Propuesta Oficialización: Red de Atención Primaria"
   },
   {
@@ -457,11 +555,13 @@
     "category": "proposedUrbanGrowth",
     "categoryLabel": "Propuesta: Cono Sur y Cono Norte",
     "isOfficial": false,
-    "latitude": -18.06110,
-    "longitude": -70.23810,
-    "routesPassing": ["Ruta 14"],
+    "latitude": -18.0611,
+    "longitude": -70.2381,
+    "routesPassing": [
+      "Ruta 14"
+    ],
     "colorHex": "#F59E0B",
-    "iconName": "house.and.flag.fill",
+    "iconName": "bus.fill",
     "statusNote": "Propuesta Oficialización: Parada fija para eliminar paradas informales"
   },
   {
@@ -472,11 +572,13 @@
     "category": "proposedUrbanGrowth",
     "categoryLabel": "Propuesta: Cono Sur y Cono Norte",
     "isOfficial": false,
-    "latitude": -17.99810,
-    "longitude": -70.23910,
-    "routesPassing": ["Ruta 10B"],
+    "latitude": -17.9981,
+    "longitude": -70.2391,
+    "routesPassing": [
+      "Ruta 10B"
+    ],
     "colorHex": "#F59E0B",
-    "iconName": "house.and.flag.fill",
+    "iconName": "bus.fill",
     "statusNote": "Propuesta Oficialización: Parada fija para eliminar paradas informales"
   },
   {
@@ -487,11 +589,14 @@
     "category": "proposedEducation",
     "categoryLabel": "Propuesta: Zonas Educativas (Geofencing)",
     "isOfficial": false,
-    "latitude": -18.04110,
-    "longitude": -70.26410,
-    "routesPassing": ["Ruta 10B", "Ruta 203"],
+    "latitude": -18.0411,
+    "longitude": -70.2641,
+    "routesPassing": [
+      "Ruta 10B",
+      "Ruta 203"
+    ],
     "colorHex": "#F59E0B",
-    "iconName": "graduationcap.fill",
+    "iconName": "bus.fill",
     "statusNote": "Propuesta Oficialización: Geofencing para Tarifa Medio Pasaje Universitario"
   },
   {
@@ -502,12 +607,13 @@
     "category": "proposedTouristBorder",
     "categoryLabel": "Propuesta: Zonas Turísticas y Frontera",
     "isOfficial": false,
-    "latitude": -18.31510,
-    "longitude": -70.32010,
-    "routesPassing": ["Ruta A"],
+    "latitude": -18.3151,
+    "longitude": -70.3201,
+    "routesPassing": [
+      "Ruta A"
+    ],
     "colorHex": "#F59E0B",
-    "iconName": "globe.americas.fill",
+    "iconName": "bus.fill",
     "statusNote": "Propuesta Oficialización: Equipamiento con Tótem Informativo y llegada de turistas"
   }
 ]
-

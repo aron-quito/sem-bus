@@ -25,7 +25,7 @@ struct LinesView: View {
     }
 
     private var filteredStops: [TacnaDestinationPlace] {
-        var stops = TacnaDestinationPlace.catalog
+        var stops = viewModel.dynamicCatalogStops
         if let category = stopCategoryFilter {
             if category.isProposedModernization {
                 stops = stops.filter { $0.category.isProposedModernization }
@@ -174,11 +174,11 @@ struct LinesView: View {
     }
 
     private var officialStopsCount: Int {
-        TacnaDestinationPlace.catalog.filter { !$0.category.isProposedModernization }.count
+        viewModel.dynamicCatalogStops.filter { !$0.category.isProposedModernization }.count
     }
 
     private var proposedStopsCount: Int {
-        TacnaDestinationPlace.catalog.filter { $0.category.isProposedModernization }.count
+        viewModel.dynamicCatalogStops.filter { $0.category.isProposedModernization }.count
     }
 
     private func statPill(value: String, label: String, color: Color) -> some View {

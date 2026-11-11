@@ -13,7 +13,10 @@ const state = {
   markersMap: new Map(), // Map<stopId, L.Marker>
   activeTileLayer: null,
   tileLayers: {},
-  pickingCoordsMode: false
+  pickingCoordsMode: false,
+  relocatingStopId: null,    // ID del paradero actualmente en proceso de reubicación
+  originalCoords: null,      // { lat, lng } para restaurar si el usuario cancela
+  tempCoords: null           // { lat, lng } posición en tiempo real mientras se mueve
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -29,8 +32,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateStats();
 });
 
-// Cargar paraderos desde localStorage o archivo JSON predeterminado
+// Cargar paraderos desde Backend local, localStorage o archivo JSON predeterminado
 async function loadStopsData() {
+  const backendBase = window.location.origin.includes(':8000') 
+    ? window.location.origin 
+    : 'http://localhost:8000';
+
+  // 1. Intentar cargar desde el Backend en red local (Servidor de sincronización con iPhone)
+  try {
+    const res = await fetch(`${backendBase}/api/v1/transit/stops`, { cache: 'no-store' });
+    if (res.ok) {
+      state.stops = await res.json();
+      localStorage.setItem('bc_admin_stops', JSON.stringify(state.stops));
+      const syncStatus = document.getElementById('sync-status');
+      if (syncStatus) {
+        syncStatus.innerHTML = '<span class="status-dot"></span> Conectado a Backend Local (172.20.10.11:8000)';
+      }
+      return;
+    }
+  } catch (e) {
+    // Backend no activo, continuar con caché local
+  }
+
+  // 2. Si el backend no responde, leer de localStorage
   const localSaved = localStorage.getItem('bc_admin_stops');
   if (localSaved) {
     try {
@@ -41,6 +65,7 @@ async function loadStopsData() {
     }
   }
 
+  // 3. Fallback estático
   try {
     const res = await fetch('paraderos_tacna.json');
     state.stops = await res.json();
@@ -55,8 +80,36 @@ function saveToLocalStorage() {
   localStorage.setItem('bc_admin_stops', JSON.stringify(state.stops));
   const syncStatus = document.getElementById('sync-status');
   if (syncStatus) {
-    syncStatus.innerHTML = '<span class="status-dot"></span> Cambios guardados localmente';
+    syncStatus.innerHTML = '<span class="status-dot"></span> Guardando cambios...';
   }
+  syncWithBackendServer();
+}
+
+// Sincronización en vivo con el Servidor Backend en Red Local
+async function syncWithBackendServer() {
+  const syncStatus = document.getElementById('sync-status');
+  const backendBase = window.location.origin.includes(':8000') 
+    ? window.location.origin 
+    : 'http://localhost:8000';
+
+  try {
+    const res = await fetch(`${backendBase}/api/v1/transit/stops`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state.stops)
+    });
+    if (res.ok) {
+      if (syncStatus) {
+        syncStatus.innerHTML = '<span class="status-dot"></span> Sincronizado en vivo con iPhone (172.20.10.11:8000)';
+      }
+      return true;
+    }
+  } catch (err) {
+    if (syncStatus) {
+      syncStatus.innerHTML = '<span class="status-dot"></span> Guardado localmente (Backend offline)';
+    }
+  }
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -78,19 +131,19 @@ function initLeafletMap() {
   // Controles de Zoom en la esquina inferior derecha
   L.control.zoom({ position: 'bottomright' }).addTo(state.map);
 
-  // Capas de Mapas Disponibles
+  // Capas de Mapas Disponibles (100% Libres de API Key y sin marcas de agua)
   state.tileLayers = {
-    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      subdomains: 'abcd',
-      maxZoom: 20
+    dark: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+      className: 'map-tiles-dark',
+      maxZoom: 19
     }),
-    streets: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
+    streets: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
       maxZoom: 19
     }),
     satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and GIS User Community',
       maxZoom: 19
     })
   };
@@ -109,6 +162,16 @@ function initLeafletMap() {
 
   // Evento de Clic en el Mapa
   state.map.on('click', (e) => {
+    // Si estamos en modo de reubicación activa: mover el pin a este punto exacto
+    if (state.relocatingStopId) {
+      const marker = state.markersMap.get(state.relocatingStopId);
+      if (marker) {
+        marker.setLatLng(e.latlng);
+        updateRelocationCoordsDisplay(e.latlng.lat, e.latlng.lng);
+      }
+      return;
+    }
+
     if (state.pickingCoordsMode) {
       // Si el modal de creación/edición estaba esperando un clic en el mapa:
       document.getElementById('field-lat').value = e.latlng.lat.toFixed(6);
@@ -149,8 +212,22 @@ function initLeafletMap() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// MARCADORES Y REUBICACIÓN DRAG & DROP
+// MARCADORES Y FLUJO DE REUBICACIÓN SEGURA ("¿Deseas mover?" ➔ "Establecer")
 // ═══════════════════════════════════════════════════════════════════════
+
+// Mapeo del símbolo SF Symbol seleccionado en el Administrador a Emoji para el mapa web
+function getStopIconEmoji(iconName) {
+  switch (iconName) {
+    case 'parkingsign.circle.fill': return '🚏';
+    case 'storefront.fill': case 'storefront': return '🛒';
+    case 'cross.case.fill': return '🏥';
+    case 'graduationcap.fill': return '🎓';
+    case 'building.columns.fill': return '🏛️';
+    case 'tree.fill': return '🌳';
+    case 'mappin.and.ellipse': return '📍';
+    default: return '🚌';
+  }
+}
 
 function renderMapMarkers() {
   // Limpiar marcadores existentes
@@ -160,7 +237,7 @@ function renderMapMarkers() {
   state.stops.forEach(stop => {
     const isOfficial = stop.isOfficial ?? (!stop.category.includes('proposed') && !stop.id.startsWith('prop-'));
     const markerColorClass = isOfficial ? 'is-official' : 'is-proposal';
-    const iconLetter = isOfficial ? '🚌' : '📍';
+    const iconLetter = getStopIconEmoji(stop.iconName);
 
     // HTML personalizado para el pin interactivo
     const customIcon = L.divIcon({
@@ -176,47 +253,221 @@ function renderMapMarkers() {
       popupAnchor: [0, -20]
     });
 
-    // Marcador Leaflet con DRAGGABLE HABILITADO
+    // Marcador Leaflet: NO arrastrable por defecto (seguridad para evitar movimientos accidentales)
     const marker = L.marker([stop.latitude, stop.longitude], {
       icon: customIcon,
-      draggable: true,
+      draggable: false,
       title: stop.name
     });
 
-    // Evento DRAG START: efecto visual
+    // Crear el contenido del Popup interactivo con la opción "¿Deseas mover el paradero?"
+    const popupContent = createStopPopupElement(stop);
+    marker.bindPopup(popupContent, {
+      className: 'stop-leaflet-popup',
+      closeButton: true,
+      autoPan: true
+    });
+
+    // Evento CLICK: Seleccionar y abrir popup
+    marker.on('click', () => {
+      // Si ya estamos reubicando este u otro paradero, no interrumpir el flujo
+      if (state.relocatingStopId && state.relocatingStopId === stop.id) {
+        return;
+      }
+      selectStop(stop.id, false);
+      marker.openPopup();
+    });
+
+    // Eventos de arrastre cuando el modo de reubicación está activado:
     marker.on('dragstart', () => {
       const el = document.getElementById(`pin-${stop.id}`);
       if (el) el.classList.add('is-dragging');
     });
 
-    // Evento DRAG END: REUBICACIÓN EN TIEMPO REAL
+    marker.on('drag', (event) => {
+      const pos = event.target.getLatLng();
+      updateRelocationCoordsDisplay(pos.lat, pos.lng);
+    });
+
     marker.on('dragend', (event) => {
       const el = document.getElementById(`pin-${stop.id}`);
       if (el) el.classList.remove('is-dragging');
-
-      const newPos = event.target.getLatLng();
-      const newLat = parseFloat(newPos.lat.toFixed(6));
-      const newLng = parseFloat(newPos.lng.toFixed(6));
-
-      // Actualizar el estado del paradero
-      stop.latitude = newLat;
-      stop.longitude = newLng;
-
-      saveToLocalStorage();
-      renderStopsList();
-      selectStop(stop.id, false);
-
-      showToast(`📍 "${stop.shortName || stop.name}" reubicado a: [${newLat}, ${newLng}]`);
-    });
-
-    // Evento CLICK: Abrir diálogo de edición y enfocar
-    marker.on('click', () => {
-      selectStop(stop.id, true);
+      const pos = event.target.getLatLng();
+      updateRelocationCoordsDisplay(pos.lat, pos.lng);
     });
 
     marker.addTo(state.map);
     state.markersMap.set(stop.id, marker);
   });
+}
+
+// Crea la tarjeta emergente interactiva para cada paradero
+function createStopPopupElement(stop) {
+  const isOfficial = stop.isOfficial ?? (!stop.category.includes('proposed') && !stop.id.startsWith('prop-'));
+  const container = document.createElement('div');
+  container.className = 'stop-popup-card';
+  container.innerHTML = `
+    <div class="popup-header">
+      <span class="popup-badge ${isOfficial ? 'official' : 'proposal'}">
+        ${isOfficial ? 'PARADERO OFICIAL' : 'PROPUESTA'}
+      </span>
+    </div>
+    <h3 class="popup-title">${escapeHtml(stop.name)}</h3>
+    <p class="popup-subtitle">${escapeHtml(stop.subtitle || 'Tacna, Perú')}</p>
+    <div class="popup-coords">📍 ${stop.latitude.toFixed(6)}, ${stop.longitude.toFixed(6)}</div>
+    
+    <div class="popup-move-cta">
+      <p class="popup-move-question">¿Deseas mover este paradero?</p>
+      <button type="button" class="btn btn-primary btn-sm btn-start-move" id="popup-btn-move-${stop.id}">
+        📍 Mover Paradero
+      </button>
+    </div>
+
+    <div class="popup-actions-footer">
+      <button type="button" class="btn btn-ghost btn-xs" id="popup-btn-edit-${stop.id}">✏️ Editar datos</button>
+      <button type="button" class="btn btn-destructive btn-xs" id="popup-btn-del-${stop.id}">🗑️ Eliminar</button>
+    </div>
+  `;
+
+  // Listeners dentro del popup
+  container.querySelector(`#popup-btn-move-${stop.id}`).addEventListener('click', (e) => {
+    e.stopPropagation();
+    startRelocatingStop(stop.id);
+  });
+
+  container.querySelector(`#popup-btn-edit-${stop.id}`).addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.map.closePopup();
+    openStopDialog(stop);
+  });
+
+  container.querySelector(`#popup-btn-del-${stop.id}`).addEventListener('click', (e) => {
+    e.stopPropagation();
+    state.map.closePopup();
+    openDeleteDialog(stop.id);
+  });
+
+  return container;
+}
+
+// Inicia el proceso controlado de reubicación
+function startRelocatingStop(stopId) {
+  const stop = state.stops.find(s => s.id === stopId);
+  const marker = state.markersMap.get(stopId);
+  if (!stop || !marker) return;
+
+  // Si había otro paradero en movimiento, cancelarlo primero
+  if (state.relocatingStopId) {
+    cancelRelocation();
+  }
+
+  state.relocatingStopId = stopId;
+  state.originalCoords = { lat: stop.latitude, lng: stop.longitude };
+  state.tempCoords = { lat: stop.latitude, lng: stop.longitude };
+
+  // Cerrar el popup para despejar la vista del mapa
+  state.map.closePopup();
+
+  // Habilitar arrastre solo en este marcador
+  marker.dragging.enable();
+
+  // Añadir efecto visual pulsante
+  const pinEl = document.getElementById(`pin-${stopId}`);
+  if (pinEl) {
+    pinEl.classList.add('is-relocating');
+  }
+
+  // Mostrar la barra flotante de confirmación "Establecer"
+  const relocationBar = document.getElementById('relocation-bar');
+  const stopNameEl = document.getElementById('relocation-stop-name');
+  if (stopNameEl) stopNameEl.textContent = stop.name;
+  updateRelocationCoordsDisplay(stop.latitude, stop.longitude);
+  if (relocationBar) relocationBar.classList.remove('hidden');
+
+  showToast(`Modo reubicación activado para "${stop.name}". Arrastra el marcador o haz clic en la nueva esquina.`);
+}
+
+// Actualiza en tiempo real el indicador de coordenadas
+function updateRelocationCoordsDisplay(lat, lng) {
+  state.tempCoords = { lat: parseFloat(lat.toFixed(6)), lng: parseFloat(lng.toFixed(6)) };
+  const coordsDisplay = document.getElementById('relocation-coords-display');
+  if (coordsDisplay) {
+    coordsDisplay.textContent = `Nueva posición: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  }
+}
+
+// Confirma y establece la nueva posición
+function confirmRelocation() {
+  if (!state.relocatingStopId) return;
+
+  const stop = state.stops.find(s => s.id === state.relocatingStopId);
+  const marker = state.markersMap.get(state.relocatingStopId);
+
+  if (stop && marker) {
+    const finalCoords = state.tempCoords || {
+      lat: parseFloat(marker.getLatLng().lat.toFixed(6)),
+      lng: parseFloat(marker.getLatLng().lng.toFixed(6))
+    };
+
+    stop.latitude = finalCoords.lat;
+    stop.longitude = finalCoords.lng;
+
+    // Deshabilitar arrastre y bloquear pin
+    marker.dragging.disable();
+
+    const pinEl = document.getElementById(`pin-${stop.id}`);
+    if (pinEl) {
+      pinEl.classList.remove('is-relocating');
+      pinEl.classList.remove('is-dragging');
+    }
+
+    // Actualizar el popup con las nuevas coordenadas
+    const newPopup = createStopPopupElement(stop);
+    marker.setPopupContent(newPopup);
+
+    // Guardar en localStorage y sincronizar con backend local en vivo
+    saveToLocalStorage();
+    renderStopsList();
+    selectStop(stop.id, false);
+
+    showToast(`✓ Ubicación de "${stop.shortName || stop.name}" establecida en [${stop.latitude}, ${stop.longitude}]`);
+  }
+
+  // Ocultar barra flotante
+  const relocationBar = document.getElementById('relocation-bar');
+  if (relocationBar) relocationBar.classList.add('hidden');
+  state.relocatingStopId = null;
+  state.originalCoords = null;
+  state.tempCoords = null;
+}
+
+// Cancela y restaura la posición original
+function cancelRelocation() {
+  if (!state.relocatingStopId) return;
+
+  const stop = state.stops.find(s => s.id === state.relocatingStopId);
+  const marker = state.markersMap.get(state.relocatingStopId);
+
+  if (stop && marker && state.originalCoords) {
+    // Restaurar posición original
+    marker.setLatLng([state.originalCoords.lat, state.originalCoords.lng]);
+    marker.dragging.disable();
+
+    const pinEl = document.getElementById(`pin-${stop.id}`);
+    if (pinEl) {
+      pinEl.classList.remove('is-relocating');
+      pinEl.classList.remove('is-dragging');
+    }
+
+    showToast(`Reubicación cancelada. "${stop.shortName || stop.name}" mantiene su posición original.`);
+  }
+
+  // Ocultar barra flotante
+  const relocationBar = document.getElementById('relocation-bar');
+  if (relocationBar) relocationBar.classList.add('hidden');
+  state.relocatingStopId = null;
+  state.originalCoords = null;
+  state.tempCoords = null;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -272,7 +523,7 @@ function renderStopsList() {
       <li class="stop-item ${isSelected ? 'selected' : ''}" data-id="${stop.id}" tabindex="0">
         <div class="stop-item-header">
           <div class="stop-pin-icon" style="background: ${pinBg};">
-            ${isOfficial ? '🚌' : '📍'}
+            ${getStopIconEmoji(stop.iconName)}
           </div>
           <div class="stop-item-titles">
             <div class="stop-title-row">
@@ -292,6 +543,9 @@ function renderStopsList() {
           <div class="stop-actions-row">
             <button type="button" class="btn-icon btn-focus-map" data-id="${stop.id}" title="Centrar en el mapa">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+            </button>
+            <button type="button" class="btn-icon btn-prompt-move" data-id="${stop.id}" title="¿Deseas mover este paradero?">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>
             </button>
             <button type="button" class="btn-icon btn-edit" data-id="${stop.id}" title="Editar paradero">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
@@ -319,6 +573,15 @@ function renderStopsList() {
     btn.addEventListener('click', () => {
       const stopId = btn.dataset.id;
       selectStop(stopId, true);
+    });
+  });
+
+  container.querySelectorAll('.btn-prompt-move').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const stopId = btn.dataset.id;
+      selectStop(stopId, true);
+      startRelocatingStop(stopId);
     });
   });
 
@@ -400,6 +663,7 @@ function openStopDialog(stop = null, defaultLat = null, defaultLng = null) {
     document.getElementById('field-shortname').value = stop.shortName || stop.name;
     document.getElementById('field-subtitle').value = stop.subtitle;
     document.getElementById('field-category').value = stop.category;
+    document.getElementById('field-icon').value = stop.iconName || 'bus.fill';
     document.getElementById('field-routes').value = stop.routesPassing.join(', ');
     document.getElementById('field-lat').value = stop.latitude.toFixed(6);
     document.getElementById('field-lng').value = stop.longitude.toFixed(6);
@@ -416,6 +680,7 @@ function openStopDialog(stop = null, defaultLat = null, defaultLng = null) {
     document.getElementById('field-shortname').value = '';
     document.getElementById('field-subtitle').value = '';
     document.getElementById('field-category').value = 'marketsCommercial';
+    document.getElementById('field-icon').value = 'bus.fill';
     document.getElementById('field-routes').value = 'Ruta 14';
     document.getElementById('field-lat').value = defaultLat ? defaultLat.toFixed(6) : '-18.013580';
     document.getElementById('field-lng').value = defaultLng ? defaultLng.toFixed(6) : '-70.250550';
@@ -440,6 +705,7 @@ function handleStopFormSubmit(e) {
   const shortName = document.getElementById('field-shortname').value.trim() || name;
   const subtitle = document.getElementById('field-subtitle').value.trim();
   const category = document.getElementById('field-category').value;
+  const iconName = document.getElementById('field-icon').value || 'bus.fill';
   const routesStr = document.getElementById('field-routes').value.trim();
   const lat = parseFloat(document.getElementById('field-lat').value);
   const lng = parseFloat(document.getElementById('field-lng').value);
@@ -458,6 +724,7 @@ function handleStopFormSubmit(e) {
         shortName,
         subtitle,
         category,
+        iconName,
         isOfficial,
         routesPassing,
         latitude: lat,
@@ -481,7 +748,7 @@ function handleStopFormSubmit(e) {
       longitude: lng,
       routesPassing,
       colorHex: isOfficial ? '#2563EB' : '#F59E0B',
-      iconName: isOfficial ? 'mappin.and.ellipse' : 'sparkles',
+      iconName,
       statusNote
     };
     state.stops.push(newStop);
@@ -641,6 +908,17 @@ function setupUIEventListeners() {
   document.getElementById('btn-add-stop').addEventListener('click', () => {
     openStopDialog(null);
   });
+
+  // Botones de la Barra Flotante de Reubicación ("¿Deseas mover?" ➔ "Establecer")
+  const btnEstablish = document.getElementById('btn-establish-relocation');
+  if (btnEstablish) {
+    btnEstablish.addEventListener('click', confirmRelocation);
+  }
+
+  const btnCancelReloc = document.getElementById('btn-cancel-relocation');
+  if (btnCancelReloc) {
+    btnCancelReloc.addEventListener('click', cancelRelocation);
+  }
 
   // Botón Exportar a Swift
   document.getElementById('btn-export-swift').addEventListener('click', () => {
