@@ -26,11 +26,11 @@ enum APIError: LocalizedError {
 final class APIClient: ObservableObject {
     static let shared = APIClient()
 
-    /// URL del backend (Servidor Cloud: 34.61.17.233 o local en desarrollo)
+    /// URL del backend (Servidor Cloud Seguro HTTPS: 34.61.17.233.sslip.io o local en desarrollo)
     @Published var baseURLString: String
 
     private var baseURL: URL {
-        URL(string: baseURLString) ?? URL(string: "http://34.61.17.233/api/v1")!
+        URL(string: baseURLString) ?? URL(string: "https://34.61.17.233.sslip.io/api/v1")!
     }
 
     var canReachRemoteBackend: Bool {
@@ -38,7 +38,10 @@ final class APIClient: ObservableObject {
     }
 
     func updateBaseURL(_ newURL: String) {
-        let trimmed = newURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = newURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.hasPrefix("http://") && !trimmed.hasPrefix("https://") {
+            trimmed = "https://\(trimmed)"
+        }
         if trimmed.hasSuffix("/api/v1") {
             baseURLString = trimmed
         } else if trimmed.hasSuffix("/") {
@@ -53,7 +56,13 @@ final class APIClient: ObservableObject {
 
     private init() {
         let savedURL = UserDefaults.standard.string(forKey: "bc_backend_url")
-        self.baseURLString = savedURL ?? "http://34.61.17.233/api/v1"
+        // Migración automática a HTTPS si tenía guardada la IP en HTTP plano
+        if let saved = savedURL, (saved.contains("34.61.17.233:8000") || saved.contains("http://34.61.17.233") || saved.contains("172.20.10.11")) {
+            self.baseURLString = "https://34.61.17.233.sslip.io/api/v1"
+            UserDefaults.standard.set(self.baseURLString, forKey: "bc_backend_url")
+        } else {
+            self.baseURLString = savedURL ?? "https://34.61.17.233.sslip.io/api/v1"
+        }
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 4.0

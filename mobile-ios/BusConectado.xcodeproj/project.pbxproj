@@ -421,8 +421,6 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = BusConectado/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Bus Conectado";
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Bus Conectado requiere acceso a la cámara para escanear el QR del bus o de validación SUNEDU.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bus Conectado utiliza tu ubicación para mostrarte los paraderos cercanos y el arribo del bus en tiempo real.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -509,8 +507,6 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_FILE = BusConectado/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Bus Conectado";
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsArbitraryLoads = YES;
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Bus Conectado requiere acceso a la cámara para escanear el QR del bus o de validación SUNEDU.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Bus Conectado utiliza tu ubicación para mostrarte los paraderos cercanos y el arribo del bus en tiempo real.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

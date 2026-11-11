@@ -30,7 +30,7 @@ final class AuthViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
     @Published var countdownSeconds: Int = 59
-    @Published var backendHost: String = "34.61.17.233"
+    @Published var backendHost: String = "34.61.17.233.sslip.io"
     @Published var isConnectedToBackend: Bool = false
 
     // MARK: - Estado del Monedero y Movimientos (CU-05 / CU-08)
@@ -81,11 +81,12 @@ final class AuthViewModel: ObservableObject {
 
     init() {
         if let savedHost = UserDefaults.standard.string(forKey: "bc_backend_host") {
-            self.backendHost = savedHost
-            APIClient.shared.updateBaseURL("http://\(savedHost)")
+            let host = (savedHost == "34.61.17.233" || savedHost == "172.20.10.11:8000" || savedHost == "localhost:8000") ? "34.61.17.233.sslip.io" : savedHost
+            self.backendHost = host
+            APIClient.shared.updateBaseURL(host)
         } else {
-            self.backendHost = "34.61.17.233"
-            APIClient.shared.updateBaseURL("http://34.61.17.233")
+            self.backendHost = "34.61.17.233.sslip.io"
+            APIClient.shared.updateBaseURL("https://34.61.17.233.sslip.io")
         }
 
         // Cargar paraderos cacheados previamente de la última sincronización con el Administrador Web
@@ -325,9 +326,9 @@ final class AuthViewModel: ObservableObject {
             .replacingOccurrences(of: "http://", with: "")
             .replacingOccurrences(of: "https://", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        self.backendHost = cleaned.isEmpty ? "34.61.17.233" : cleaned
+        self.backendHost = cleaned.isEmpty ? "34.61.17.233.sslip.io" : cleaned
         UserDefaults.standard.set(self.backendHost, forKey: "bc_backend_host")
-        APIClient.shared.updateBaseURL("http://\(self.backendHost)")
+        APIClient.shared.updateBaseURL(self.backendHost)
         Task {
             await refreshStateFromBackendIfAvailable()
         }
