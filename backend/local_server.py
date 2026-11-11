@@ -72,26 +72,64 @@ def get_local_ip_addresses():
     return sorted_ips or ["127.0.0.1"]
 
 
+PARADEROS_BACKUP_PATH = ADMIN_WEB_DIR / "paraderos_tacna.backup.json"
+file_io_lock = threading.Lock()
+
+
 def load_paraderos():
-    """Lee el catálogo de paraderos desde paraderos_tacna.json."""
-    if PARADEROS_JSON_PATH.exists():
-        try:
-            with open(PARADEROS_JSON_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"[WARN] Error al leer {PARADEROS_JSON_PATH}: {e}")
+    """Lee el catálogo de paraderos desde paraderos_tacna.json con recuperación de fallos y respaldo."""
+    with file_io_lock:
+        if PARADEROS_JSON_PATH.exists():
+            try:
+                with open(PARADEROS_JSON_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list) and len(data) > 0:
+                        return data
+            except Exception as e:
+                print(f"[WARN] Error al leer {PARADEROS_JSON_PATH}: {e}")
+
+        # Intentar cargar desde backup de seguridad si el principal está vacío o dañado
+        if PARADEROS_BACKUP_PATH.exists():
+            try:
+                with open(PARADEROS_BACKUP_PATH, "r", encoding="utf-8") as f:
+                    backup_data = json.load(f)
+                    if isinstance(backup_data, list) and len(backup_data) > 0:
+                        print("[RESTORE] Paraderos restaurados exitosamente desde backup de seguridad.")
+                        return backup_data
+            except Exception:
+                pass
     return []
 
 
 def save_paraderos(stops_data):
-    """Guarda el catálogo actualizado de paraderos en paraderos_tacna.json."""
-    try:
-        with open(PARADEROS_JSON_PATH, "w", encoding="utf-8") as f:
-            json.dump(stops_data, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception as e:
-        print(f"[ERROR] Error al guardar {PARADEROS_JSON_PATH}: {e}")
+    """Guarda el catálogo actualizado de paraderos de forma atómica y segura con fsync y backup."""
+    if not isinstance(stops_data, list) or len(stops_data) == 0:
+        print("[WARN] Intento de guardar lista de paraderos vacía o inválida rechazado.")
         return False
+
+    with file_io_lock:
+        try:
+            # 1. Escribir a archivo temporal
+            temp_path = PARADEROS_JSON_PATH.with_suffix(".tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(stops_data, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+
+            # 2. Reemplazo atómico POSIX
+            os.replace(temp_path, PARADEROS_JSON_PATH)
+
+            # 3. Guardar copia de backup de seguridad
+            try:
+                import shutil
+                shutil.copy2(PARADEROS_JSON_PATH, PARADEROS_BACKUP_PATH)
+            except Exception:
+                pass
+
+            return True
+        except Exception as e:
+            print(f"[ERROR] Error al guardar {PARADEROS_JSON_PATH}: {e}")
+            return False
 
 
 # ═══════════════════════════════════════════════════════════════════════

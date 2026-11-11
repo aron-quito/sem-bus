@@ -289,38 +289,46 @@ async function loadStopsData() {
   try {
     const res = await fetch(`${backendBase}/api/v1/transit/stops`, { cache: 'no-store' });
     if (res.ok) {
-      state.stops = await res.json();
-      localStorage.setItem('bc_admin_stops', JSON.stringify(state.stops));
-      const syncStatus = document.getElementById('sync-status');
-      if (syncStatus) {
-        const hostLabel = window.location.host || 'Cloud Backend';
-        syncStatus.innerHTML = `<span class="status-dot"></span> Conectado a Servidor (${hostLabel})`;
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        state.stops = data;
+        localStorage.setItem('bc_admin_stops', JSON.stringify(state.stops));
+        const syncStatus = document.getElementById('sync-status');
+        if (syncStatus) {
+          const hostLabel = window.location.host || 'Cloud Backend';
+          syncStatus.innerHTML = `<span class="status-dot"></span> Conectado a Servidor (${hostLabel})`;
+        }
+        return;
       }
-      return;
     }
   } catch (e) {
-    // Backend no activo, continuar con caché local
+    // Backend no activo o error de red, continuar con caché local
   }
 
-  // 2. Si el backend no responde, leer de localStorage
+  // 2. Si el backend no tiene datos, leer de localStorage si tiene paraderos válidos
   const localSaved = localStorage.getItem('bc_admin_stops');
   if (localSaved) {
     try {
-      state.stops = JSON.parse(localSaved);
-      return;
+      const localData = JSON.parse(localSaved);
+      if (Array.isArray(localData) && localData.length > 0) {
+        state.stops = localData;
+        return;
+      }
     } catch (e) {
       console.warn('Error al leer datos locales, cargando JSON base', e);
     }
   }
 
-  // 3. Fallback estático
+  // 3. Fallback estático a archivo paraderos_tacna.json
   try {
-    const res = await fetch('paraderos_tacna.json');
-    state.stops = await res.json();
-    saveToLocalStorage();
+    const res = await fetch(`paraderos_tacna.json?t=${Date.now()}`);
+    const fallback = await res.json();
+    if (Array.isArray(fallback) && fallback.length > 0) {
+      state.stops = fallback;
+      saveToLocalStorage();
+    }
   } catch (err) {
     console.error('Error cargando paraderos_tacna.json', err);
-    state.stops = [];
   }
 }
 
