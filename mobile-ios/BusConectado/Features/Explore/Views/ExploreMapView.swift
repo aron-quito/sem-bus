@@ -84,10 +84,12 @@ struct ExploreMapView: View {
                                     .foregroundColor(.white)
                             }
                             .contentShape(Circle())
-                            .onTapGesture {
-                                BCFeedbackManager.shared.impactLight()
-                                selectedCatalogStop = catalogStop
-                            }
+                            .simultaneousGesture(
+                                TapGesture().onEnded {
+                                    BCFeedbackManager.shared.impactLight()
+                                    selectedCatalogStop = catalogStop
+                                }
+                            )
 
                             Text(catalogStop.shortName)
                                 .font(.system(size: 8.5, weight: .bold))
@@ -141,9 +143,11 @@ struct ExploreMapView: View {
                                     .foregroundColor(.white)
                             }
                             .contentShape(Circle())
-                            .onTapGesture {
-                                selectedCatalogStop = searchedPlace
-                            }
+                            .simultaneousGesture(
+                                TapGesture().onEnded {
+                                    selectedCatalogStop = searchedPlace
+                                }
+                            )
                         }
                     }
                 }
@@ -233,14 +237,16 @@ struct ExploreMapView: View {
                                 .foregroundColor(.black)
                         }
                         .contentShape(Circle())
-                        .onTapGesture {
-                            BCFeedbackManager.shared.impactLight()
-                            selectedBus = bus
-                        }
+                        .simultaneousGesture(
+                            TapGesture().onEnded {
+                                BCFeedbackManager.shared.impactLight()
+                                selectedBus = bus
+                            }
+                        )
                     }
                 }
             }
-            .mapStyle(.standard(elevation: .realistic))
+            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
             .ignoresSafeArea(edges: .top)
             .onMapCameraChange(frequency: .continuous) {
                 onDismissSearchFocus?()

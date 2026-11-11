@@ -5,13 +5,18 @@ Diseñado para sincronización directa entre Mac (Admin Web) y iPhone físico (K
 Cero dependencias externas: utiliza exclusivamente la biblioteca estándar de Python 3.
 """
 
+import base64
+import hashlib
 import http.server
 import json
 import mimetypes
 import os
 import socket
+import struct
 import sys
 import threading
+import time
+import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -89,8 +94,146 @@ def save_paraderos(stops_data):
         return False
 
 
+# ═══════════════════════════════════════════════════════════════════════
+# MOTOR COLABORATIVO EN TIEMPO REAL (WEBSOCKETS RFC 6455)
+# ═══════════════════════════════════════════════════════════════════════
+
+def encode_ws_frame(payload_bytes, opcode=1):
+    """Codifica un payload de bytes en un frame WebSocket RFC 6455."""
+    header = bytearray([0x80 | opcode])
+    length = len(payload_bytes)
+    if length <= 125:
+        header.append(length)
+    elif length <= 65535:
+        header.append(126)
+        header.extend(struct.pack(">H", length))
+    else:
+        header.append(127)
+        header.extend(struct.pack(">Q", length))
+    return bytes(header) + payload_bytes
+
+
+def decode_ws_frame(rfile):
+    """Lee y decodifica un frame WebSocket entrante del cliente con soporte de máscaras."""
+    try:
+        b1_raw = rfile.read(1)
+        if not b1_raw:
+            return None, None
+        b1 = b1_raw[0]
+        opcode = b1 & 0x0F
+
+        b2_raw = rfile.read(1)
+        if not b2_raw:
+            return None, None
+        b2 = b2_raw[0]
+        masked = (b2 >> 7) & 1
+        length = b2 & 0x7F
+
+        if length == 126:
+            l_bytes = rfile.read(2)
+            if len(l_bytes) < 2: return None, None
+            length = struct.unpack(">H", l_bytes)[0]
+        elif length == 127:
+            l_bytes = rfile.read(8)
+            if len(l_bytes) < 8: return None, None
+            length = struct.unpack(">Q", l_bytes)[0]
+
+        mask_key = rfile.read(4) if masked else None
+        payload = rfile.read(length) if length > 0 else b""
+
+        if masked and mask_key and payload:
+            payload = bytes([b ^ mask_key[i % 4] for i, b in enumerate(payload)])
+
+        return opcode, payload
+    except Exception:
+        return None, None
+
+
+class CollaborativeHub:
+    """Hub centralizado de colaboración en vivo para Administradores de Tacna (Estilo Google Docs)."""
+    def __init__(self):
+        self.clients = {}  # {client_id: {"handler": handler, "user": user_dict}}
+        self.locked_stops = {}  # {stop_id: {"user": user_dict, "timestamp": float}}
+        self.lock = threading.Lock()
+
+    def register(self, client_id, handler, user_dict):
+        with self.lock:
+            self.clients[client_id] = {"handler": handler, "user": user_dict}
+        self.broadcast_presence()
+
+    def unregister(self, client_id):
+        user_info = None
+        with self.lock:
+            if client_id in self.clients:
+                user_info = self.clients[client_id].get("user")
+                del self.clients[client_id]
+            if user_info:
+                uid = user_info.get("id")
+                # Liberar bloqueos de paraderos que tuviera este usuario
+                self.locked_stops = {
+                    sid: lock for sid, lock in self.locked_stops.items()
+                    if lock.get("user", {}).get("id") != uid
+                }
+        self.broadcast_presence()
+
+    def lock_stop(self, stop_id, user_dict):
+        with self.lock:
+            self.locked_stops[stop_id] = {"user": user_dict, "timestamp": time.time()}
+        self.broadcast({
+            "type": "stop_locked",
+            "stopId": stop_id,
+            "user": user_dict,
+            "lockedStops": self.get_locks()
+        })
+
+    def unlock_stop(self, stop_id):
+        with self.lock:
+            if stop_id in self.locked_stops:
+                del self.locked_stops[stop_id]
+        self.broadcast({
+            "type": "stop_unlocked",
+            "stopId": stop_id,
+            "lockedStops": self.get_locks()
+        })
+
+    def get_locks(self):
+        return {sid: info["user"] for sid, info in self.locked_stops.items()}
+
+    def get_active_users(self):
+        with self.lock:
+            return [info["user"] for info in self.clients.values()]
+
+    def broadcast_presence(self):
+        users = self.get_active_users()
+        locks = self.get_locks()
+        self.broadcast({
+            "type": "presence_update",
+            "activeUsers": users,
+            "lockedStops": locks
+        })
+
+    def broadcast(self, data_dict, exclude_id=None):
+        try:
+            msg_bytes = encode_ws_frame(json.dumps(data_dict, ensure_ascii=False).encode("utf-8"))
+            with self.lock:
+                for cid, client in list(self.clients.items()):
+                    if cid == exclude_id:
+                        continue
+                    try:
+                        client["handler"].wfile.write(msg_bytes)
+                        client["handler"].wfile.flush()
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+
+ws_hub = CollaborativeHub()
+
+
 class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
     """Manejador HTTP REST para Bus Conectado (CORS, Paraderos, Red de Transporte y Web Admin)."""
+    protocol_version = "HTTP/1.1"
 
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -121,6 +264,10 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
+
+        # ── Canal WebSocket Colaborativo en Tiempo Real (RFC 6455) ──
+        if path == "/ws" or self.headers.get("Upgrade", "").lower() == "websocket":
+            return self.handle_websocket()
 
         # ── Health Check ──
         if path == "/health" or path == "/api/v1/health":
@@ -225,6 +372,123 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
         # 404 No encontrado
         self.send_json({"error": "Endpoint no encontrado", "path": parsed.path}, status_code=404)
 
+    def handle_websocket(self):
+        """Manejo de WebSocket bidireccional RFC 6455 para colaboración en vivo estilo Google Docs."""
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key:
+            self.send_error(400, "Sec-WebSocket-Key requerido")
+            return
+
+        accept_val = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("utf-8")).digest()).decode("utf-8")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept_val)
+        self.end_headers()
+
+        # Desactivar timeout de socket para conexión continua
+        try:
+            self.request.settimeout(None)
+        except Exception:
+            pass
+
+        client_id = str(uuid.uuid4())[:8]
+        current_user = {
+            "id": client_id,
+            "username": "admin",
+            "name": "Admin 1 (Aron)",
+            "color": "#38BDF8"
+        }
+        ws_hub.register(client_id, self, current_user)
+        print(f"⚡ [WS] Nuevo administrador conectado: {client_id}")
+
+        try:
+            while True:
+                opcode, payload = decode_ws_frame(self.rfile)
+                if opcode is None or opcode == 8:
+                    break
+                if opcode == 9:  # Ping
+                    self.wfile.write(encode_ws_frame(payload, opcode=10))
+                    self.wfile.flush()
+                    continue
+                if opcode == 1:  # Mensaje de texto JSON
+                    try:
+                        msg = json.loads(payload.decode("utf-8"))
+                        mtype = msg.get("type")
+
+                        if mtype == "join":
+                            user_data = msg.get("user", {})
+                            current_user.update(user_data)
+                            ws_hub.broadcast_presence()
+
+                        elif mtype == "lock_stop":
+                            stop_id = msg.get("stopId")
+                            ws_hub.lock_stop(stop_id, current_user)
+
+                        elif mtype == "unlock_stop":
+                            stop_id = msg.get("stopId")
+                            ws_hub.unlock_stop(stop_id)
+
+                        elif mtype == "drag_stop":
+                            ws_hub.broadcast({
+                                "type": "stop_moving",
+                                "stopId": msg.get("stopId"),
+                                "lat": msg.get("lat"),
+                                "lng": msg.get("lng"),
+                                "user": current_user
+                            }, exclude_id=client_id)
+
+                        elif mtype == "save_stop":
+                            stop_data = msg.get("stop")
+                            if stop_data:
+                                stop_id = stop_data.get("id")
+                                stops = load_paraderos()
+                                updated = False
+                                for i, s in enumerate(stops):
+                                    if s.get("id") == stop_id:
+                                        stops[i] = stop_data
+                                        updated = True
+                                        break
+                                if not updated:
+                                    stops.append(stop_data)
+                                save_paraderos(stops)
+                                ws_hub.unlock_stop(stop_id)
+                                ws_hub.broadcast({
+                                    "type": "stop_saved",
+                                    "stop": stop_data,
+                                    "user": current_user,
+                                    "allStopsCount": len(stops)
+                                })
+
+                        elif mtype == "delete_stop":
+                            stop_id = msg.get("stopId")
+                            stops = load_paraderos()
+                            stops = [s for s in stops if s.get("id") != stop_id]
+                            save_paraderos(stops)
+                            ws_hub.unlock_stop(stop_id)
+                            ws_hub.broadcast({
+                                "type": "stop_deleted",
+                                "stopId": stop_id,
+                                "user": current_user,
+                                "allStopsCount": len(stops)
+                            })
+
+                        elif mtype == "cursor_move":
+                            ws_hub.broadcast({
+                                "type": "cursor_moved",
+                                "lat": msg.get("lat"),
+                                "lng": msg.get("lng"),
+                                "user": current_user
+                            }, exclude_id=client_id)
+
+                    except Exception as e:
+                        pass
+        except Exception:
+            pass
+        finally:
+            print(f"⚡ [WS] Administrador desconectado: {client_id}")
+            ws_hub.unregister(client_id)
+
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
@@ -243,6 +507,7 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 success = save_paraderos(payload)
                 if success:
                     print(f"✅ [BACKEND] {len(payload)} paraderos actualizados y guardados en paraderos_tacna.json")
+                    ws_hub.broadcast({"type": "stops_reloaded", "count": len(payload), "stops": payload})
                     return self.send_json({
                         "status": "success",
                         "message": f"{len(payload)} paraderos guardados con éxito",
@@ -253,6 +518,7 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
             elif isinstance(payload, dict) and "stops" in payload:
                 stops_list = payload["stops"]
                 save_paraderos(stops_list)
+                ws_hub.broadcast({"type": "stops_reloaded", "count": len(stops_list), "stops": stops_list})
                 return self.send_json({
                     "status": "success",
                     "message": f"{len(stops_list)} paraderos guardados con éxito",

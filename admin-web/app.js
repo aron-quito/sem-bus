@@ -1,7 +1,13 @@
 /**
  * BUS CONECTADO • APLICACIÓN DE ADMINISTRACIÓN DE PARADEROS (TACNA)
  * Gestión visual en mapa, reubicación directa con Drag & Drop, creación, edición y exportación a iOS.
+ * Módulo colaborativo en tiempo real estilo Google Docs con WebSockets.
  */
+
+const PROFILES = [
+  { id: 'admin1', username: 'admin', name: 'Admin 1 (Aron)', avatar: 'A1', color: '#2563EB' },
+  { id: 'admin2', username: 'admin2', name: 'Admin 2', avatar: 'A2', color: '#10B981' }
+];
 
 // Estado global de la aplicación
 const state = {
@@ -16,7 +22,12 @@ const state = {
   pickingCoordsMode: false,
   relocatingStopId: null,    // ID del paradero actualmente en proceso de reubicación
   originalCoords: null,      // { lat, lng } para restaurar si el usuario cancela
-  tempCoords: null           // { lat, lng } posición en tiempo real mientras se mueve
+  tempCoords: null,          // { lat, lng } posición en tiempo real mientras se mueve
+  currentUser: PROFILES[0],  // Perfil activo (Admin 1 por defecto)
+  activeUsers: [],           // Usuarios conectados al WebSocket
+  lockedStops: {},           // { [stopId]: user } paraderos bloqueados en tiempo real
+  ws: null,                  // Instancia WebSocket
+  lastDragBroadcastTime: 0
 };
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -24,13 +35,243 @@ const state = {
 // ═══════════════════════════════════════════════════════════════════════
 
 document.addEventListener('DOMContentLoaded', async () => {
+  loadStoredProfile();
   await loadStopsData();
   initLeafletMap();
   setupUIEventListeners();
   setupDialogLightDismiss();
   renderStopsList();
   updateStats();
+  initCollaborationWebSocket();
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// GESTIÓN DE PERFILES Y WEBSOCKETS EN TIEMPO REAL (GOOGLE DOCS STYLE)
+// ═══════════════════════════════════════════════════════════════════════
+
+function loadStoredProfile() {
+  const savedId = localStorage.getItem('bc_collab_profile_id');
+  const found = PROFILES.find(p => p.id === savedId);
+  if (found) {
+    state.currentUser = found;
+  }
+  updateProfileUI();
+}
+
+function updateProfileUI() {
+  const avatarEl = document.getElementById('collab-my-avatar');
+  const nameEl = document.getElementById('collab-my-name');
+  if (avatarEl) {
+    avatarEl.textContent = state.currentUser.avatar;
+    avatarEl.style.backgroundColor = state.currentUser.color;
+    avatarEl.style.boxShadow = `0 0 10px ${state.currentUser.color}`;
+  }
+  if (nameEl) {
+    nameEl.textContent = state.currentUser.name;
+  }
+}
+
+function switchUserProfile() {
+  const currentIdx = PROFILES.findIndex(p => p.id === state.currentUser.id);
+  const nextProfile = PROFILES[(currentIdx + 1) % PROFILES.length];
+  state.currentUser = nextProfile;
+  localStorage.setItem('bc_collab_profile_id', nextProfile.id);
+  updateProfileUI();
+  sendWsMessage({ type: 'join', user: state.currentUser });
+  showToast(`Cambiado a perfil: ${nextProfile.name}`);
+}
+
+function initCollaborationWebSocket() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host || 'localhost:8000';
+  const wsUrl = `${protocol}//${host}/ws`;
+
+  try {
+    const ws = new WebSocket(wsUrl);
+    state.ws = ws;
+
+    ws.onopen = () => {
+      console.log('⚡ [Collab] Conectado a canal en tiempo real estilo Google Docs');
+      sendWsMessage({ type: 'join', user: state.currentUser });
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        handleCollabMessage(msg);
+      } catch (err) {
+        console.warn('[WS] Error parseando mensaje', err);
+      }
+    };
+
+    ws.onclose = () => {
+      setTimeout(initCollaborationWebSocket, 2500);
+    };
+
+    ws.onerror = () => {};
+  } catch (err) {
+    console.warn('[WS] Error inicializando WebSocket', err);
+  }
+}
+
+function sendWsMessage(msg) {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify(msg));
+  }
+}
+
+function handleCollabMessage(msg) {
+  switch (msg.type) {
+    case 'presence_update':
+      state.activeUsers = msg.activeUsers || [];
+      state.lockedStops = msg.lockedStops || {};
+      renderPresenceStrip();
+      updateStopLocksUI();
+      break;
+
+    case 'stop_locked':
+      state.lockedStops[msg.stopId] = msg.user;
+      updateStopLocksUI();
+      if (msg.user && msg.user.id !== state.currentUser.id) {
+        const stop = state.stops.find(s => s.id === msg.stopId);
+        const name = stop ? (stop.shortName || stop.name) : 'Paradero';
+        showRemoteBanner(`${msg.user.name} está reubicando "${name}"...`);
+      }
+      break;
+
+    case 'stop_unlocked':
+      delete state.lockedStops[msg.stopId];
+      updateStopLocksUI();
+      hideRemoteBanner();
+      break;
+
+    case 'stop_moving':
+      if (msg.user && msg.user.id !== state.currentUser.id) {
+        const remoteMarker = state.markersMap.get(msg.stopId);
+        if (remoteMarker) {
+          remoteMarker.setLatLng([msg.lat, msg.lng]);
+        }
+        const stop = state.stops.find(s => s.id === msg.stopId);
+        const name = stop ? (stop.shortName || stop.name) : 'Paradero';
+        showRemoteBanner(`${msg.user.name} moviendo "${name}" a [${msg.lat.toFixed(5)}, ${msg.lng.toFixed(5)}]`);
+      }
+      break;
+
+    case 'stop_saved':
+      const idx = state.stops.findIndex(s => s.id === msg.stop.id);
+      if (idx >= 0) {
+        state.stops[idx] = msg.stop;
+      } else {
+        state.stops.push(msg.stop);
+      }
+      delete state.lockedStops[msg.stop.id];
+      hideRemoteBanner();
+      renderMapMarkers();
+      renderStopsList();
+      updateStats();
+      if (msg.user && msg.user.id !== state.currentUser.id) {
+        showToast(`⚡ ${msg.user.name} guardó la nueva posición de "${msg.stop.name}"`);
+      }
+      break;
+
+    case 'stop_deleted':
+      state.stops = state.stops.filter(s => s.id !== msg.stopId);
+      delete state.lockedStops[msg.stopId];
+      const m = state.markersMap.get(msg.stopId);
+      if (m) {
+        state.map.removeLayer(m);
+        state.markersMap.delete(msg.stopId);
+      }
+      renderStopsList();
+      updateStats();
+      if (msg.user && msg.user.id !== state.currentUser.id) {
+        showToast(`⚡ ${msg.user.name} eliminó un paradero.`);
+      }
+      break;
+
+    case 'stops_reloaded':
+      if (msg.stops && Array.isArray(msg.stops)) {
+        state.stops = msg.stops;
+        renderMapMarkers();
+        renderStopsList();
+        updateStats();
+      }
+      break;
+  }
+}
+
+function renderPresenceStrip() {
+  const container = document.getElementById('collab-presence-pills');
+  if (!container) return;
+
+  if (state.activeUsers.length === 0) {
+    container.innerHTML = `<span class="presence-pill"><span class="presence-dot"></span> ${escapeHtml(state.currentUser.name)} (Tú)</span>`;
+    return;
+  }
+
+  const uniqueUsers = [];
+  const seenIds = new Set();
+  for (const u of state.activeUsers) {
+    if (!seenIds.has(u.id)) {
+      seenIds.add(u.id);
+      uniqueUsers.push(u);
+    }
+  }
+
+  container.innerHTML = uniqueUsers.map(u => {
+    const isMe = u.id === state.currentUser.id;
+    return `
+      <span class="presence-pill" style="border-color: ${u.color || '#38BDF8'};">
+        <span class="presence-dot" style="background: ${u.color || '#10B981'};"></span>
+        ${escapeHtml(u.name)}${isMe ? ' (Tú)' : ''}
+      </span>
+    `;
+  }).join('');
+}
+
+function updateStopLocksUI() {
+  state.stops.forEach(stop => {
+    const pinEl = document.getElementById(`pin-${stop.id}`);
+    if (!pinEl) return;
+
+    const lock = state.lockedStops[stop.id];
+    const isLockedByOther = lock && lock.id !== state.currentUser.id;
+
+    const oldRing = pinEl.querySelector('.marker-locked-ring');
+    const oldBadge = pinEl.querySelector('.marker-locked-badge');
+    if (oldRing) oldRing.remove();
+    if (oldBadge) oldBadge.remove();
+
+    if (isLockedByOther) {
+      pinEl.classList.add('is-remote-locked');
+      const ring = document.createElement('div');
+      ring.className = 'marker-locked-ring';
+      const badge = document.createElement('div');
+      badge.className = 'marker-locked-badge';
+      badge.textContent = `🔒 ${lock.name || 'Admin'}`;
+      pinEl.appendChild(ring);
+      pinEl.appendChild(badge);
+    } else {
+      pinEl.classList.remove('is-remote-locked');
+    }
+  });
+}
+
+function showRemoteBanner(text) {
+  const banner = document.getElementById('collab-remote-banner');
+  const textEl = document.getElementById('collab-remote-text');
+  if (banner && textEl) {
+    textEl.textContent = text;
+    banner.style.display = 'flex';
+  }
+}
+
+function hideRemoteBanner() {
+  const banner = document.getElementById('collab-remote-banner');
+  if (banner) {
+    banner.style.display = 'none';
+  }
+}
 
 // Obtener la URL base del backend dinámicamente según el host (local o cloud)
 function getBackendBaseUrl() {
@@ -293,6 +534,19 @@ function renderMapMarkers() {
     marker.on('drag', (event) => {
       const pos = event.target.getLatLng();
       updateRelocationCoordsDisplay(pos.lat, pos.lng);
+
+      // Sincronización en vivo estilo Google Docs: emitir coordenadas cada 40ms al otro admin
+      const now = Date.now();
+      if (now - state.lastDragBroadcastTime > 40) {
+        state.lastDragBroadcastTime = now;
+        sendWsMessage({
+          type: 'drag_stop',
+          stopId: stop.id,
+          lat: parseFloat(pos.lat.toFixed(6)),
+          lng: parseFloat(pos.lng.toFixed(6)),
+          user: state.currentUser
+        });
+      }
     });
 
     marker.on('dragend', (event) => {
@@ -310,6 +564,10 @@ function renderMapMarkers() {
 // Crea la tarjeta emergente interactiva para cada paradero
 function createStopPopupElement(stop) {
   const isOfficial = stop.isOfficial ?? (!stop.category.includes('proposed') && !stop.id.startsWith('prop-'));
+  const lock = state.lockedStops[stop.id];
+  const isLockedByOther = lock && lock.id !== state.currentUser.id;
+  const lockedByUser = isLockedByOther ? (lock.name || 'otro administrador') : null;
+
   const container = document.createElement('div');
   container.className = 'stop-popup-card';
   container.innerHTML = `
@@ -317,40 +575,49 @@ function createStopPopupElement(stop) {
       <span class="popup-badge ${isOfficial ? 'official' : 'proposal'}">
         ${isOfficial ? 'PARADERO OFICIAL' : 'PROPUESTA'}
       </span>
+      ${isLockedByOther ? `<span class="badge" style="background:#F59E0B; color:#000; font-weight:800; font-size:10px;">🔒 EN EDICIÓN</span>` : ''}
     </div>
     <h3 class="popup-title">${escapeHtml(stop.name)}</h3>
     <p class="popup-subtitle">${escapeHtml(stop.subtitle || 'Tacna, Perú')}</p>
     <div class="popup-coords">📍 ${stop.latitude.toFixed(6)}, ${stop.longitude.toFixed(6)}</div>
     
-    <div class="popup-move-cta">
-      <p class="popup-move-question">¿Deseas mover este paradero?</p>
-      <button type="button" class="btn btn-primary btn-sm btn-start-move" id="popup-btn-move-${stop.id}">
-        📍 Mover Paradero
+    <div class="popup-move-cta" style="${isLockedByOther ? 'border-color: #F59E0B; background: rgba(245, 158, 11, 0.1);' : ''}">
+      <p class="popup-move-question">
+        ${isLockedByOther ? `🔒 En edición por <strong>${escapeHtml(lockedByUser)}</strong>` : '¿Deseas mover este paradero?'}
+      </p>
+      <button type="button" class="btn btn-primary btn-sm btn-start-move" id="popup-btn-move-${stop.id}" ${isLockedByOther ? 'disabled style="background: #475569 !important; cursor: not-allowed; opacity: 0.6;"' : ''}>
+        ${isLockedByOther ? '🔒 Bloqueado temporalmente' : '📍 Mover Paradero'}
       </button>
     </div>
 
     <div class="popup-actions-footer">
-      <button type="button" class="btn btn-ghost btn-xs" id="popup-btn-edit-${stop.id}">✏️ Editar datos</button>
-      <button type="button" class="btn btn-destructive btn-xs" id="popup-btn-del-${stop.id}">🗑️ Eliminar</button>
+      <button type="button" class="btn btn-ghost btn-xs" id="popup-btn-edit-${stop.id}" ${isLockedByOther ? 'disabled style="opacity: 0.5;"' : ''}>✏️ Editar datos</button>
+      <button type="button" class="btn btn-destructive btn-xs" id="popup-btn-del-${stop.id}" ${isLockedByOther ? 'disabled style="opacity: 0.5;"' : ''}>🗑️ Eliminar</button>
     </div>
   `;
 
   // Listeners dentro del popup
   container.querySelector(`#popup-btn-move-${stop.id}`).addEventListener('click', (e) => {
     e.stopPropagation();
-    startRelocatingStop(stop.id);
+    if (!isLockedByOther) {
+      startRelocatingStop(stop.id);
+    }
   });
 
   container.querySelector(`#popup-btn-edit-${stop.id}`).addEventListener('click', (e) => {
     e.stopPropagation();
-    state.map.closePopup();
-    openStopDialog(stop);
+    if (!isLockedByOther) {
+      state.map.closePopup();
+      openStopDialog(stop);
+    }
   });
 
   container.querySelector(`#popup-btn-del-${stop.id}`).addEventListener('click', (e) => {
     e.stopPropagation();
-    state.map.closePopup();
-    openDeleteDialog(stop.id);
+    if (!isLockedByOther) {
+      state.map.closePopup();
+      openDeleteDialog(stop.id);
+    }
   });
 
   return container;
@@ -362,6 +629,13 @@ function startRelocatingStop(stopId) {
   const marker = state.markersMap.get(stopId);
   if (!stop || !marker) return;
 
+  // Si otro administrador ya tiene bloqueado este paradero, impedir movimiento simultáneo
+  if (state.lockedStops[stopId] && state.lockedStops[stopId].id !== state.currentUser.id) {
+    const lockingUser = state.lockedStops[stopId].name || 'otro administrador';
+    showToast(`⚠️ Este paradero está siendo editado por ${lockingUser}. Espera a que termine.`);
+    return;
+  }
+
   // Si había otro paradero en movimiento, cancelarlo primero
   if (state.relocatingStopId) {
     cancelRelocation();
@@ -370,6 +644,13 @@ function startRelocatingStop(stopId) {
   state.relocatingStopId = stopId;
   state.originalCoords = { lat: stop.latitude, lng: stop.longitude };
   state.tempCoords = { lat: stop.latitude, lng: stop.longitude };
+
+  // Notificar al servidor en tiempo real que este paradero está bloqueado por este admin
+  sendWsMessage({
+    type: 'lock_stop',
+    stopId: stopId,
+    user: state.currentUser
+  });
 
   // Cerrar el popup para despejar la vista del mapa
   state.map.closePopup();
@@ -436,6 +717,13 @@ function confirmRelocation() {
     renderStopsList();
     selectStop(stop.id, false);
 
+    // Emitir actualización por WebSocket en tiempo real estilo Google Docs
+    sendWsMessage({
+      type: 'save_stop',
+      stop: stop,
+      user: state.currentUser
+    });
+
     showToast(`✓ Ubicación de "${stop.shortName || stop.name}" establecida en [${stop.latitude}, ${stop.longitude}]`);
   }
 
@@ -455,6 +743,13 @@ function cancelRelocation() {
   const marker = state.markersMap.get(state.relocatingStopId);
 
   if (stop && marker && state.originalCoords) {
+    // Notificar al WebSocket que liberamos el bloqueo del paradero
+    sendWsMessage({
+      type: 'unlock_stop',
+      stopId: state.relocatingStopId,
+      user: state.currentUser
+    });
+
     // Restaurar posición original
     marker.setLatLng([state.originalCoords.lat, state.originalCoords.lng]);
     marker.dragging.disable();
@@ -910,6 +1205,12 @@ function downloadSwiftFile() {
 // ═══════════════════════════════════════════════════════════════════════
 
 function setupUIEventListeners() {
+  // Botón Cambiar Perfil de Colaborador (Admin 1 ⇄ Admin 2)
+  const btnSwitchUser = document.getElementById('btn-switch-user');
+  if (btnSwitchUser) {
+    btnSwitchUser.addEventListener('click', switchUserProfile);
+  }
+
   // Botón Nuevo Paradero
   document.getElementById('btn-add-stop').addEventListener('click', () => {
     openStopDialog(null);

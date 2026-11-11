@@ -1134,3 +1134,191 @@ dialog::backdrop {
   margin-top: 6px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   COLABORACIÓN EN TIEMPO REAL (ESTILO GOOGLE DOCS)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.collab-profile-card {
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.collab-user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collab-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #FFFFFF;
+  background: #2563EB;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+  flex-shrink: 0;
+}
+
+.collab-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.collab-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collab-sub {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.btn-switch-user {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--color-accent);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-switch-user:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: var(--color-accent);
+}
+
+.collab-presence-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.collab-presence-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.collab-presence-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.presence-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.presence-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 6px #10B981;
+  animation: pulse-dot 1.8s infinite;
+}
+
+.collab-remote-banner {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid #F59E0B;
+  color: #F8FAFC;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25);
+  z-index: 1000;
+  font-size: 0.78rem;
+  font-weight: 600;
+  animation: fadeInDown 0.25s ease-out;
+}
+
+.collab-remote-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #F59E0B;
+  box-shadow: 0 0 8px #F59E0B;
+  animation: pulse-dot 1.2s infinite;
+}
+
+/* Indicador de Paradero Bloqueado / En edición por otro admin */
+.marker-locked-ring {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 2.5px dashed #F59E0B;
+  animation: spin-slow 8s linear infinite;
+  pointer-events: none;
+}
+
+.marker-locked-badge {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #F59E0B;
+  color: #000000;
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  pointer-events: none;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+

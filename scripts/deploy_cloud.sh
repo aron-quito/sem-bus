@@ -74,7 +74,10 @@ Environment=HOST=0.0.0.0
 WantedBy=multi-user.target
 SERVICE
 
-# Configurar Nginx Reverse Proxy (Puerto 80 público hacia Web Admin + Backend)
+# Permisos para Nginx
+chmod 755 /home/admin /home/admin/sem-bus /home/admin/sem-bus/admin-web
+
+# Configurar Nginx Reverse Proxy (Puerto 80 público hacia Web Admin + Backend + WebSockets)
 sudo tee /etc/nginx/sites-available/busconectado > /dev/null << 'NGINX'
 server {
     listen 80 default_server;
@@ -84,13 +87,28 @@ server {
     root /home/admin/sem-bus/admin-web;
     index index.html;
 
-    # Panel Web de Administración con soporte de assets
+    # Panel Web de Administración (Protegido con Contraseña para admin y admin2)
     location / {
+        auth_basic "Acceso Restringido • Panel Administrador Bus Conectado";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+
         try_files $uri $uri/ /index.html;
         add_header Cache-Control "no-cache, no-store, must-revalidate";
     }
 
-    # API REST de paraderos, rutas y telemetría
+    # Canal WebSocket para Colaboración en Tiempo Real (Estilo Google Docs)
+    location /ws {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+
+    # API REST de paraderos, rutas y telemetría (Abierta para app de pasajeros de iOS)
     location /api/ {
         proxy_pass http://127.0.0.1:8000/api/;
         proxy_http_version 1.1;

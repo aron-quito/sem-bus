@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
 </head>
 <body>
   <div class="app-layout">
@@ -34,6 +34,26 @@
           <div>
             <h1 class="brand-title">Bus Conectado</h1>
             <p class="brand-subtitle">Gestor Oficial de Paraderos de Tacna</p>
+          </div>
+        </div>
+
+        <!-- PERFIL DE ADMINISTRADOR Y PRESENCIA EN VIVO (ESTILO GOOGLE DOCS) -->
+        <div class="collab-profile-card" id="collab-profile-card">
+          <div class="collab-user-info">
+            <span class="collab-avatar" id="collab-my-avatar">A1</span>
+            <div class="collab-text">
+              <span class="collab-name" id="collab-my-name">Admin 1 (Aron)</span>
+              <span class="collab-sub" id="collab-my-sub">En línea • Tiempo Real</span>
+            </div>
+            <button type="button" class="btn-switch-user" id="btn-switch-user" title="Cambiar perfil entre Admin 1 y Admin 2 para probar la colaboración en tiempo real">
+              ⇄ Cambiar Perfil
+            </button>
+          </div>
+          <div class="collab-presence-strip">
+            <span class="collab-presence-label">Equipo en vivo:</span>
+            <div class="collab-presence-pills" id="collab-presence-pills">
+              <span class="presence-pill"><span class="presence-dot"></span> Admin 1 (Tú)</span>
+            </div>
           </div>
         </div>
 
@@ -145,6 +165,12 @@
             ✓ Establecer
           </button>
         </div>
+      </div>
+
+      <!-- Banner de Reubicación Colaborativa (Cuando otro admin está moviendo un paradero) -->
+      <div class="collab-remote-banner" id="collab-remote-banner" style="display: none;">
+        <span class="collab-remote-dot"></span>
+        <span class="collab-remote-text" id="collab-remote-text">Admin 2 está reubicando un paradero en tiempo real...</span>
       </div>
 
       <!-- Indicador de Coordenadas del Cursor en Vivo -->
@@ -305,7 +331,7 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Lógica de la Aplicación -->
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
 

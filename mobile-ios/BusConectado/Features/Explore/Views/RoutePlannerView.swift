@@ -537,7 +537,7 @@ struct RoutePlannerView: View {
                         }
                     }
                 }
-                .mapStyle(.standard(elevation: .realistic))
+                .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
                 .ignoresSafeArea()
 
                 // 2. Cabecera Flotante Opaca de Ruteo (Sin transparencias con la barra de estado)
