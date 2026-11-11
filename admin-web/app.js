@@ -32,13 +32,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   updateStats();
 });
 
-// Cargar paraderos desde Backend local, localStorage o archivo JSON predeterminado
-async function loadStopsData() {
-  const backendBase = window.location.origin.includes(':8000') 
-    ? window.location.origin 
-    : 'http://localhost:8000';
+// Obtener la URL base del backend dinámicamente según el host (local o cloud)
+function getBackendBaseUrl() {
+  if (window.location.protocol.startsWith('http')) {
+    return window.location.origin;
+  }
+  return 'http://localhost:8000';
+}
 
-  // 1. Intentar cargar desde el Backend en red local (Servidor de sincronización con iPhone)
+// Cargar paraderos desde Backend local/cloud, localStorage o archivo JSON predeterminado
+async function loadStopsData() {
+  const backendBase = getBackendBaseUrl();
+
+  // 1. Intentar cargar desde el Backend (Cloud o Local)
   try {
     const res = await fetch(`${backendBase}/api/v1/transit/stops`, { cache: 'no-store' });
     if (res.ok) {
@@ -46,7 +52,8 @@ async function loadStopsData() {
       localStorage.setItem('bc_admin_stops', JSON.stringify(state.stops));
       const syncStatus = document.getElementById('sync-status');
       if (syncStatus) {
-        syncStatus.innerHTML = '<span class="status-dot"></span> Conectado a Backend Local (172.20.10.11:8000)';
+        const hostLabel = window.location.host || 'Cloud Backend';
+        syncStatus.innerHTML = `<span class="status-dot"></span> Conectado a Servidor (${hostLabel})`;
       }
       return;
     }
@@ -85,12 +92,10 @@ function saveToLocalStorage() {
   syncWithBackendServer();
 }
 
-// Sincronización en vivo con el Servidor Backend en Red Local
+// Sincronización en vivo con el Servidor Backend (Cloud o Local)
 async function syncWithBackendServer() {
   const syncStatus = document.getElementById('sync-status');
-  const backendBase = window.location.origin.includes(':8000') 
-    ? window.location.origin 
-    : 'http://localhost:8000';
+  const backendBase = getBackendBaseUrl();
 
   try {
     const res = await fetch(`${backendBase}/api/v1/transit/stops`, {
@@ -100,7 +105,8 @@ async function syncWithBackendServer() {
     });
     if (res.ok) {
       if (syncStatus) {
-        syncStatus.innerHTML = '<span class="status-dot"></span> Sincronizado en vivo con iPhone (172.20.10.11:8000)';
+        const hostLabel = window.location.host || 'Cloud Backend';
+        syncStatus.innerHTML = `<span class="status-dot"></span> Sincronizado en vivo con Servidor (${hostLabel})`;
       }
       return true;
     }
