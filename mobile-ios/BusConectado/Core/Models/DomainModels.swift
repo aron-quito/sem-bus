@@ -2343,7 +2343,7 @@ enum RouteAutomationEngine {
                         ? "La ruta ordinaria más cercana demora +\(timeExcess) min adicionales."
                         : "La ruta ordinaria más cercana exige caminar \(walkExcess) m adicionales hasta su paradero."
                     recExt.externalRecommendationReason = reason
-                    bannerWarning = "⚠️ Se sugiere \(recExt.routeCode) (Ruta Externa): \(reason) En esta ruta puedes abordar en cualquier punto de la calle por donde pasa, pero NO cuenta con tracking GPS, pago QR ni avisos de paradero."
+                    bannerWarning = "Se sugiere \(recExt.routeCode) (Externa): \(reason) Abordaje libre en vía, sin GPS, pago QR ni avisos de paradero."
 
                     finalCandidates.append(recExt)
                     finalCandidates.append(contentsOf: ordinaryCandidates)
@@ -2373,7 +2373,7 @@ enum RouteAutomationEngine {
                 ? "No hay Rutas Ordinarias en servicio en este momento."
                 : "Ninguna Ruta Ordinaria en servicio pasa cerca de este trayecto."
             recExt.externalRecommendationReason = noOrdReason
-            bannerWarning = "⚠️ \(noOrdReason) Se sugiere la \(recExt.routeCode) (Ruta Externa): puedes subir en cualquier parte de la calle por donde pasa la ruta, pero no ofrece tracking GPS ni avisos al paradero."
+            bannerWarning = "\(noOrdReason) Se sugiere \(recExt.routeCode) (Externa): abordaje libre en vía, sin tracking GPS ni avisos al paradero."
 
             finalCandidates.append(recExt)
             finalCandidates.append(contentsOf: externalCandidates.dropFirst())
@@ -2381,7 +2381,7 @@ enum RouteAutomationEngine {
         } else {
             var primaryWalk = walkCandidate
             primaryWalk.isRecommendedPrimary = true
-            bannerWarning = "⚠️ Ninguna ruta de bus conecta directamente estos dos puntos. Se muestra la ruta peatonal por las calles de Tacna."
+            bannerWarning = "Ninguna ruta de bus conecta estos dos puntos. Se muestra el recorrido peatonal."
             finalCandidates.append(primaryWalk)
         }
 

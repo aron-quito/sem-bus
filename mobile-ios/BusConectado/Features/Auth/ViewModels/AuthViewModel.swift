@@ -73,6 +73,7 @@ final class AuthViewModel: ObservableObject {
     @Published var activeRouteGuidance: ActiveRouteGuidanceState? = nil
     @Published var showCancelRouteGuidanceAlert: Bool = false
     @Published var showFiveMinuteBoardingBanner: Bool = false
+    @Published var showExternalGuidancePopup: Bool = false
 
     // Control de Cámara del Mapa en Tacna
     @Published var mapFocusTrigger: UUID = UUID()
@@ -693,14 +694,13 @@ final class AuthViewModel: ObservableObject {
         }
 
         let isOrdinaryRoute = resolvedCandidate?.kind == .ordinaryInService
-        // Si es Ruta Ordinaria, el contador monitorea la llegada del bus al paradero establecido y avisa a los 5 min (300 s)
+        // Solo las Rutas Ordinarias en servicio cuentan con tracking real, temporizador al paradero y notificador de 5 min.
+        // En Rutas Externas o Caminatas directas no se inicia temporizador ni notificador; para externas se habilita un pop-up retirable.
         let initialSeconds: Int
-        if let cand = resolvedCandidate, cand.kind == .ordinaryInService {
+        if isOrdinaryRoute, let cand = resolvedCandidate {
             initialSeconds = max(cand.busWaitMinutes * 60, 298)
-        } else if let cand = resolvedCandidate {
-            initialSeconds = max(cand.totalDurationMinutes * 60, 180)
         } else {
-            initialSeconds = 298
+            initialSeconds = 0
         }
 
         var guidanceState = ActiveRouteGuidanceState(
@@ -712,22 +712,24 @@ final class AuthViewModel: ObservableObject {
             fiveMinuteAlertFired: false
         )
 
-        // Si al presionar "Ir" en una Ruta Ordinaria el bus ya se encuentra a <= 5 minutos (300 s) del paradero establecido,
-        // disparar automáticamente la notificación local y el banner en vivo.
-        if isOrdinaryRoute, let cand = resolvedCandidate, initialSeconds <= 300 {
-            guidanceState.fiveMinuteAlertFired = true
-            showFiveMinuteBoardingBanner = true
-            BCNotificationManager.shared.triggerFiveMinuteBusArrivalNotification(
-                routeCode: cand.routeCode,
-                boardingStopName: cand.boardingPointName,
-                destinationName: destination.shortName,
-                walkMinutesToStop: cand.walkInitialMinutes
-            )
-        } else {
-            showFiveMinuteBoardingBanner = false
-            if isOrdinaryRoute {
+        if isOrdinaryRoute, let cand = resolvedCandidate {
+            showExternalGuidancePopup = false
+            if initialSeconds <= 300 {
+                guidanceState.fiveMinuteAlertFired = true
+                showFiveMinuteBoardingBanner = true
+                BCNotificationManager.shared.triggerFiveMinuteBusArrivalNotification(
+                    routeCode: cand.routeCode,
+                    boardingStopName: cand.boardingPointName,
+                    destinationName: destination.shortName,
+                    walkMinutesToStop: cand.walkInitialMinutes
+                )
+            } else {
+                showFiveMinuteBoardingBanner = false
                 BCNotificationManager.shared.requestAuthorizationIfNeeded()
             }
+        } else {
+            showFiveMinuteBoardingBanner = false
+            showExternalGuidancePopup = (resolvedCandidate?.kind == .externalFreeBoarding)
         }
 
         activeRouteGuidance = guidanceState
@@ -745,13 +747,16 @@ final class AuthViewModel: ObservableObject {
         )
 
         routeGuidanceTimer?.cancel()
+        routeGuidanceTimer = nil
+
+        guard isOrdinaryRoute else { return }
+
         routeGuidanceTimer = Timer.publish(every: 1.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self, var guidance = self.activeRouteGuidance else { return }
                 if guidance.remainingBusArrivalSeconds > 0 {
                     guidance.remainingBusArrivalSeconds -= 1
-                    // Disparar automáticamente la notificación cuando el bus ordinario llegue al umbral de 5 minutos (300 s) del paradero establecido
                     if let cand = guidance.candidate,
                        cand.kind == .ordinaryInService,
                        !guidance.fiveMinuteAlertFired,
@@ -782,8 +787,10 @@ final class AuthViewModel: ObservableObject {
     func confirmCancelGuidedRoute() {
         BCFeedbackManager.shared.impactLight()
         routeGuidanceTimer?.cancel()
+        routeGuidanceTimer = nil
         activeRouteGuidance = nil
         showFiveMinuteBoardingBanner = false
+        showExternalGuidancePopup = false
         showCancelRouteGuidanceAlert = false
     }
 
@@ -1293,6 +1300,10 @@ final class AuthViewModel: ObservableObject {
         self.transactions = []
         self.activeTrip = nil
         self.activeArrivalAlert = nil
+        self.activeRouteGuidance = nil
+        self.showFiveMinuteBoardingBanner = false
+        self.showExternalGuidancePopup = false
+        self.routeGuidanceTimer?.cancel()
         self.carnetReviewRequest = nil
         UserDefaults.standard.removeObject(forKey: "bc_carnet_req_\(user.phone)")
         self.saveActiveUserLocally(user)
@@ -1325,6 +1336,9 @@ final class AuthViewModel: ObservableObject {
         self.activeTrip = nil
         self.activeArrivalAlert = nil
         self.activeRouteGuidance = nil
+        self.showFiveMinuteBoardingBanner = false
+        self.showExternalGuidancePopup = false
+        self.routeGuidanceTimer?.cancel()
         self.searchedDestinationPin = nil
         self.isEmptyTransitBannerDismissed = false
         self.isLoggedIn = false

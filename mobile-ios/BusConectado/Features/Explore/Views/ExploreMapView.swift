@@ -11,8 +11,10 @@ struct ExploreMapView: View {
     @State private var selectedAdvanceMinutes: Int = 5
     @State private var imminentAlertEnabled: Bool = true
 
-    // Estado de arrastre para retirar con un gesto el pop-up "Sin paraderos ni buses en camino"
+    // Estado de arrastre para retirar con un gesto los pop-ups flotantes del mapa
     @State private var emptyBannerDragOffset: CGSize = .zero
+    @State private var externalPopupDragOffset: CGSize = .zero
+    @State private var fiveMinBannerDragOffset: CGSize = .zero
     @State private var timerPulseAnimation: Bool = false
 
     // Polilíneas alineadas nativamente a las calles de Tacna (Apple Maps MKDirections / OSRM)
@@ -168,17 +170,26 @@ struct ExploreMapView: View {
                             .background(Color(hex: projectedRoute.colorHex))
                             .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                        Text(
-                            projectedRoute.isOrdinary
-                                ? (projectedRoute.isInService ? "🟢 En Servicio" : "⚠️ Fuera de Servicio")
-                                : "🗺️ Externa (Sin GPS)"
-                        )
-                        .font(.system(size: 9.5, weight: .bold))
-                        .foregroundColor(
-                            projectedRoute.isOrdinary
-                                ? (projectedRoute.isInService ? BCTheme.emerald : BCTheme.amber)
-                                : .white.opacity(0.75)
-                        )
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(
+                                    projectedRoute.isOrdinary
+                                        ? (projectedRoute.isInService ? BCTheme.emerald : BCTheme.amber)
+                                        : Color.white.opacity(0.6)
+                                )
+                                .frame(width: 6, height: 6)
+                            Text(
+                                projectedRoute.isOrdinary
+                                    ? (projectedRoute.isInService ? "En servicio" : "Sin unidades")
+                                    : "Externa · Sin GPS"
+                            )
+                            .font(.system(size: 9.5, weight: .bold))
+                            .foregroundColor(
+                                projectedRoute.isOrdinary
+                                    ? (projectedRoute.isInService ? BCTheme.emerald : BCTheme.amber)
+                                    : .white.opacity(0.75)
+                            )
+                        }
 
                         Text("· \(stopsInRoute.count) paraderos · ~\(projectedRoute.estimatedTotalMinutes)m")
                             .font(.caption2.weight(.semibold))
@@ -223,83 +234,41 @@ struct ExploreMapView: View {
                     .padding(.horizontal, 14)
                 }
 
-                // Fila Superior Izquierda: Widget Circular Verde de Guía Activa + Banner de Aviso de 5 Minutos / Ruta Externa
+                // Estándar minimalista unificado para cualquier guía activa ("Ir") + Pop-up retirable
                 if let guidance = viewModel.activeRouteGuidance {
-                    HStack(alignment: .top, spacing: 10) {
-                        guidedRouteTimerWidget(guidance)
+                    VStack(alignment: .leading, spacing: 8) {
+                        minimalistGuidedRouteBar(guidance)
 
-                        VStack(alignment: .leading, spacing: 6) {
-                            if viewModel.showFiveMinuteBoardingBanner,
-                               let cand = guidance.candidate,
-                               cand.kind == .ordinaryInService {
-                                HStack(alignment: .top, spacing: 8) {
-                                    Image(systemName: "bell.badge.fill")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundColor(BCTheme.emerald)
-                                        .padding(.top, 2)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("¡\(cand.routeCode) a ≤ 5 min del paradero!")
-                                            .font(.system(size: 11, weight: .heavy))
-                                            .foregroundColor(BCTheme.emerald)
-                                        Text("Dirígete al Paradero \(cand.boardingPointName) (~\(cand.walkInitialMinutes) min a pie) para abordar rumbo a \(guidance.destination.shortName).")
-                                            .font(.system(size: 9.5, weight: .medium))
-                                            .foregroundColor(.white.opacity(0.9))
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-
-                                    Spacer(minLength: 2)
-
-                                    Button {
-                                        withAnimation {
-                                            viewModel.showFiveMinuteBoardingBanner = false
-                                        }
-                                    } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                            .font(.caption)
-                                            .foregroundColor(.white.opacity(0.6))
-                                    }
-                                }
-                                .padding(10)
-                                .background(Color(hex: "#052E16").opacity(0.95))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(BCTheme.emerald.opacity(0.7), lineWidth: 1)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
-                            } else if let cand = guidance.candidate, cand.kind == .externalFreeBoarding {
-                                HStack(alignment: .top, spacing: 8) {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .font(.caption.weight(.bold))
-                                        .foregroundColor(BCTheme.amber)
-                                        .padding(.top, 2)
-
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Guía en \(cand.routeCode) (Ruta Externa • Sin GPS)")
-                                            .font(.system(size: 10.5, weight: .heavy))
-                                            .foregroundColor(BCTheme.amber)
-                                        Text("Abordaje libre en cualquier punto de la vía (\(cand.boardingPointName)). No cuenta con tracking ni avisos de paradero.")
-                                            .font(.system(size: 9.5))
-                                            .foregroundColor(.white.opacity(0.85))
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                }
-                                .padding(10)
-                                .background(Color(hex: "#1F262E").opacity(0.95))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(BCTheme.amber.opacity(0.6), lineWidth: 1)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
+                        if viewModel.showFiveMinuteBoardingBanner,
+                           let cand = guidance.candidate,
+                           cand.kind == .ordinaryInService {
+                            dismissibleNotificationPopup(
+                                accentColor: BCTheme.emerald,
+                                backgroundColor: Color(hex: "#052E16"),
+                                icon: "bell.badge.fill",
+                                title: "\(cand.routeCode) a ≤ 5 min del paradero",
+                                message: "Camina a \(cand.boardingPointName) (~\(cand.walkInitialMinutes)m) rumbo a \(guidance.destination.shortName).",
+                                dragOffset: $fiveMinBannerDragOffset
+                            ) {
+                                viewModel.showFiveMinuteBoardingBanner = false
+                            }
+                        } else if viewModel.showExternalGuidancePopup,
+                                  let cand = guidance.candidate,
+                                  cand.kind == .externalFreeBoarding {
+                            dismissibleNotificationPopup(
+                                accentColor: BCTheme.amber,
+                                backgroundColor: BCTheme.elevatedSurface,
+                                icon: "exclamationmark.triangle.fill",
+                                title: "\(cand.routeCode) · Ruta externa (sin GPS)",
+                                message: "Abordaje en \(cand.boardingPointName). Sin temporizador ni avisos de llegada; desliza o cierra este aviso.",
+                                dragOffset: $externalPopupDragOffset
+                            ) {
+                                viewModel.showExternalGuidancePopup = false
                             }
                         }
-
-                        Spacer()
                     }
-                    .padding(.horizontal, 16)
-                    .transition(.scale.combined(with: .opacity))
+                    .padding(.horizontal, 14)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
                 // Widget Circular de Alerta de Llegada (Si el usuario activó los 2 Timers de un paradero)
@@ -980,72 +949,173 @@ struct ExploreMapView: View {
         }
     }
 
-    // MARK: - Widget Circular Verde de Timer + Botón Rojo de Cancelación (#guide-timer-widget)
-    private func guidedRouteTimerWidget(_ guidance: ActiveRouteGuidanceState) -> some View {
-        VStack(spacing: 8) {
+    // MARK: - Barra Minimalista Unificada para Cualquier Guía "Ir" (#guide-minimal-bar)
+    private func minimalistGuidedRouteBar(_ guidance: ActiveRouteGuidanceState) -> some View {
+        let cand = guidance.candidate
+        let isOrdinary = (cand?.kind == .ordinaryInService)
+        let isExternal = (cand?.kind == .externalFreeBoarding)
+        let accentColor: Color = isOrdinary ? BCTheme.emerald : (isExternal ? BCTheme.amber : BCTheme.cyanAccent)
+        let iconName: String = isOrdinary ? "bus.fill" : (isExternal ? "bus" : "figure.walk")
+
+        return HStack(spacing: 10) {
             Button {
                 BCFeedbackManager.shared.impactLight()
-                viewModel.openRoutePlanner(with: guidance.destination)
+                viewModel.openRoutePlanner(with: guidance.destination, origin: guidance.origin)
             } label: {
-                ZStack {
-                    Circle()
-                        .fill(BCTheme.emerald.opacity(0.28))
-                        .frame(width: 62, height: 62)
-                        .scaleEffect(timerPulseAnimation ? 1.12 : 0.94)
-                        .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: timerPulseAnimation)
-
-                    VStack(spacing: 1) {
-                        HStack(spacing: 2) {
-                            Image(systemName: "clock.fill")
-                                .font(.system(size: 7.5, weight: .bold))
-                            Text("BUS")
-                                .font(.system(size: 8, weight: .heavy))
-                        }
-                        .foregroundColor(Color(hex: "#D1FAE5"))
-
-                        Text(formatSeconds(guidance.remainingBusArrivalSeconds))
-                            .font(.system(size: 12, weight: .black, design: .monospaced))
-                            .foregroundColor(.white)
-                    }
-                    .frame(width: 54, height: 54)
-                    .background(
-                        LinearGradient(
-                            colors: [Color(hex: "#10B981"), Color(hex: "#047857")],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
+                HStack(spacing: 9) {
+                    ZStack {
                         Circle()
-                            .stroke(Color(hex: "#6EE7B7"), lineWidth: 2)
-                    )
-                    .clipShape(Circle())
-                    .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
+                            .fill(accentColor.opacity(0.2))
+                            .frame(width: 28, height: 28)
+                        Image(systemName: iconName)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(accentColor)
+                    }
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 5) {
+                            Text(cand?.routeCode ?? "Ruta")
+                                .font(.caption.weight(.heavy))
+                                .foregroundColor(.white)
+
+                            if isOrdinary {
+                                HStack(spacing: 3) {
+                                    Circle()
+                                        .fill(BCTheme.emerald)
+                                        .frame(width: 5, height: 5)
+                                        .scaleEffect(timerPulseAnimation ? 1.2 : 0.85)
+                                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: timerPulseAnimation)
+                                    Text(formatSeconds(guidance.remainingBusArrivalSeconds))
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundColor(BCTheme.emerald)
+                                }
+                            } else if isExternal {
+                                Text("· Sin GPS")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundColor(BCTheme.amber)
+                            } else if let totalMin = cand?.totalDurationMinutes {
+                                Text("· ~\(totalMin) min")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundColor(BCTheme.cyanAccent)
+                            }
+                        }
+
+                        Text("Hacia \(guidance.destination.shortName)")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(.white.opacity(0.65))
+                            .lineLimit(1)
+                    }
                 }
             }
+            .buttonStyle(.plain)
             .onAppear {
-                timerPulseAnimation = true
+                if isOrdinary {
+                    timerPulseAnimation = true
+                }
             }
+
+            Spacer(minLength: 4)
 
             Button {
                 viewModel.promptCancelGuidedRoute()
             } label: {
-                ZStack {
-                    Circle()
-                        .fill(BCTheme.destructiveRed)
-                        .frame(width: 34, height: 34)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.white.opacity(0.85), lineWidth: 2)
-                        )
-                    Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .black))
-                        .foregroundColor(.white)
-                }
-                .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(width: 28, height: 28)
+                    .background(Color.white.opacity(0.12))
+                    .clipShape(Circle())
             }
             .accessibilityLabel("Cancelar guía de ruta")
         }
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .padding(.vertical, 7)
+        .background(BCTheme.elevatedSurface.opacity(0.95))
+        .overlay(
+            Capsule()
+                .stroke(accentColor.opacity(0.45), lineWidth: 1)
+        )
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.45), radius: 8, y: 3)
+    }
+
+    private func dismissibleNotificationPopup(
+        accentColor: Color,
+        backgroundColor: Color,
+        icon: String,
+        title: String,
+        message: String,
+        dragOffset: Binding<CGSize>,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 6) {
+            Capsule()
+                .fill(Color.white.opacity(0.22))
+                .frame(width: 30, height: 3.5)
+                .padding(.top, 6)
+
+            HStack(alignment: .top, spacing: 9) {
+                Image(systemName: icon)
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(accentColor)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(accentColor)
+                    Text(message)
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 4)
+
+                Button {
+                    BCFeedbackManager.shared.impactLight()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        onDismiss()
+                        dragOffset.wrappedValue = .zero
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.55))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 10)
+        }
+        .background(backgroundColor.opacity(0.95))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(accentColor.opacity(0.5), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.42), radius: 8, y: 3)
+        .offset(x: dragOffset.wrappedValue.width, y: min(0, dragOffset.wrappedValue.height))
+        .opacity(Double(1.0 - min(abs(dragOffset.wrappedValue.width) + abs(min(0, dragOffset.wrappedValue.height)), 120) / 140.0))
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    dragOffset.wrappedValue = value.translation
+                }
+                .onEnded { value in
+                    if value.translation.height < -24 || abs(value.translation.width) > 55 {
+                        BCFeedbackManager.shared.impactLight()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                            onDismiss()
+                            dragOffset.wrappedValue = .zero
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            dragOffset.wrappedValue = .zero
+                        }
+                    }
+                }
+        )
     }
 
     // MARK: - Pop-up Minimalista Retirable con un Gesto ("Sin paraderos ni buses en camino")
@@ -1262,21 +1332,9 @@ struct ExploreMapView: View {
         let busCoords = guidedBusStreetCoords.count >= 2 ? guidedBusStreetCoords : fallbackBus
         let finalWalkCoords = guidedFinalWalkStreetCoords.count >= 2 ? guidedFinalWalkStreetCoords : fallbackFinalWalk
 
-        // Pin de Punto de Inicio (Origen establecido por el usuario o GPS)
-        Annotation(orig.shortName, coordinate: orig.coordinate) {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(BCTheme.royalBlue)
-                    .frame(width: 12, height: 12)
-                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                Text("Inicio: \(orig.shortName)")
-                    .font(.system(size: 8.5, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(BCTheme.elevatedSurface.opacity(0.95))
-                    .clipShape(Capsule())
-            }
+        // Pin de Punto de Inicio estandarizado (solo punto circular, sin texto sobre el mapa)
+        Annotation("", coordinate: orig.coordinate) {
+            OriginPointDotMarker()
         }
 
         // Tramo 1: Caminata hacia el paradero o punto de vía (Cian punteado siguiendo calles)
@@ -1329,35 +1387,8 @@ struct ExploreMapView: View {
         }
 
         // Pin Rojo de Destino de la Guía Activa (#guide-dest-pin)
-        Annotation(dest.shortName, coordinate: dest.coordinate) {
-            VStack(spacing: 2) {
-                HStack(spacing: 4) {
-                    Image(systemName: "mappin.and.ellipse")
-                        .font(.system(size: 9, weight: .bold))
-                    Text(dest.shortName)
-                        .font(.system(size: 9.5, weight: .heavy))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(BCTheme.destructiveRed)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7)
-                        .stroke(Color.white.opacity(0.7), lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 7))
-                .shadow(radius: 5)
-
-                ZStack {
-                    Circle()
-                        .fill(BCTheme.destructiveRed)
-                        .frame(width: 20, height: 20)
-                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                    Circle()
-                        .fill(Color.white)
-                        .frame(width: 6, height: 6)
-                }
-            }
+        Annotation("", coordinate: dest.coordinate) {
+            DestinationPinMarker(title: dest.shortName)
         }
     }
 

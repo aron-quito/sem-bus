@@ -10,9 +10,9 @@ struct LinesView: View {
 
     enum RouteCatalogFilter: String, CaseIterable {
         case all = "Todas"
-        case ordinaryInService = "🟢 En Servicio"
-        case ordinaryAll = "🚌 Ordinarias"
-        case external = "🗺️ Externas"
+        case ordinaryInService = "En servicio"
+        case ordinaryAll = "Ordinarias"
+        case external = "Externas"
     }
 
     @State private var activeSegment: LinesSegment = .routes
@@ -261,11 +261,11 @@ struct LinesView: View {
         case .all:
             return "Todas (\(viewModel.dynamicRoutes.count))"
         case .ordinaryInService:
-            return "🟢 En Servicio (\(ordinaryInServiceRoutes.count))"
+            return "En servicio (\(ordinaryInServiceRoutes.count))"
         case .ordinaryAll:
-            return "🚌 Ordinarias (\(ordinaryRoutes.count))"
+            return "Ordinarias (\(ordinaryRoutes.count))"
         case .external:
-            return "🗺️ Externas (\(externalRoutes.count))"
+            return "Externas (\(externalRoutes.count))"
         }
     }
 

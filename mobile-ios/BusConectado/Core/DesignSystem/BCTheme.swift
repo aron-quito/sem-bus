@@ -112,6 +112,62 @@ struct TransitStopDotMarker: View {
     }
 }
 
+// MARK: - Marcador Minimalista de Punto de Inicio (Solo punto circular, sin texto sobre el mapa)
+struct OriginPointDotMarker: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(BCTheme.royalBlue.opacity(0.28))
+                .frame(width: 26, height: 26)
+            Circle()
+                .fill(BCTheme.royalBlue)
+                .frame(width: 14, height: 14)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white, lineWidth: 2.2)
+                )
+                .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+        }
+    }
+}
+
+// MARK: - Pin Minimalista de Destino Final
+struct DestinationPinMarker: View {
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.system(size: 9, weight: .bold))
+                Text(title)
+                    .font(.system(size: 9.5, weight: .heavy))
+                    .lineLimit(1)
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(BCTheme.destructiveRed)
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(Color.white.opacity(0.7), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 7))
+            .shadow(color: .black.opacity(0.42), radius: 5)
+
+            ZStack {
+                Circle()
+                    .fill(BCTheme.destructiveRed)
+                    .frame(width: 20, height: 20)
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 6.5, height: 6.5)
+            }
+        }
+    }
+}
+
 // MARK: - Degradado Translúcido Superior para Barra de Estado (Dynamic Island / Hora / Señal)
 struct TopMapStatusBarFade: View {
     var height: CGFloat = 112

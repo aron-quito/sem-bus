@@ -161,7 +161,7 @@ struct OnboardingView: View {
                     Circle()
                         .fill(BCTheme.emerald)
                         .frame(width: 7, height: 7)
-                    Text("Línea 10 en tiempo real")
+                    Text("Rutas urbanas de Tacna en tiempo real")
                         .font(.caption.weight(.medium))
                         .foregroundColor(.white.opacity(0.75))
                 }

@@ -986,27 +986,9 @@ struct RoutePlannerView: View {
             ZStack(alignment: .top) {
                 // 1. Mapa de Fondo con Polilíneas Multimodales Calculadas en Tiempo Real
                 Map(position: $routeMapCamera) {
-                    // Pin de Origen (Ubicación actual o Punto de inicio elegido por el usuario)
-                    Annotation(selectedOrigin.shortName, coordinate: selectedOrigin.coordinate) {
-                        VStack(spacing: 2) {
-                            Text("Inicio: \(selectedOrigin.shortName)")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(BCTheme.royalBlue)
-                                .clipShape(RoundedRectangle(cornerRadius: 5))
-
-                            ZStack {
-                                Circle()
-                                    .fill(BCTheme.royalBlue.opacity(0.28))
-                                    .frame(width: 26, height: 26)
-                                Circle()
-                                    .fill(BCTheme.royalBlue)
-                                    .frame(width: 13, height: 13)
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                            }
-                        }
+                    // Pin de Origen estandarizado (solo punto circular, sin texto sobre el mapa)
+                    Annotation("", coordinate: selectedOrigin.coordinate) {
+                        OriginPointDotMarker()
                     }
 
                     // Tramo 1: Caminata desde el Origen hasta el Paradero (Ordinaria) o hasta la Vía (Externa)
@@ -1053,31 +1035,8 @@ struct RoutePlannerView: View {
                     }
 
                     // Pin Rojo de Destino Final
-                    Annotation(selectedDestination.shortName, coordinate: selectedDestination.coordinate) {
-                        VStack(spacing: 3) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "mappin.and.ellipse")
-                                    .font(.system(size: 9, weight: .bold))
-                                Text("\(selectedDestination.shortName) (Destino)")
-                                    .font(.system(size: 9.5, weight: .heavy))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(BCTheme.destructiveRed)
-                            .clipShape(RoundedRectangle(cornerRadius: 7))
-                            .shadow(radius: 4)
-
-                            ZStack {
-                                Circle()
-                                    .fill(BCTheme.destructiveRed)
-                                    .frame(width: 22, height: 22)
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                                Circle()
-                                    .fill(Color.white)
-                                    .frame(width: 7, height: 7)
-                            }
-                        }
+                    Annotation("", coordinate: selectedDestination.coordinate) {
+                        DestinationPinMarker(title: selectedDestination.shortName)
                     }
                 }
                 .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .all))
