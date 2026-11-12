@@ -82,7 +82,8 @@
           </span>
         </div>
         <p class="text-xs text-slate-400">Placa: <strong class="text-slate-300 font-mono">Z1A-780</strong> • Chofer:
-          <strong class="text-slate-300">Juan Mamani Quispe</strong></p>
+          <strong class="text-slate-300">Juan Mamani Quispe</strong>
+        </p>
       </div>
     </div>
 
@@ -160,7 +161,8 @@
               <span class="text-[11px] text-slate-400 font-mono" id="driver-last-time">Hace unos segundos</span>
             </div>
             <!-- Medio de pago en lugar de nombre para privacidad del pasajero -->
-            <div id="driver-last-payment-method" class="text-sm font-bold text-slate-200 mt-0.5 flex items-center gap-1.5">
+            <div id="driver-last-payment-method"
+              class="text-sm font-bold text-slate-200 mt-0.5 flex items-center gap-1.5">
               <i data-lucide="smartphone" class="w-4 h-4 text-blue-400"></i>
               <span>Aplicativo Móvil</span>
             </div>
@@ -180,7 +182,8 @@
       </div>
 
       <!-- 2. REGISTRO RECIENTE DE COBROS (Estilo Lista/Detalles de Gestor de Archivos) -->
-      <div class="flex-1 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col overflow-hidden min-h-[140px] shadow-lg">
+      <div
+        class="flex-1 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col overflow-hidden min-h-[140px] shadow-lg">
         <div class="px-3.5 py-2 border-b border-slate-800 bg-slate-900 flex items-center justify-between shrink-0">
           <div class="flex items-center gap-2">
             <i data-lucide="list" class="w-4 h-4 text-slate-400"></i>
@@ -223,7 +226,8 @@
         </div>
 
         <!-- Filas de Detalles (Scroll vertical) -->
-        <div id="driver-validation-feed" class="flex-1 overflow-y-auto divide-y divide-slate-800/50 text-xs font-medium">
+        <div id="driver-validation-feed"
+          class="flex-1 overflow-y-auto divide-y divide-slate-800/50 text-xs font-medium">
           <!-- Fila 1: Universitario (Amarillo) -->
           <div class="grid grid-cols-12 items-center px-3.5 py-2 hover:bg-slate-800/30 transition">
             <div class="col-span-2 text-slate-400 font-mono text-[11px]">19:24:12</div>
@@ -304,7 +308,8 @@
       <!-- 3. SENSORES DEL VEHÍCULO, CONADIS Y MÓDULO DE AVERÍA -->
       <div class="space-y-2 shrink-0">
         <!-- Barra de Estado de Sensores del Auto (CAN-Bus / OBD-II) -->
-        <div class="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow">
+        <div
+          class="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between shadow">
           <div class="flex items-center gap-2">
             <span id="vehicle-sensor-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
             <span id="vehicle-sensor-text" class="text-xs text-slate-300 font-medium">
@@ -338,7 +343,8 @@
             <i id="breakdown-btn-icon" data-lucide="lock" class="w-5 h-5 text-slate-500"></i>
             <div class="text-left">
               <div id="breakdown-btn-title" class="text-base font-black leading-tight">Avería de Unidad</div>
-              <div id="breakdown-btn-subtitle" class="text-[10px] font-medium text-slate-500">Requiere alerta del auto</div>
+              <div id="breakdown-btn-subtitle" class="text-[10px] font-medium text-slate-500">Requiere alerta del auto
+              </div>
             </div>
           </button>
         </div>
@@ -357,9 +363,11 @@
           </div>
 
           <div class="p-2.5 rounded-xl bg-slate-950/80 border border-rose-800/60 text-xs text-rose-200">
-            <p><strong>Diagnóstico:</strong> <span id="breakdown-diag-text">Baja presión detectada en neumático delantero
+            <p><strong>Diagnóstico:</strong> <span id="breakdown-diag-text">Baja presión detectada en neumático
+                delantero
                 derecho (18 PSI).</span></p>
-            <p class="text-[11px] text-rose-300/80 mt-0.5">El protocolo de seguridad autoriza suspender la visibilidad en el
+            <p class="text-[11px] text-rose-300/80 mt-0.5">El protocolo de seguridad autoriza suspender la visibilidad
+              en el
               mapa público.</p>
           </div>
 
@@ -680,7 +688,7 @@
       driverConadisCount += 1;
       document.getElementById('drv-conadis-count').textContent = `${driverConadisCount} personas`;
 
-      simulateDriverFare('conadis', 'Pase Libre (Carnet)', 'S/. 0.00');
+      simulateDriverFare('conadis', 'Pase Libre  (Carnet)', 'S/. 0.00');
       playBeep(true);
       showToast('Pasaje CONADIS registrado (+1 aforo, S/. 0.00)', 'success');
     }
@@ -907,4 +915,3 @@
 </body>
 
 </html>
-
