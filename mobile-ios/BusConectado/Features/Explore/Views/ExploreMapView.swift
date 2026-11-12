@@ -16,6 +16,11 @@ struct ExploreMapView: View {
     @State private var emptyBannerDragOffset: CGSize = .zero
     @State private var timerPulseAnimation: Bool = false
 
+    // Polilíneas alineadas nativamente a las calles de Tacna (Apple Maps MKDirections / OSRM)
+    @State private var projectedRouteStreetCoords: [CLLocationCoordinate2D] = []
+    @State private var guidedWalkStreetCoords: [CLLocationCoordinate2D] = []
+    @State private var guidedBusStreetCoords: [CLLocationCoordinate2D] = []
+
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: -18.0128, longitude: -70.2512), // Centro Histórico de Tacna
@@ -54,9 +59,10 @@ struct ExploreMapView: View {
                     }
                 }
 
-                // Trazado de Ruta Oficial o Externa Proyectada desde la pestaña "Líneas"
+                // Trazado de Ruta Oficial o Externa Proyectada desde la pestaña "Líneas" (Alineado a Calles)
                 if let projectedRoute = viewModel.activeRouteOverlayOnMap {
-                    let coords = projectedRoute.resolvedPolylineCoordinates(using: viewModel.dynamicCatalogStops)
+                    let fallbackCoords = projectedRoute.resolvedPolylineCoordinates(using: viewModel.dynamicCatalogStops)
+                    let coords = projectedRouteStreetCoords.count >= 2 ? projectedRouteStreetCoords : fallbackCoords
                     if coords.count >= 2 {
                         MapPolyline(coordinates: coords)
                             .stroke(
@@ -157,20 +163,22 @@ struct ExploreMapView: View {
                     }
                 }
 
-                // Trazado de Guía de Ruta Activa en Mapa Principal (Cuando el usuario pulsa [Iniciar] en Cómo Llegar)
+                // Trazado de Guía de Ruta Activa en Mapa Principal (Alineado nativamente a las calles de Apple Maps)
                 if let guidance = viewModel.activeRouteGuidance {
                     let dest = guidance.destination
+                    let walkCoords = guidedWalkStreetCoords.count >= 2 ? guidedWalkStreetCoords : dest.walkingToBoardCoordinates
+                    let busCoords = guidedBusStreetCoords.count >= 2 ? guidedBusStreetCoords : dest.busTransitCoordinates
 
-                    // Tramo 1: Caminata hacia el paradero (Cian punteado)
-                    MapPolyline(coordinates: dest.walkingToBoardCoordinates)
+                    // Tramo 1: Caminata hacia el paradero (Cian punteado siguiendo calles)
+                    MapPolyline(coordinates: walkCoords)
                         .stroke(
                             BCTheme.cyanAccent,
                             style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: [6, 6])
                         )
 
-                    // Tramo 2: Recorrido en Bus (Cian/Azul brillante continuo)
+                    // Tramo 2: Recorrido en Bus (Cian/Azul brillante continuo siguiendo calles)
                     if dest.routeCase != .walkOnlyNearby && guidance.selectedOptionIndex != 3 {
-                        MapPolyline(coordinates: dest.busTransitCoordinates)
+                        MapPolyline(coordinates: busCoords)
                             .stroke(
                                 Color(hex: "#00E5FF"),
                                 style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round)
@@ -272,6 +280,55 @@ struct ExploreMapView: View {
                                 )
                             )
                         )
+                    }
+                }
+            }
+            .onChange(of: viewModel.activeRouteOverlayOnMap?.id) { _, _ in
+                guard let route = viewModel.activeRouteOverlayOnMap else {
+                    projectedRouteStreetCoords = []
+                    return
+                }
+                let rawCoords = route.resolvedPolylineCoordinates(using: viewModel.dynamicCatalogStops)
+                projectedRouteStreetCoords = rawCoords
+                // Si la ruta aún no tiene vértices detallados de calle, alinearla nativamente con MKDirections
+                if rawCoords.count <= route.keyStopIds.count + 2 && rawCoords.count >= 2 {
+                    Task {
+                        let aligned = await NativeStreetRouter.alignPolylineToStreets(
+                            waypoints: rawCoords,
+                            transportType: .automobile
+                        )
+                        await MainActor.run {
+                            if viewModel.activeRouteOverlayOnMap?.id == route.id {
+                                projectedRouteStreetCoords = aligned
+                            }
+                        }
+                    }
+                }
+            }
+            .onChange(of: viewModel.activeRouteGuidance) { _, newGuidance in
+                guard let guidance = newGuidance else {
+                    guidedWalkStreetCoords = []
+                    guidedBusStreetCoords = []
+                    return
+                }
+                let dest = guidance.destination
+                guidedWalkStreetCoords = dest.walkingToBoardCoordinates
+                guidedBusStreetCoords = dest.busTransitCoordinates
+                Task {
+                    async let walkAligned = NativeStreetRouter.alignPolylineToStreets(
+                        waypoints: dest.walkingToBoardCoordinates,
+                        transportType: .walking
+                    )
+                    async let busAligned = NativeStreetRouter.alignPolylineToStreets(
+                        waypoints: dest.busTransitCoordinates,
+                        transportType: .automobile
+                    )
+                    let (wResult, bResult) = await (walkAligned, busAligned)
+                    await MainActor.run {
+                        if viewModel.activeRouteGuidance?.destination.id == dest.id {
+                            guidedWalkStreetCoords = wResult
+                            guidedBusStreetCoords = bResult
+                        }
                     }
                 }
             }

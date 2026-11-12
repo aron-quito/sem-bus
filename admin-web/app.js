@@ -31,8 +31,11 @@ const state = {
   originalCoords: null,      // { lat, lng } para restaurar si el usuario cancela
   tempCoords: null,          // { lat, lng } posición en tiempo real mientras se mueve
   tracingRouteId: null,      // ID de la ruta actualmente en modo trazado interactivo en el mapa
-  tempTraceCoords: [],       // Coordenadas [[lat, lng], ...] en edición durante el trazado
+  tempTraceNodes: [],        // Nodos de control [{ lat, lng, stopId, streetName }] alineados a calles
+  tempTraceSegments: [],     // Tramos viales [[[lat, lng], ...]] entre cada par de nodos consecutivos
+  tempTraceCoords: [],       // Polilínea densa [[lat, lng], ...] alineada a las calles de Tacna
   tempTraceStopIds: [],      // IDs de paraderos asociados durante el trazado
+  isRoutingStreet: false,    // Indicador de consulta activa al motor vial OSRM
   modalSelectedStopIds: [],  // IDs de paraderos seleccionados en orden dentro del modal de ruta
   currentUser: PROFILES[0],  // Perfil activo (Admin 1 por defecto)
   activeUsers: [],           // Usuarios conectados al WebSocket
@@ -557,12 +560,9 @@ function initLeafletMap() {
 
   // Evento de Clic en el Mapa
   state.map.on('click', (e) => {
-    // 1. Si estamos en modo de Trazado Interactivo de Ruta en el mapa: agregar punto (waypoint) a la polilínea
+    // 1. Si estamos en modo de Trazado Interactivo de Ruta en el mapa: alinear punto a la calle y trazar ruta vial
     if (state.tracingRouteId) {
-      const pt = [parseFloat(e.latlng.lat.toFixed(6)), parseFloat(e.latlng.lng.toFixed(6))];
-      state.tempTraceCoords.push(pt);
-      renderMapRoutes();
-      updateTraceBarMetrics();
+      handleMapClickDuringRouteTrace(e.latlng.lat, e.latlng.lng);
       return;
     }
 
@@ -1257,11 +1257,13 @@ function computeRouteDistanceAndEta(coords, speedKmh = 22.0, stopsCount = 0) {
     dist += haversineDistanceKm(lat1, lng1, lat2, lng2);
   }
   const safeSpeed = Math.max(5.0, parseFloat(speedKmh) || 22.0);
-  // Factor urbano 1.25x por giros/semáforos + 25 seg de embarque por paradero
-  const roadDist = dist * 1.25;
+  // Si la polilínea ya sigue la geometría real de las calles (más vértices que los nodos/paraderos),
+  // la suma Haversine ya es la distancia real de conducción; si son líneas rectas, aplicamos factor urbano 1.25x.
+  const isStreetAlignedGeometry = coords.length > Math.max(4, (stopsCount || 2) + 3);
+  const roadDist = isStreetAlignedGeometry ? dist : dist * 1.25;
   const driveMinutes = (roadDist / safeSpeed) * 60.0;
-  const dwellMinutes = (stopsCount || coords.length) * 0.42;
-  const totalMinutes = Math.max(5, Math.round(driveMinutes + dwellMinutes));
+  const dwellMinutes = (stopsCount || Math.min(coords.length, 15)) * 0.42;
+  const totalMinutes = Math.max(4, Math.round(driveMinutes + dwellMinutes));
 
   return {
     totalDistanceKm: parseFloat(roadDist.toFixed(2)),
@@ -1269,12 +1271,221 @@ function computeRouteDistanceAndEta(coords, speedKmh = 22.0, stopsCount = 0) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// MOTOR DE ALINEACIÓN NATIVA A CALLES (OSRM NEAREST & DRIVING ROUTER)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Ajusta (snap) una coordenada arbitraria al nodo vial más cercano de las calles de Tacna.
+ */
+async function snapCoordinateToStreet(lat, lng) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const url = `https://router.project-osrm.org/nearest/v1/driving/${lng.toFixed(6)},${lat.toFixed(6)}?number=1`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === 'Ok' && Array.isArray(data.waypoints) && data.waypoints.length > 0) {
+        const wp = data.waypoints[0];
+        const [snappedLng, snappedLat] = wp.location;
+        return {
+          lat: parseFloat(snappedLat.toFixed(6)),
+          lng: parseFloat(snappedLng.toFixed(6)),
+          streetName: wp.name || 'Vía urbana'
+        };
+      }
+    }
+  } catch (_) {
+    // Fallback silencioso a la coordenada original si no hay red
+  }
+  return {
+    lat: parseFloat(lat.toFixed(6)),
+    lng: parseFloat(lng.toFixed(6)),
+    streetName: 'Coordenada directa'
+  };
+}
+
+/**
+ * Calcula la polilínea exacta siguiendo las calles de la ciudad entre dos nodos.
+ */
+async function fetchStreetAlignedSegment(nodeA, nodeB) {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    const coordsQuery = `${nodeA.lng.toFixed(6)},${nodeA.lat.toFixed(6)};${nodeB.lng.toFixed(6)},${nodeB.lat.toFixed(6)}`;
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordsQuery}?overview=full&geometries=geojson&continue_straight=true`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === 'Ok' && Array.isArray(data.routes) && data.routes.length > 0) {
+        const geoCoords = data.routes[0].geometry?.coordinates || [];
+        if (geoCoords.length >= 2) {
+          return geoCoords.map(([lon, lat]) => [
+            parseFloat(lat.toFixed(6)),
+            parseFloat(lon.toFixed(6))
+          ]);
+        }
+      }
+    }
+  } catch (_) {
+    // Fallback a segmento recto si falla la consulta
+  }
+  return [
+    [parseFloat(nodeA.lat.toFixed(6)), parseFloat(nodeA.lng.toFixed(6))],
+    [parseFloat(nodeB.lat.toFixed(6)), parseFloat(nodeB.lng.toFixed(6))]
+  ];
+}
+
+/**
+ * Alinea una lista completa de nodos de control a las calles de la ciudad y construye
+ * tanto los segmentos individuales como la polilínea continua completa.
+ */
+async function alignNodesToStreetNetwork(rawNodes) {
+  if (!Array.isArray(rawNodes) || rawNodes.length === 0) {
+    return { nodes: [], segments: [], fullCoords: [] };
+  }
+  if (rawNodes.length === 1) {
+    const snapped = await snapCoordinateToStreet(rawNodes[0].lat, rawNodes[0].lng);
+    const singleNode = { ...rawNodes[0], ...snapped };
+    return {
+      nodes: [singleNode],
+      segments: [],
+      fullCoords: [[singleNode.lat, singleNode.lng]]
+    };
+  }
+
+  // Consultamos OSRM route en lote para obtener los waypoints alineados y la geometría por tramo (legs)
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6500);
+    const coordsStr = rawNodes.map(n => `${n.lng.toFixed(6)},${n.lat.toFixed(6)}`).join(';');
+    const url = `https://router.project-osrm.org/route/v1/driving/${coordsStr}?overview=full&geometries=geojson&steps=true&continue_straight=true`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.code === 'Ok' && Array.isArray(data.routes) && data.routes.length > 0) {
+        const routeObj = data.routes[0];
+        const waypoints = data.waypoints || [];
+
+        const alignedNodes = rawNodes.map((orig, idx) => {
+          const wp = waypoints[idx];
+          if (wp && Array.isArray(wp.location)) {
+            return {
+              ...orig,
+              lat: parseFloat(wp.location[1].toFixed(6)),
+              lng: parseFloat(wp.location[0].toFixed(6)),
+              streetName: wp.name || orig.streetName || 'Calle alineada'
+            };
+          }
+          return orig;
+        });
+
+        // Extraer geometría por cada leg (tramo entre nodo i y nodo i+1)
+        const segments = [];
+        if (Array.isArray(routeObj.legs) && routeObj.legs.length === rawNodes.length - 1) {
+          routeObj.legs.forEach((leg, legIdx) => {
+            const legPts = [];
+            (leg.steps || []).forEach(step => {
+              const stepCoords = step.geometry?.coordinates || [];
+              stepCoords.forEach(([lon, lat]) => {
+                const pt = [parseFloat(lat.toFixed(6)), parseFloat(lon.toFixed(6))];
+                if (
+                  legPts.length === 0 ||
+                  legPts[legPts.length - 1][0] !== pt[0] ||
+                  legPts[legPts.length - 1][1] !== pt[1]
+                ) {
+                  legPts.push(pt);
+                }
+              });
+            });
+            if (legPts.length >= 2) {
+              segments.push(legPts);
+            } else {
+              segments.push([
+                [alignedNodes[legIdx].lat, alignedNodes[legIdx].lng],
+                [alignedNodes[legIdx + 1].lat, alignedNodes[legIdx + 1].lng]
+              ]);
+            }
+          });
+        }
+
+        const fullCoords = flattenStreetSegments(segments, alignedNodes);
+        return { nodes: alignedNodes, segments, fullCoords };
+      }
+    }
+  } catch (_) {
+    // Fallback tramo por tramo
+  }
+
+  // Fallback secuencial si el batch excede límites o falla
+  const alignedNodes = [];
+  for (const n of rawNodes) {
+    const snapped = await snapCoordinateToStreet(n.lat, n.lng);
+    alignedNodes.push({ ...n, ...snapped });
+  }
+  const segments = [];
+  for (let i = 0; i < alignedNodes.length - 1; i++) {
+    const seg = await fetchStreetAlignedSegment(alignedNodes[i], alignedNodes[i + 1]);
+    segments.push(seg);
+  }
+  const fullCoords = flattenStreetSegments(segments, alignedNodes);
+  return { nodes: alignedNodes, segments, fullCoords };
+}
+
+function flattenStreetSegments(segments, nodes = []) {
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return nodes.map(n => [n.lat, n.lng]);
+  }
+  const coords = [];
+  segments.forEach(seg => {
+    (seg || []).forEach(pt => {
+      if (
+        coords.length === 0 ||
+        coords[coords.length - 1][0] !== pt[0] ||
+        coords[coords.length - 1][1] !== pt[1]
+      ) {
+        coords.push([pt[0], pt[1]]);
+      }
+    });
+  });
+  return coords;
+}
+
+function rebuildTraceCoordsFromSegments() {
+  state.tempTraceCoords = flattenStreetSegments(state.tempTraceSegments, state.tempTraceNodes);
+  state.tempTraceStopIds = state.tempTraceNodes
+    .map(n => n.stopId)
+    .filter(Boolean);
+}
+
+function buildFlexibleStopMap() {
+  const map = new Map();
+  state.stops.forEach(s => {
+    map.set(s.id, s);
+    const bare = s.id.replace(/^stop-/, '');
+    map.set(bare, s);
+    map.set(`stop-${bare}`, s);
+    if (bare === 'mercado-2-de-mayo' || bare === 'mercado-2-mayo') {
+      map.set('mercado-2-de-mayo', s);
+      map.set('mercado-2-mayo', s);
+      map.set('stop-mercado-2-de-mayo', s);
+      map.set('stop-mercado-2-mayo', s);
+    }
+  });
+  return map;
+}
+
 function getResolvedCoordinatesForRoute(route) {
   if (Array.isArray(route.pathCoordinates) && route.pathCoordinates.length >= 2) {
     return route.pathCoordinates;
   }
   // Fallback: construir desde los paraderos asignados
-  const stopMap = new Map(state.stops.map(s => [s.id, s]));
+  const stopMap = buildFlexibleStopMap();
   const coords = [];
   (route.keyStopIds || []).forEach(sid => {
     const s = stopMap.get(sid);
@@ -1287,9 +1498,9 @@ function renderMapRoutes() {
   if (!state.routeLayersGroup || !state.map) return;
   state.routeLayersGroup.clearLayers();
 
-  const stopMap = new Map(state.stops.map(s => [s.id, s]));
+  const stopMap = buildFlexibleStopMap();
 
-  // 1. Si estamos trazando una ruta en el mapa en vivo: dibujar la polilínea temporal editable
+  // 1. Si estamos trazando una ruta en el mapa en vivo: dibujar la polilínea alineada a calles + nodos de control arrastrables
   if (state.tracingRouteId) {
     const route = state.routes.find(r => r.id === state.tracingRouteId);
     const traceColor = route ? (route.colorHex || '#2563EB') : '#2563EB';
@@ -1304,7 +1515,7 @@ function renderMapRoutes() {
         lineJoin: 'round'
       }).addTo(state.routeLayersGroup);
 
-      // Línea principal animada
+      // Polilínea principal siguiendo las calles de la ciudad
       L.polyline(state.tempTraceCoords, {
         color: traceColor,
         weight: 5,
@@ -1315,31 +1526,83 @@ function renderMapRoutes() {
       }).addTo(state.routeLayersGroup);
     }
 
-    // Dibujar vértices numerados con tiempo acumulado estimado (+X min)
+    // Dibujar los Nodos de Control (waypoints/paraderos alineados a calle) con capacidad de arrastre (drag & snap)
     let cumulativeKm = 0;
     const speedKmh = route ? (route.averageSpeedKmh || 22) : 22;
+    const nodesToRender = state.tempTraceNodes.length > 0
+      ? state.tempTraceNodes
+      : state.tempTraceCoords.map(pt => ({ lat: pt[0], lng: pt[1], stopId: null, streetName: 'Vía urbana' }));
 
-    state.tempTraceCoords.forEach((pt, idx) => {
+    nodesToRender.forEach((node, idx) => {
       if (idx > 0) {
-        cumulativeKm += haversineDistanceKm(
-          state.tempTraceCoords[idx - 1][0],
-          state.tempTraceCoords[idx - 1][1],
-          pt[0],
-          pt[1]
-        ) * 1.25;
+        const seg = state.tempTraceSegments[idx - 1];
+        if (Array.isArray(seg) && seg.length >= 2) {
+          for (let k = 0; k < seg.length - 1; k++) {
+            cumulativeKm += haversineDistanceKm(seg[k][0], seg[k][1], seg[k + 1][0], seg[k + 1][1]);
+          }
+        } else {
+          cumulativeKm += haversineDistanceKm(
+            nodesToRender[idx - 1].lat,
+            nodesToRender[idx - 1].lng,
+            node.lat,
+            node.lng
+          ) * 1.25;
+        }
       }
       const etaMin = Math.round((cumulativeKm / speedKmh) * 60 + idx * 0.42);
+      const isStopNode = Boolean(node.stopId);
       const nodeIcon = L.divIcon({
         className: 'custom-route-seq-node',
-        html: `<div class="route-seq-node" style="background:${traceColor};">${idx + 1}</div>`,
-        iconSize: [22, 22],
-        iconAnchor: [11, 11]
+        html: `<div class="route-seq-node" style="background:${traceColor}; border:${isStopNode ? '2.5px solid #FFFFFF' : '2px dashed #E0F2FE'};">${idx + 1}</div>`,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
       });
-      const nodeMarker = L.marker(pt, { icon: nodeIcon, interactive: true });
-      nodeMarker.bindTooltip(`Punto #${idx + 1} • +${etaMin} min (${cumulativeKm.toFixed(2)} km)`, {
-        direction: 'top',
-        offset: [0, -10]
+
+      const nodeMarker = L.marker([node.lat, node.lng], {
+        icon: nodeIcon,
+        interactive: true,
+        draggable: true,
+        zIndexOffset: 1100
       });
+
+      const stopObj = node.stopId ? stopMap.get(node.stopId) : null;
+      const nodeTitle = stopObj
+        ? `Paradero: ${stopObj.shortName || stopObj.name}`
+        : `Nodo vial: ${node.streetName || 'Calle alineada'}`;
+
+      nodeMarker.bindTooltip(
+        `<strong>#${idx + 1} ${escapeHtml(nodeTitle)}</strong><br>` +
+        `+${etaMin} min (${cumulativeKm.toFixed(2)} km) • <em>Arrastra para reajustar calle</em>`,
+        { direction: 'top', offset: [0, -10] }
+      );
+
+      // Al arrastrar un nodo de control, se alinea automáticamente a la calle más cercana y recalcula los tramos adyacentes
+      nodeMarker.on('dragend', async (ev) => {
+        const pos = ev.target.getLatLng();
+        if (!state.tempTraceNodes[idx]) return;
+        const snapped = await snapCoordinateToStreet(pos.lat, pos.lng);
+        state.tempTraceNodes[idx].lat = snapped.lat;
+        state.tempTraceNodes[idx].lng = snapped.lng;
+        state.tempTraceNodes[idx].streetName = snapped.streetName;
+
+        if (idx > 0) {
+          state.tempTraceSegments[idx - 1] = await fetchStreetAlignedSegment(
+            state.tempTraceNodes[idx - 1],
+            state.tempTraceNodes[idx]
+          );
+        }
+        if (idx < state.tempTraceNodes.length - 1) {
+          state.tempTraceSegments[idx] = await fetchStreetAlignedSegment(
+            state.tempTraceNodes[idx],
+            state.tempTraceNodes[idx + 1]
+          );
+        }
+        rebuildTraceCoordsFromSegments();
+        renderMapRoutes();
+        updateTraceBarMetrics();
+        showToast(`🛣️ Nodo #${idx + 1} alineado a ${snapped.streetName || 'la calle más cercana'}.`);
+      });
+
       nodeMarker.addTo(state.routeLayersGroup);
     });
     return;
@@ -1465,7 +1728,7 @@ function renderRoutesList() {
   const countText = document.getElementById('showing-routes-count-text');
   if (!container || !countText) return;
 
-  const stopMap = new Map(state.stops.map(s => [s.id, s]));
+  const stopMap = buildFlexibleStopMap();
 
   const filtered = state.routes.filter(route => {
     if (state.activeRouteFilter === 'ordinary' && route.routeType !== 'ordinary') return false;
@@ -1681,10 +1944,10 @@ function toggleRouteServiceStatus(routeId) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// TRAZADOR INTERACTIVO DE RECORRIDOS EN EL MAPA (PARA APP Y CHOFER)
+// TRAZADOR INTERACTIVO DE RECORRIDOS EN EL MAPA CON ALINEACIÓN A CALLES
 // ═══════════════════════════════════════════════════════════════════════
 
-function startTracingRouteOnMap(routeId) {
+async function startTracingRouteOnMap(routeId) {
   const route = state.routes.find(r => r.id === routeId);
   if (!route) return;
 
@@ -1695,7 +1958,30 @@ function startTracingRouteOnMap(routeId) {
   state.tracingRouteId = route.id;
   state.selectedRouteId = route.id;
   state.tempTraceStopIds = [...(route.keyStopIds || [])];
+
+  const stopMap = buildFlexibleStopMap();
+
+  // Inicializar nodos de control desde controlNodes guardados o desde los paraderos de la ruta
+  if (Array.isArray(route.controlNodes) && route.controlNodes.length >= 2) {
+    state.tempTraceNodes = route.controlNodes.map(n => ({ ...n }));
+  } else if (state.tempTraceStopIds.length >= 2) {
+    state.tempTraceNodes = state.tempTraceStopIds.map(sid => {
+      const st = stopMap.get(sid);
+      return st
+        ? { lat: parseFloat(st.latitude.toFixed(6)), lng: parseFloat(st.longitude.toFixed(6)), stopId: sid, streetName: st.name }
+        : null;
+    }).filter(Boolean);
+  } else {
+    state.tempTraceNodes = getResolvedCoordinatesForRoute(route).map(pt => ({
+      lat: pt[0],
+      lng: pt[1],
+      stopId: null,
+      streetName: 'Vía urbana'
+    }));
+  }
+
   state.tempTraceCoords = getResolvedCoordinatesForRoute(route).map(pt => [pt[0], pt[1]]);
+  state.tempTraceSegments = [];
 
   const traceBar = document.getElementById('route-trace-bar');
   const traceName = document.getElementById('trace-route-name');
@@ -1712,31 +1998,100 @@ function startTracingRouteOnMap(routeId) {
     state.map.flyToBounds(L.latLngBounds(state.tempTraceCoords), { padding: [70, 70], duration: 0.6 });
   }
 
-  showToast(`Modo Trazado activo para ${route.code}: haz clic en paraderos o calles del mapa para definir la ruta.`);
+  // Alinear automáticamente los nodos a las calles de Tacna para tener los tramos viales listos
+  if (state.tempTraceNodes.length >= 2) {
+    showToast(`🛣️ Alineando nodos de ${route.code} a las calles de Tacna...`);
+    const aligned = await alignNodesToStreetNetwork(state.tempTraceNodes);
+    if (state.tracingRouteId === route.id && aligned.fullCoords.length >= 2) {
+      state.tempTraceNodes = aligned.nodes;
+      state.tempTraceSegments = aligned.segments;
+      state.tempTraceCoords = aligned.fullCoords;
+      renderMapRoutes();
+      updateTraceBarMetrics();
+      showToast(`✓ Modo Trazado Vial activo (${route.code}): haz clic en cualquier calle o paradero, o arrastra los nodos.`);
+    }
+  } else {
+    showToast(`Modo Trazado Vial activo para ${route.code}: haz clic en calles o paraderos del mapa.`);
+  }
 }
 
-function handleStopClickedDuringRouteTrace(stop) {
-  if (!state.tracingRouteId) return;
+/**
+ * Al hacer clic en cualquier punto del mapa durante el modelado de ruta:
+ * 1) Alinea el punto a la calle más cercana (OSRM nearest).
+ * 2) Traza automáticamente el camino por las calles desde el nodo anterior (OSRM route).
+ */
+async function handleMapClickDuringRouteTrace(rawLat, rawLng) {
+  if (!state.tracingRouteId || state.isRoutingStreet) return;
+  state.isRoutingStreet = true;
 
-  const existingIndex = state.tempTraceStopIds.indexOf(stop.id);
-  if (existingIndex === -1) {
-    state.tempTraceStopIds.push(stop.id);
-    state.tempTraceCoords.push([parseFloat(stop.latitude.toFixed(6)), parseFloat(stop.longitude.toFixed(6))]);
-    showToast(`+ Paradero "${stop.shortName || stop.name}" sumado al recorrido (#${state.tempTraceStopIds.length})`);
-  } else {
-    // Si ya estaba, permitir agregar su coordenada de paso o quitarlo si era el último
-    if (existingIndex === state.tempTraceStopIds.length - 1) {
-      state.tempTraceStopIds.pop();
-      state.tempTraceCoords.pop();
-      showToast(`Paradero "${stop.shortName || stop.name}" retirado del final del recorrido.`);
-    } else {
-      state.tempTraceCoords.push([parseFloat(stop.latitude.toFixed(6)), parseFloat(stop.longitude.toFixed(6))]);
-      showToast(`Punto de retorno por "${stop.shortName || stop.name}" agregado al trazado.`);
+  try {
+    const snapped = await snapCoordinateToStreet(rawLat, rawLng);
+    const newNode = {
+      lat: snapped.lat,
+      lng: snapped.lng,
+      stopId: null,
+      streetName: snapped.streetName
+    };
+
+    if (state.tempTraceNodes.length > 0) {
+      const prevNode = state.tempTraceNodes[state.tempTraceNodes.length - 1];
+      const seg = await fetchStreetAlignedSegment(prevNode, newNode);
+      state.tempTraceSegments.push(seg);
     }
-  }
 
-  renderMapRoutes();
-  updateTraceBarMetrics();
+    state.tempTraceNodes.push(newNode);
+    rebuildTraceCoordsFromSegments();
+    renderMapRoutes();
+    updateTraceBarMetrics();
+
+    showToast(`🛣️ Nodo #${state.tempTraceNodes.length} alineado a ${snapped.streetName || 'calle'}`);
+  } finally {
+    state.isRoutingStreet = false;
+  }
+}
+
+async function handleStopClickedDuringRouteTrace(stop) {
+  if (!state.tracingRouteId || state.isRoutingStreet) return;
+  state.isRoutingStreet = true;
+
+  try {
+    const lastNode = state.tempTraceNodes[state.tempTraceNodes.length - 1];
+    // Si hace clic sobre el último paradero que acaba de poner, lo retira (toggle rápido)
+    if (lastNode && lastNode.stopId === stop.id) {
+      state.tempTraceNodes.pop();
+      if (state.tempTraceSegments.length > 0) {
+        state.tempTraceSegments.pop();
+      }
+      rebuildTraceCoordsFromSegments();
+      renderMapRoutes();
+      updateTraceBarMetrics();
+      showToast(`Paradero "${stop.shortName || stop.name}" retirado del final del recorrido.`);
+      return;
+    }
+
+    const snapped = await snapCoordinateToStreet(stop.latitude, stop.longitude);
+    const stopNode = {
+      lat: snapped.lat,
+      lng: snapped.lng,
+      stopId: stop.id,
+      streetName: snapped.streetName || stop.name
+    };
+
+    if (state.tempTraceNodes.length > 0) {
+      const prevNode = state.tempTraceNodes[state.tempTraceNodes.length - 1];
+      const seg = await fetchStreetAlignedSegment(prevNode, stopNode);
+      state.tempTraceSegments.push(seg);
+    }
+
+    state.tempTraceNodes.push(stopNode);
+    rebuildTraceCoordsFromSegments();
+    renderMapRoutes();
+    updateTraceBarMetrics();
+
+    showToast(`+ Paradero "${stop.shortName || stop.name}" conectado por calle (#${state.tempTraceNodes.length})`);
+  } finally {
+    state.isRoutingStreet = false;
+  }
 }
 
 function updateTraceBarMetrics() {
@@ -1745,43 +2100,63 @@ function updateTraceBarMetrics() {
   const metrics = computeRouteDistanceAndEta(state.tempTraceCoords, speed, state.tempTraceStopIds.length);
   const pill = document.getElementById('trace-route-metrics');
   if (pill) {
-    pill.textContent = `${metrics.totalDistanceKm} km • ~${metrics.estimatedTotalMinutes} min (${state.tempTraceStopIds.length} paraderos / ${state.tempTraceCoords.length} pts)`;
+    pill.textContent = `${metrics.totalDistanceKm} km • ~${metrics.estimatedTotalMinutes} min (${state.tempTraceNodes.length} nodos / ${state.tempTraceStopIds.length} paraderos)`;
   }
 }
 
 function undoTracePoint() {
-  if (!state.tracingRouteId || state.tempTraceCoords.length === 0) return;
-  const removed = state.tempTraceCoords.pop();
-  // Si el punto eliminado coincidía con el último paradero agregado, sincronizar lista
-  if (state.tempTraceStopIds.length > 0) {
-    const lastStopId = state.tempTraceStopIds[state.tempTraceStopIds.length - 1];
-    const lastStop = state.stops.find(s => s.id === lastStopId);
-    if (
-      lastStop &&
-      Math.abs(lastStop.latitude - removed[0]) < 0.0002 &&
-      Math.abs(lastStop.longitude - removed[1]) < 0.0002
-    ) {
-      state.tempTraceStopIds.pop();
-    }
+  if (!state.tracingRouteId || state.tempTraceNodes.length === 0) return;
+  state.tempTraceNodes.pop();
+  if (state.tempTraceSegments.length > 0) {
+    state.tempTraceSegments.pop();
   }
+  rebuildTraceCoordsFromSegments();
   renderMapRoutes();
   updateTraceBarMetrics();
+  showToast(`↶ Último nodo deshecho (${state.tempTraceNodes.length} nodos restantes).`);
 }
 
-function snapTraceToRouteStops() {
+function clearTracePoints() {
   if (!state.tracingRouteId) return;
-  const stopMap = new Map(state.stops.map(s => [s.id, s]));
-  const snapped = [];
-  state.tempTraceStopIds.forEach(sid => {
-    const st = stopMap.get(sid);
-    if (st) {
-      snapped.push([parseFloat(st.latitude.toFixed(6)), parseFloat(st.longitude.toFixed(6))]);
-    }
-  });
-  state.tempTraceCoords = snapped;
+  state.tempTraceNodes = [];
+  state.tempTraceSegments = [];
+  state.tempTraceCoords = [];
+  state.tempTraceStopIds = [];
   renderMapRoutes();
   updateTraceBarMetrics();
-  showToast(`Trazado ajustado exactamente a los ${snapped.length} paraderos de la ruta.`);
+  showToast('🧹 Lienzo de ruta limpiado. Haz clic en paraderos o calles del mapa para modelar desde cero.');
+}
+
+async function snapTraceToRouteStops() {
+  if (!state.tracingRouteId || state.isRoutingStreet) return;
+  const stopMap = buildFlexibleStopMap();
+
+  // Si hay nodos actuales los realineamos todos por las calles; si no hay nodos, usamos los paraderos de la ruta
+  let baseNodes = state.tempTraceNodes.length >= 2
+    ? [...state.tempTraceNodes]
+    : state.tempTraceStopIds.map(sid => {
+        const st = stopMap.get(sid);
+        return st ? { lat: st.latitude, lng: st.longitude, stopId: sid, streetName: st.name } : null;
+      }).filter(Boolean);
+
+  if (baseNodes.length < 2) {
+    showToast('⚠️ Agrega al menos 2 nodos o paraderos en el mapa para alinearlos a las calles.');
+    return;
+  }
+
+  state.isRoutingStreet = true;
+  showToast('🛣️ Calculando trazado exacto por las calles de Tacna...');
+  try {
+    const aligned = await alignNodesToStreetNetwork(baseNodes);
+    state.tempTraceNodes = aligned.nodes;
+    state.tempTraceSegments = aligned.segments;
+    rebuildTraceCoordsFromSegments();
+    renderMapRoutes();
+    updateTraceBarMetrics();
+    showToast(`✓ Recorrido alineado a las calles (${state.tempTraceNodes.length} nodos viales / ${state.tempTraceCoords.length} vértices).`);
+  } finally {
+    state.isRoutingStreet = false;
+  }
 }
 
 function saveRouteTrace() {
@@ -1790,7 +2165,7 @@ function saveRouteTrace() {
   if (!route) return;
 
   if (state.tempTraceCoords.length < 2) {
-    showToast('⚠️ La ruta necesita al menos 2 puntos en el mapa para guardar el trazado.');
+    showToast('⚠️ La ruta necesita al menos 2 nodos en el mapa para guardar el trazado.');
     return;
   }
 
@@ -1800,7 +2175,15 @@ function saveRouteTrace() {
     state.tempTraceStopIds.length
   );
 
-  route.keyStopIds = [...state.tempTraceStopIds];
+  if (state.tempTraceStopIds.length >= 2) {
+    route.keyStopIds = [...state.tempTraceStopIds];
+  }
+  route.controlNodes = state.tempTraceNodes.map(n => ({
+    lat: n.lat,
+    lng: n.lng,
+    stopId: n.stopId || null,
+    streetName: n.streetName || ''
+  }));
   route.pathCoordinates = [...state.tempTraceCoords];
   route.totalDistanceKm = metrics.totalDistanceKm;
   route.estimatedTotalMinutes = metrics.estimatedTotalMinutes;
@@ -1809,6 +2192,8 @@ function saveRouteTrace() {
   if (traceBar) traceBar.classList.add('hidden');
 
   state.tracingRouteId = null;
+  state.tempTraceNodes = [];
+  state.tempTraceSegments = [];
   state.tempTraceCoords = [];
   state.tempTraceStopIds = [];
 
@@ -1825,13 +2210,15 @@ function saveRouteTrace() {
     user: state.currentUser
   });
 
-  showToast(`✓ Trazado de ${route.code} guardado (${route.totalDistanceKm} km • ~${route.estimatedTotalMinutes} min).`);
+  showToast(`✓ Trazado vial de ${route.code} guardado (${route.totalDistanceKm} km • ~${route.estimatedTotalMinutes} min).`);
 }
 
 function cancelRouteTrace() {
   const traceBar = document.getElementById('route-trace-bar');
   if (traceBar) traceBar.classList.add('hidden');
   state.tracingRouteId = null;
+  state.tempTraceNodes = [];
+  state.tempTraceSegments = [];
   state.tempTraceCoords = [];
   state.tempTraceStopIds = [];
   renderMapRoutes();
@@ -1918,7 +2305,7 @@ function renderRouteStopsChecklist(selectedIds = []) {
 
   const selectedSet = new Set(selectedIds);
   // Ordenar: primero los ya seleccionados en su orden de secuencia, luego el resto
-  const stopMap = new Map(state.stops.map(s => [s.id, s]));
+  const stopMap = buildFlexibleStopMap();
   const orderedStops = [];
   selectedIds.forEach(sid => {
     const s = stopMap.get(sid);
@@ -1967,7 +2354,7 @@ function updateRouteModalEtaPreview() {
 
   if (countEl) countEl.textContent = selectedIds.length;
 
-  const stopMap = new Map(state.stops.map(s => [s.id, s]));
+  const stopMap = buildFlexibleStopMap();
   const coords = selectedIds.map(sid => {
     const s = stopMap.get(sid);
     return s ? [s.latitude, s.longitude] : null;
@@ -1987,7 +2374,7 @@ function closeRouteDialog() {
   }
 }
 
-function handleRouteFormSubmit(e) {
+async function handleRouteFormSubmit(e) {
   e.preventDefault();
 
   const id = document.getElementById('route-field-id').value.trim();
@@ -2008,13 +2395,14 @@ function handleRouteFormSubmit(e) {
     return;
   }
 
-  const stopMap = new Map(state.stops.map(s => [s.id, s]));
-  const stopCoords = keyStopIds.map(sid => {
+  const stopMap = buildFlexibleStopMap();
+  const rawStopNodes = keyStopIds.map(sid => {
     const s = stopMap.get(sid);
-    return s ? [parseFloat(s.latitude.toFixed(6)), parseFloat(s.longitude.toFixed(6))] : null;
+    return s
+      ? { lat: parseFloat(s.latitude.toFixed(6)), lng: parseFloat(s.longitude.toFixed(6)), stopId: sid, streetName: s.name }
+      : null;
   }).filter(Boolean);
 
-  const metrics = computeRouteDistanceAndEta(stopCoords, averageSpeedKmh, keyStopIds.length);
   const statusLabel = isOrdinary
     ? (isInService ? 'En Servicio • GPS & Pago QR Activo' : 'Fuera de Servicio Temporal • Sin unidades activas')
     : 'Línea Externa de Tacna • Sin Tracking GPS';
@@ -2024,12 +2412,24 @@ function handleRouteFormSubmit(e) {
   if (id) {
     const idx = state.routes.findIndex(r => r.id === id);
     if (idx !== -1) {
-      // Si la secuencia de paraderos cambió, regenerar pathCoordinates desde los paraderos seleccionados
       const prevIds = (state.routes[idx].keyStopIds || []).join(',');
       const nextIds = keyStopIds.join(',');
-      const pathCoordinates = (prevIds === nextIds && (state.routes[idx].pathCoordinates || []).length >= 2)
-        ? state.routes[idx].pathCoordinates
-        : stopCoords;
+      const alreadyStreetAligned =
+        prevIds === nextIds &&
+        Array.isArray(state.routes[idx].pathCoordinates) &&
+        state.routes[idx].pathCoordinates.length > keyStopIds.length + 2;
+
+      let pathCoordinates = state.routes[idx].pathCoordinates || [];
+      let controlNodes = state.routes[idx].controlNodes || rawStopNodes;
+
+      if (!alreadyStreetAligned) {
+        showToast(`🛣️ Alineando paraderos de "${code}" por las calles de Tacna...`);
+        const aligned = await alignNodesToStreetNetwork(rawStopNodes);
+        pathCoordinates = aligned.fullCoords.length >= 2
+          ? aligned.fullCoords
+          : rawStopNodes.map(n => [n.lat, n.lng]);
+        controlNodes = aligned.nodes;
+      }
 
       const updatedMetrics = computeRouteDistanceAndEta(pathCoordinates, averageSpeedKmh, keyStopIds.length);
 
@@ -2048,14 +2448,22 @@ function handleRouteFormSubmit(e) {
         scheduleLabel,
         colorHex,
         keyStopIds,
+        controlNodes,
         pathCoordinates,
         totalDistanceKm: updatedMetrics.totalDistanceKm,
         estimatedTotalMinutes: updatedMetrics.estimatedTotalMinutes
       };
       state.routes[idx] = savedRoute;
-      showToast(`✓ Ruta "${code}" actualizada con éxito.`);
+      showToast(`✓ Ruta "${code}" actualizada y alineada a las calles.`);
     }
   } else {
+    showToast(`🛣️ Trazando nueva ruta "${code}" por las calles de Tacna...`);
+    const aligned = await alignNodesToStreetNetwork(rawStopNodes);
+    const pathCoordinates = aligned.fullCoords.length >= 2
+      ? aligned.fullCoords
+      : rawStopNodes.map(n => [n.lat, n.lng]);
+    const metrics = computeRouteDistanceAndEta(pathCoordinates, averageSpeedKmh, keyStopIds.length);
+
     const newId = `route-${slugify(code)}-${Date.now().toString(36)}`;
     savedRoute = {
       id: newId,
@@ -2073,13 +2481,14 @@ function handleRouteFormSubmit(e) {
       colorHex,
       iconName: 'bus.doubledecker.fill',
       keyStopIds,
-      pathCoordinates: stopCoords,
+      controlNodes: aligned.nodes,
+      pathCoordinates,
       totalDistanceKm: metrics.totalDistanceKm,
       estimatedTotalMinutes: metrics.estimatedTotalMinutes
     };
     state.routes.push(savedRoute);
     state.selectedRouteId = newId;
-    showToast(`✓ Nueva ruta "${code}" creada y sincronizada.`);
+    showToast(`✓ Nueva ruta "${code}" creada y alineada a las calles de Tacna.`);
   }
 
   saveRoutesToLocalStorage();
@@ -2531,6 +2940,7 @@ function setupUIEventListeners() {
 
   // Controles de la Barra Flotante de Trazado de Ruta
   document.getElementById('btn-undo-trace-point')?.addEventListener('click', undoTracePoint);
+  document.getElementById('btn-clear-trace-points')?.addEventListener('click', clearTracePoints);
   document.getElementById('btn-snap-trace-stops')?.addEventListener('click', snapTraceToRouteStops);
   document.getElementById('btn-cancel-trace')?.addEventListener('click', cancelRouteTrace);
   document.getElementById('btn-save-trace')?.addEventListener('click', saveRouteTrace);

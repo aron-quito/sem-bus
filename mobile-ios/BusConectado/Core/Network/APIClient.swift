@@ -27,7 +27,7 @@ final class APIClient: ObservableObject {
     static let shared = APIClient()
 
     /// URL del backend (Servidor Cloud Seguro HTTPS: 34.61.17.233.sslip.io o local en desarrollo)
-    @Published var baseURLString: String
+    @Published var baseURLString: String = "https://34.61.17.233.sslip.io/api/v1"
 
     private var baseURL: URL {
         URL(string: baseURLString) ?? URL(string: "https://34.61.17.233.sslip.io/api/v1")!
@@ -67,12 +67,11 @@ final class APIClient: ObservableObject {
             resolvedURL = savedURL ?? defaultURL
         }
 
-        self.baseURLString = resolvedURL
-
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 4.0
         configuration.timeoutIntervalForResource = 8.0
         self.session = URLSession(configuration: configuration)
+        self._baseURLString = Published(initialValue: resolvedURL)
     }
 
     func request<T: Decodable>(

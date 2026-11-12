@@ -1,5 +1,6 @@
 import Foundation
 import CoreLocation
+import MapKit
 
 // MARK: - Roles y Tarifas (1 PEN = 10 Puntos BC)
 enum UserRoleType: String, Codable, CaseIterable {
@@ -1677,4 +1678,55 @@ struct ActiveRouteGuidanceState: Equatable {
     let destination: TacnaDestinationPlace
     let selectedOptionIndex: Int
     var remainingBusArrivalSeconds: Int
+}
+
+// MARK: - Motor Nativo de Alineación a Calles en Apple Maps (MKDirections)
+enum NativeStreetRouter {
+    /// Calcula la polilínea exacta alineada a las calles de Tacna entre una secuencia de puntos usando MKDirections nativo.
+    static func alignPolylineToStreets(
+        waypoints: [CLLocationCoordinate2D],
+        transportType: MKDirectionsTransportType = .automobile
+    ) async -> [CLLocationCoordinate2D] {
+        guard waypoints.count >= 2 else { return waypoints }
+        var alignedResult: [CLLocationCoordinate2D] = []
+
+        for idx in 0..<(waypoints.count - 1) {
+            let start = waypoints[idx]
+            let end = waypoints[idx + 1]
+
+            let request = MKDirections.Request()
+            request.source = MKMapItem(placemark: MKPlacemark(coordinate: start))
+            request.destination = MKMapItem(placemark: MKPlacemark(coordinate: end))
+            request.transportType = transportType
+
+            do {
+                let response = try await MKDirections(request: request).calculate()
+                if let route = response.routes.first {
+                    let count = route.polyline.pointCount
+                    if count >= 2 {
+                        var segmentCoords = Array(repeating: kCLLocationCoordinate2DInvalid, count: count)
+                        route.polyline.getCoordinates(&segmentCoords, range: NSRange(location: 0, length: count))
+                        for coord in segmentCoords where CLLocationCoordinate2DIsValid(coord) {
+                            if let last = alignedResult.last,
+                               abs(last.latitude - coord.latitude) < 0.000005,
+                               abs(last.longitude - coord.longitude) < 0.000005 {
+                                continue
+                            }
+                            alignedResult.append(coord)
+                        }
+                        continue
+                    }
+                }
+            } catch {
+                // Fallback al tramo directo si MKDirections no responde
+            }
+
+            if alignedResult.isEmpty {
+                alignedResult.append(start)
+            }
+            alignedResult.append(end)
+        }
+
+        return alignedResult.count >= 2 ? alignedResult : waypoints
+    }
 }

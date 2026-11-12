@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
   <div class="app-layout">
@@ -251,17 +251,18 @@
           <div class="relocation-pulse" id="trace-route-color-dot"></div>
           <div>
             <div class="relocation-title">
-              Trazando recorrido: <strong id="trace-route-name">Ruta 14</strong>
+              Modelando ruta en red vial: <strong id="trace-route-name">Ruta 14</strong>
               <span class="trace-metrics-pill" id="trace-route-metrics">0.0 km • ~0 min</span>
             </div>
             <div class="relocation-coords" id="trace-route-hint">
-              Haz clic en los paraderos (en orden) para sumarlos a la ruta, o haz clic en las calles para trazar vértices del camino.
+              Haz clic en calles o paraderos: cada nodo se alinea automáticamente a las calles de Tacna. Arrastra cualquier nodo # para ajustar la avenida.
             </div>
           </div>
         </div>
         <div class="relocation-actions">
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-undo-trace-point" title="Quitar último punto del trazado">↶ Deshacer punto</button>
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-snap-trace-stops" title="Ajustar trazado exactamente a la secuencia de paraderos de esta ruta">🚏 Ajustar a Paraderos</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-undo-trace-point" title="Quitar último nodo y su tramo de calle">↶ Deshacer nodo</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-clear-trace-points" title="Limpiar todos los nodos para trazar desde cero sobre el mapa">🧹 Limpiar</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-snap-trace-stops" title="Enrutar automáticamente todos los paraderos de esta línea por las calles de Tacna">🛣️ Alinear a Calles</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-trace">Cancelar</button>
           <button type="button" class="btn btn-primary btn-sm btn-establish" id="btn-save-trace">
             ✓ Guardar Trazado
@@ -529,7 +530,7 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <!-- Lógica de la Aplicación -->
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
 

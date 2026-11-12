@@ -55,6 +55,11 @@ struct RoutePlannerView: View {
     @State private var selectedOptionIndex: Int = 1 // 1 = Ruta principal (Recomendada), 2 = Ruta alterna, 3 = Caminata directa
     @State private var selectedFilter: RouteQuickFilter = .fastest
 
+    // Polilíneas alineadas nativamente a las calles de Apple Maps (MKDirections)
+    @State private var plannerWalkStreetCoords: [CLLocationCoordinate2D] = []
+    @State private var plannerBusStreetCoords: [CLLocationCoordinate2D] = []
+    @State private var plannerFinalWalkStreetCoords: [CLLocationCoordinate2D] = []
+
     @State private var routeMapCamera: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: -18.0145, longitude: -70.2518),
@@ -447,8 +452,8 @@ struct RoutePlannerView: View {
                         }
                     }
 
-                    // Tramo 1: Caminata hacia el Paradero Plaza Zela (Punteado Cian)
-                    MapPolyline(coordinates: selectedDestination.walkingToBoardCoordinates)
+                    // Tramo 1: Caminata hacia el Paradero (Punteado Cian alineado a calles)
+                    MapPolyline(coordinates: plannerWalkStreetCoords.count >= 2 ? plannerWalkStreetCoords : selectedDestination.walkingToBoardCoordinates)
                         .stroke(
                             BCTheme.cyanAccent,
                             style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: [6, 7])
@@ -456,8 +461,8 @@ struct RoutePlannerView: View {
 
                     // Si el destino usa Bus (Caso 2 y Caso 3) y no eligió la Opción 3 (Caminata Directa)
                     if selectedDestination.routeCase != .walkOnlyNearby && selectedOptionIndex != 3 {
-                        // Tramo 2: Recorrido en Bus (Azul Eléctrico continuo)
-                        MapPolyline(coordinates: selectedDestination.busTransitCoordinates)
+                        // Tramo 2: Recorrido en Bus (Azul Eléctrico continuo alineado a calles)
+                        MapPolyline(coordinates: plannerBusStreetCoords.count >= 2 ? plannerBusStreetCoords : selectedDestination.busTransitCoordinates)
                             .stroke(
                                 BCTheme.royalBlue,
                                 style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
@@ -502,7 +507,7 @@ struct RoutePlannerView: View {
 
                     // Tramo 3: Caminata final desde el paradero de bajada hasta el destino (si aplica)
                     if !selectedDestination.walkingFinalCoordinates.isEmpty {
-                        MapPolyline(coordinates: selectedDestination.walkingFinalCoordinates)
+                        MapPolyline(coordinates: plannerFinalWalkStreetCoords.count >= 2 ? plannerFinalWalkStreetCoords : selectedDestination.walkingFinalCoordinates)
                             .stroke(
                                 BCTheme.cyanAccent,
                                 style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: [6, 7])
@@ -1476,6 +1481,35 @@ struct RoutePlannerView: View {
                     span: MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLon)
                 )
             )
+        }
+
+        // Alinear tramos de caminata y bus a las calles reales de Tacna mediante MKDirections
+        plannerWalkStreetCoords = place.walkingToBoardCoordinates
+        plannerBusStreetCoords = place.busTransitCoordinates
+        plannerFinalWalkStreetCoords = place.walkingFinalCoordinates
+
+        let targetId = place.id
+        Task {
+            async let walkAligned = NativeStreetRouter.alignPolylineToStreets(
+                waypoints: place.walkingToBoardCoordinates,
+                transportType: .walking
+            )
+            async let busAligned = NativeStreetRouter.alignPolylineToStreets(
+                waypoints: place.busTransitCoordinates,
+                transportType: .automobile
+            )
+            async let finalAligned = NativeStreetRouter.alignPolylineToStreets(
+                waypoints: place.walkingFinalCoordinates,
+                transportType: .walking
+            )
+            let (wCoords, bCoords, fCoords) = await (walkAligned, busAligned, finalAligned)
+            await MainActor.run {
+                if selectedDestination.id == targetId {
+                    plannerWalkStreetCoords = wCoords
+                    plannerBusStreetCoords = bCoords
+                    plannerFinalWalkStreetCoords = fCoords
+                }
+            }
         }
     }
 }
