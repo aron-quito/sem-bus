@@ -17,6 +17,7 @@ struct ExploreMapView: View {
 
     // Polilíneas alineadas nativamente a las calles de Tacna (Apple Maps MKDirections / OSRM)
     @State private var projectedRouteStreetCoords: [CLLocationCoordinate2D] = []
+    @State private var ordinaryRoutesStreetCoords: [String: [CLLocationCoordinate2D]] = [:]
     @State private var guidedWalkStreetCoords: [CLLocationCoordinate2D] = []
     @State private var guidedBusStreetCoords: [CLLocationCoordinate2D] = []
     @State private var guidedFinalWalkStreetCoords: [CLLocationCoordinate2D] = []
@@ -28,6 +29,10 @@ struct ExploreMapView: View {
             span: MKCoordinateSpan(latitudeDelta: 0.020, longitudeDelta: 0.020)
         )
     )
+
+    private var ordinaryRoutesInService: [TacnaOfficialRouteCatalogItem] {
+        viewModel.dynamicRoutes.filter { $0.isOrdinaryInService }
+    }
 
     /// Paraderos visibles sobre el mapa cuando el usuario filtra por "Paraderos" o proyecta una ruta
     private var visibleCatalogStopsOnMap: [TacnaDestinationPlace] {
@@ -79,10 +84,11 @@ struct ExploreMapView: View {
                                 onDismissSearchFocus?()
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     viewModel.mapCategory = category
-                                    if category != .routes {
-                                        viewModel.activeRouteOverlayOnMap = nil
-                                    } else if viewModel.activeRouteOverlayOnMap == nil {
-                                        viewModel.activeRouteOverlayOnMap = viewModel.dynamicRoutes.first(where: { $0.isOrdinaryInService }) ?? viewModel.dynamicRoutes.first
+                                    viewModel.activeRouteOverlayOnMap = nil
+                                }
+                                if category == .routes {
+                                    Task {
+                                        await preloadOrdinaryRoutesStreetAlignment()
                                     }
                                 }
                             } label: {
@@ -90,11 +96,7 @@ struct ExploreMapView: View {
                                     Image(systemName: iconForCategory(category))
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundColor(isSelected ? .white : colorForCategory(category))
-                                    Text(
-                                        category == .stops
-                                            ? "Paraderos (\(viewModel.dynamicCatalogStops.count))"
-                                            : (category == .routes ? "Rutas (\(viewModel.dynamicRoutes.count))" : category.rawValue)
-                                    )
+                                    Text(chipTitle(for: category))
                                         .font(.caption.weight(.semibold))
                                         .foregroundColor(isSelected ? .white : .white.opacity(0.9))
                                 }
@@ -208,6 +210,26 @@ struct ExploreMapView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.white.opacity(0.75))
                         }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color(hex: "#1F262E").opacity(0.95))
+                    .clipShape(Capsule())
+                    .padding(.horizontal, 14)
+                } else if viewModel.mapCategory == .routes {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(ordinaryRoutesInService.isEmpty ? BCTheme.amber : BCTheme.emerald)
+                            .frame(width: 8, height: 8)
+                        Text(
+                            ordinaryRoutesInService.isEmpty
+                                ? "Sin rutas ordinarias en circulación"
+                                : "Rutas ordinarias en circulación (\(ordinaryRoutesInService.count)) · \(viewModel.filteredBuses.count) buses en vivo"
+                        )
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        Spacer()
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -838,6 +860,19 @@ struct ExploreMapView: View {
                         )
                     )
             }
+        } else if viewModel.mapCategory == .routes {
+            ForEach(ordinaryRoutesInService) { route in
+                let fallbackCoords = route.resolvedPolylineCoordinates(using: viewModel.dynamicCatalogStops)
+                let cached = ordinaryRoutesStreetCoords[route.id] ?? []
+                let coords = cached.count >= 2 ? cached : fallbackCoords
+                if coords.count >= 2 {
+                    MapPolyline(coordinates: coords)
+                        .stroke(
+                            Color(hex: route.colorHex),
+                            style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round)
+                        )
+                }
+            }
         }
 
         ForEach(visibleCatalogStopsOnMap) { catalogStop in
@@ -1283,13 +1318,13 @@ struct ExploreMapView: View {
                 )
 
             // Punto de abordaje (Paradero Oficial para Ordinaria vs Vía Libre para Externa)
-            Annotation(cand.boardingPointName, coordinate: cand.boardingCoordinate) {
+            Annotation("", coordinate: cand.boardingCoordinate) {
                 HStack(spacing: 4) {
                     Circle()
                         .fill(isOrd ? BCTheme.emerald : BCTheme.amber)
                         .frame(width: 14, height: 14)
                         .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                    Text(isOrd ? "Subir en Paradero \(cand.boardingPointName)" : "Subir en vía (\(cand.routeCode) • Externa)")
+                    Text(isOrd ? "Subir en Paradero \(cand.boardingPointName)" : "Subir en vía (\(cand.routeCode))")
                         .font(.system(size: 8.5, weight: .bold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 6)
@@ -1299,21 +1334,17 @@ struct ExploreMapView: View {
                 }
             }
 
-            // Punto de bajada
+            // Punto visual de bajada sin texto invasivo
             if cand.walkFinalMeters >= 35 {
-                Annotation(cand.alightingPointName, coordinate: cand.alightingCoordinate) {
-                    HStack(spacing: 4) {
+                Annotation("", coordinate: cand.alightingCoordinate) {
+                    ZStack {
+                        Circle()
+                            .fill(BCTheme.cyanAccent.opacity(0.28))
+                            .frame(width: 22, height: 22)
                         Circle()
                             .fill(BCTheme.cyanAccent)
                             .frame(width: 12, height: 12)
                             .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                        Text("Bajar: \(cand.alightingPointName)")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(BCTheme.elevatedSurface.opacity(0.95))
-                            .clipShape(Capsule())
                     }
                 }
             }
@@ -1367,9 +1398,44 @@ struct ExploreMapView: View {
         }
     }
 
+    private func chipTitle(for category: MapFilterCategory) -> String {
+        switch category {
+        case .live:
+            return viewModel.activeBuses.isEmpty ? "En vivo" : "En vivo (\(viewModel.activeBuses.count))"
+        case .routes:
+            return "Rutas (\(ordinaryRoutesInService.count))"
+        case .stops:
+            return "Paraderos (\(viewModel.dynamicCatalogStops.count))"
+        }
+    }
+
+    private func preloadOrdinaryRoutesStreetAlignment() async {
+        let activeRoutes = ordinaryRoutesInService
+        for route in activeRoutes {
+            if ordinaryRoutesStreetCoords[route.id]?.count ?? 0 >= 2 {
+                continue
+            }
+            let rawCoords = route.resolvedPolylineCoordinates(using: viewModel.dynamicCatalogStops)
+            guard rawCoords.count >= 2 else { continue }
+            if rawCoords.count <= route.keyStopIds.count + 2 {
+                let aligned = await NativeStreetRouter.alignPolylineToStreets(
+                    waypoints: rawCoords,
+                    transportType: .automobile
+                )
+                await MainActor.run {
+                    ordinaryRoutesStreetCoords[route.id] = aligned
+                }
+            } else {
+                await MainActor.run {
+                    ordinaryRoutesStreetCoords[route.id] = rawCoords
+                }
+            }
+        }
+    }
+
     private func iconForCategory(_ category: MapFilterCategory) -> String {
         switch category {
-        case .all: return "sparkles"
+        case .live: return "dot.radiowaves.left.and.right"
         case .routes: return "point.topleft.down.curvedto.point.bottomright.up"
         case .stops: return "mappin.and.ellipse"
         }
@@ -1377,7 +1443,7 @@ struct ExploreMapView: View {
 
     private func colorForCategory(_ category: MapFilterCategory) -> Color {
         switch category {
-        case .all: return BCTheme.royalBlue
+        case .live: return BCTheme.royalBlue
         case .routes: return BCTheme.emerald
         case .stops: return BCTheme.cyanAccent
         }

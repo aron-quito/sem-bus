@@ -123,6 +123,11 @@ struct MainTabView: View {
                 .focused($isSearchFieldFocused)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
+                .onSubmit {
+                    Task {
+                        await viewModel.performLiveMapKitSearchInTacna(query: viewModel.searchQuery)
+                    }
+                }
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         viewModel.isSearchDropdownVisible = true
@@ -288,11 +293,19 @@ struct MainTabView: View {
 
             if viewModel.filteredSearchDestinations.isEmpty {
                 HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.gray)
-                    Text("Buscando \"\(viewModel.searchQuery)\" en el mapa de Tacna...")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                    if viewModel.isSearchingMapPlaces {
+                        ProgressView()
+                            .tint(BCTheme.cyanAccent)
+                        Text("Buscando \"\(viewModel.searchQuery)\" en Apple Maps y OSM...")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    } else {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.gray)
+                        Text("Sin resultados en Tacna para \"\(viewModel.searchQuery)\"")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
                     Spacer()
                 }
                 .padding(14)

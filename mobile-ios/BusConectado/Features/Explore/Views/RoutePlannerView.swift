@@ -474,6 +474,9 @@ struct RoutePlannerView: View {
                     .focused($isSearchInputFocused)
                     .autocorrectionDisabled()
                     .submitLabel(.search)
+                    .onSubmit {
+                        triggerLiveAPISearch(query: plannerSearchText, immediate: true)
+                    }
 
                     if !plannerSearchText.isEmpty {
                         Button {
@@ -889,7 +892,7 @@ struct RoutePlannerView: View {
                             )
 
                         // Marcador de Abordaje
-                        Annotation(cand.boardingPointName, coordinate: cand.boardingCoordinate) {
+                        Annotation("", coordinate: cand.boardingCoordinate) {
                             HStack(spacing: 4) {
                                 Circle()
                                     .fill(isOrd ? BCTheme.emerald : BCTheme.amber)
@@ -899,7 +902,7 @@ struct RoutePlannerView: View {
                                 Text(
                                     isOrd
                                         ? "Subir en Paradero: \(cand.boardingPointName) (\(cand.routeCode))"
-                                        : "Subir en vía: \(cand.routeCode) (Externa • Sin paradero fijo)"
+                                        : "Subir en vía: \(cand.routeCode) (Externa)"
                                 )
                                 .font(.system(size: 8.5, weight: .bold))
                                 .foregroundColor(isOrd ? BCTheme.emerald : BCTheme.amber)
@@ -914,25 +917,16 @@ struct RoutePlannerView: View {
                             }
                         }
 
-                        // Marcador de Descenso (Bajada)
-                        Annotation(cand.alightingPointName, coordinate: cand.alightingCoordinate) {
-                            HStack(spacing: 4) {
+                        // Punto visual de descenso (bajada) sin recuadro de texto que interrumpa la vista
+                        Annotation("", coordinate: cand.alightingCoordinate) {
+                            ZStack {
+                                Circle()
+                                    .fill(BCTheme.cyanAccent.opacity(0.28))
+                                    .frame(width: 24, height: 24)
                                 Circle()
                                     .fill(BCTheme.cyanAccent)
-                                    .frame(width: 14, height: 14)
+                                    .frame(width: 13, height: 13)
                                     .overlay(Circle().stroke(Color.white, lineWidth: 2))
-
-                                Text(
-                                    isOrd
-                                        ? "Bajar en Paradero: \(cand.alightingPointName)"
-                                        : "Bajar en vía: \(cand.alightingPointName)"
-                                )
-                                .font(.system(size: 8.5, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(BCTheme.elevatedSurface.opacity(0.95))
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                         }
                     }
@@ -1865,14 +1859,15 @@ struct RoutePlannerView: View {
         if trimmed.isEmpty {
             return sourceList
         }
-        return sourceList.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) ||
-            $0.shortName.localizedCaseInsensitiveContains(trimmed) ||
-            $0.subtitle.localizedCaseInsensitiveContains(trimmed)
+        let folded = AuthViewModel.normalizeSearchFold(trimmed)
+        let tokens = folded.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        return sourceList.filter { place in
+            let haystack = AuthViewModel.normalizeSearchFold("\(place.name) \(place.shortName) \(place.subtitle)")
+            return tokens.allSatisfy { haystack.contains($0) }
         }
     }
 
-    private func triggerLiveAPISearch(query: String) {
+    private func triggerLiveAPISearch(query: String, immediate: Bool = false) {
         searchTask?.cancel()
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
@@ -1882,7 +1877,9 @@ struct RoutePlannerView: View {
         }
         isSearchingAPI = true
         searchTask = Task {
-            try? await Task.sleep(nanoseconds: 240_000_000)
+            if !immediate {
+                try? await Task.sleep(nanoseconds: 220_000_000)
+            }
             guard !Task.isCancelled else { return }
             let results = await viewModel.searchMapKitPlacesInTacna(query: trimmed)
             guard !Task.isCancelled else { return }

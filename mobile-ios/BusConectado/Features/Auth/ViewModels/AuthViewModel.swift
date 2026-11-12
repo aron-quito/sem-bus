@@ -12,7 +12,7 @@ enum OnboardingStep {
 }
 
 enum MapFilterCategory: String, CaseIterable {
-    case all = "Todo"
+    case live = "En vivo"
     case routes = "Rutas"
     case stops = "Paraderos"
 }
@@ -43,7 +43,7 @@ final class AuthViewModel: ObservableObject {
     @Published var routes: [BusRouteModel] = []
     @Published var stops: [BusStopModel] = []
     @Published var activeBuses: [ActiveBusModel] = []
-    @Published var mapCategory: MapFilterCategory = .all
+    @Published var mapCategory: MapFilterCategory = .live
     @Published var searchQuery: String = ""
 
     // MARK: - Estado de Viaje en Curso (CU-06), Buscador Predictivo y Módulo "Ir / Cómo Llegar"
@@ -61,6 +61,7 @@ final class AuthViewModel: ObservableObject {
     @Published var searchedDestinationPin: TacnaDestinationPlace? = nil
     @Published var isEmptyTransitBannerDismissed: Bool = false
     @Published var liveMapSearchResults: [TacnaDestinationPlace] = []
+    @Published var isSearchingMapPlaces: Bool = false
     @Published var activeRouteOverlayOnMap: TacnaOfficialRouteCatalogItem? = nil
 
     // Estado del Escenario Pantalla Completa "Ir / Cómo Llegar" (Automatización de Rutas)
@@ -81,6 +82,8 @@ final class AuthViewModel: ObservableObject {
     private var routeGuidanceTimer: AnyCancellable?
     private var appForegroundCancellable: AnyCancellable?
     private var searchDebounceCancellable: AnyCancellable?
+    private var liveSearchTask: Task<Void, Never>?
+    private var liveSearchToken: Int = 0
     private var lastSyncDate: Date? = nil
 
     init() {
@@ -122,14 +125,21 @@ final class AuthViewModel: ObservableObject {
 
         setupSmartSync()
 
-        // Búsqueda en vivo de cualquier lugar del mapa de Tacna mediante Apple MapKit (MKLocalSearch)
+        // Búsqueda en vivo de cualquier lugar del mapa de Tacna (Apple MapKit + Completer + OSM Photon/Nominatim)
         searchDebounceCancellable = $searchQuery
             .removeDuplicates()
-            .debounce(for: .milliseconds(280), scheduler: RunLoop.main)
+            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
             .sink { [weak self] query in
                 guard let self = self else { return }
-                Task {
-                    await self.performLiveMapKitSearchInTacna(query: query)
+                self.liveSearchTask?.cancel()
+                let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard trimmed.count >= 2 else {
+                    self.liveMapSearchResults = []
+                    self.isSearchingMapPlaces = false
+                    return
+                }
+                self.liveSearchTask = Task { [weak self] in
+                    await self?.performLiveMapKitSearchInTacna(query: trimmed)
                 }
             }
     }
@@ -146,7 +156,7 @@ final class AuthViewModel: ObservableObject {
 
     // MARK: - Filtros Dinámicos del Mapa (Listos para cuando existan paraderos y buses)
     var filteredStops: [BusStopModel] {
-        guard mapCategory == .all || mapCategory == .stops else { return [] }
+        guard mapCategory == .stops else { return [] }
         if searchQuery.trimmingCharacters(in: .whitespaces).isEmpty {
             return stops
         }
@@ -157,80 +167,303 @@ final class AuthViewModel: ObservableObject {
     }
 
     var filteredBuses: [ActiveBusModel] {
-        guard mapCategory == .all || mapCategory == .routes else { return [] }
+        guard mapCategory == .live || mapCategory == .routes else { return [] }
         return activeBuses
     }
 
+    /// Normaliza texto eliminando tildes y mayúsculas para coincidencias tolerantes ("polleria" == "Pollería")
+    nonisolated static func normalizeSearchFold(_ raw: String) -> String {
+        raw.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "es_PE"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Catálogo predictivo para el buscador superior:
-    /// Cuando el usuario escribe una búsqueda (ej: "Plaza Vea"), prioriza las ubicaciones reales de la API de Mapas (MKLocalSearch)
-    /// seguidas de los paraderos oficiales de bus que coincidan.
+    /// Prioriza las ubicaciones reales devueltas por el motor híbrido (Apple MapKit + OSM) seguidas de paraderos oficiales coincidentes.
     var filteredSearchDestinations: [TacnaDestinationPlace] {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return dynamicCatalogStops
         }
-        let catalogMatches = dynamicCatalogStops.filter {
-            $0.name.localizedCaseInsensitiveContains(trimmed) ||
-            $0.shortName.localizedCaseInsensitiveContains(trimmed) ||
-            $0.subtitle.localizedCaseInsensitiveContains(trimmed) ||
-            $0.category.rawValue.localizedCaseInsensitiveContains(trimmed) ||
-            $0.routesPassing.joined(separator: " ").localizedCaseInsensitiveContains(trimmed)
+        let foldedQuery = Self.normalizeSearchFold(trimmed)
+        let queryTokens = foldedQuery.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let catalogMatches = dynamicCatalogStops.filter { place in
+            let haystack = Self.normalizeSearchFold(
+                "\(place.name) \(place.shortName) \(place.subtitle) \(place.category.rawValue) \(place.routesPassing.joined(separator: " "))"
+            )
+            if queryTokens.isEmpty { return false }
+            return queryTokens.allSatisfy { haystack.contains($0) }
         }
-        // Priorizar siempre los Puntos de Interés reales devueltos por la API (MKLocalSearch) sin ocultarlos por nombres de paraderos
         return liveMapSearchResults + catalogMatches
     }
 
     func performLiveMapKitSearchInTacna(query: String) async {
-        let results = await searchMapKitPlacesInTacna(query: query)
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            await MainActor.run {
+                self.liveMapSearchResults = []
+                self.isSearchingMapPlaces = false
+            }
+            return
+        }
+
+        liveSearchToken += 1
+        let requestToken = liveSearchToken
+        isSearchingMapPlaces = true
+
+        let results = await searchMapKitPlacesInTacna(query: trimmed)
+        guard !Task.isCancelled else { return }
+
         await MainActor.run {
+            guard requestToken == self.liveSearchToken else { return }
             self.liveMapSearchResults = results
+            self.isSearchingMapPlaces = false
         }
     }
 
-    /// Consulta directamente la API de Apple MapKit (MKLocalSearch) para obtener ubicaciones y Puntos de Interés reales en Tacna
+    /// Motor híbrido de búsqueda en Tacna: combina Apple MapKit (MKLocalSearch + MKLocalSearchCompleter)
+    /// y OpenStreetMap (Photon + Nominatim) en paralelo para encontrar comercios locales, pollerías, ferias y calles.
     func searchMapKitPlacesInTacna(query: String) async -> [TacnaDestinationPlace] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
             return []
         }
 
-        let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = "\(trimmed), Tacna, Perú"
-        request.resultTypes = [.pointOfInterest, .address]
-        request.region = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: -18.0135, longitude: -70.2519),
-            span: MKCoordinateSpan(latitudeDelta: 0.14, longitudeDelta: 0.14)
+        let tacnaCenter = CLLocationCoordinate2D(latitude: -18.0135, longitude: -70.2519)
+        let tacnaRegion = MKCoordinateRegion(
+            center: tacnaCenter,
+            span: MKCoordinateSpan(latitudeDelta: 0.24, longitudeDelta: 0.24)
         )
 
-        let search = MKLocalSearch(request: request)
-        do {
-            let response = try await search.start()
-            var seenKeys = Set<String>()
-            let mapped: [TacnaDestinationPlace] = response.mapItems.prefix(10).compactMap { item in
-                guard let name = item.name else { return nil }
-                let coord = item.placemark.coordinate
-                // Filtrar que esté dentro de la región de Tacna
-                guard coord.latitude < -17.4 && coord.latitude > -18.6 else { return nil }
+        async let directMapKit = Self.searchAppleMapKitDirect(query: trimmed, region: tacnaRegion)
+        async let completerMapKit = Self.searchAppleMapKitCompleter(query: trimmed, region: tacnaRegion)
+        async let photonOSM = Self.searchPhotonOSMPlaces(query: trimmed)
+        async let nominatimOSM = Self.searchNominatimOSMPlaces(query: trimmed)
 
-                let street = [item.placemark.thoroughfare, item.placemark.subThoroughfare]
-                    .compactMap { $0 }
-                    .joined(separator: " ")
-                let locality = item.placemark.locality ?? "Tacna"
-                let addressDesc = street.isEmpty ? locality : "\(street), \(locality)"
+        let combined = await directMapKit + completerMapKit + photonOSM + nominatimOSM
 
-                let dedupKey = "\(name.lowercased())-\(String(format: "%.4f", coord.latitude))-\(String(format: "%.4f", coord.longitude))"
-                guard !seenKeys.contains(dedupKey) else { return nil }
-                seenKeys.insert(dedupKey)
-
-                return TacnaDestinationPlace.fromMapItem(
-                    name: name,
-                    subtitle: "📍 \(addressDesc) • API del Mapa",
-                    coordinate: coord
-                )
+        // Deduplicar por nombre normalizado y proximidad (~130m) y filtrar estrictamente dentro de Tacna metropolitana
+        var deduplicated: [TacnaDestinationPlace] = []
+        for candidate in combined {
+            guard candidate.latitude >= -18.35 && candidate.latitude <= -17.70,
+                  candidate.longitude >= -70.65 && candidate.longitude <= -69.95 else {
+                continue
             }
-            return mapped
-        } catch {
+            let candFolded = Self.normalizeSearchFold(candidate.name)
+            let isDuplicate = deduplicated.contains { existing in
+                let latDiff = abs(existing.latitude - candidate.latitude)
+                let lonDiff = abs(existing.longitude - candidate.longitude)
+                let sameSpot = latDiff < 0.0012 && lonDiff < 0.0012
+                let existingFolded = Self.normalizeSearchFold(existing.name)
+                return sameSpot && (existingFolded == candFolded || existingFolded.contains(candFolded) || candFolded.contains(existingFolded))
+            }
+            if !isDuplicate {
+                deduplicated.append(candidate)
+            }
+        }
+
+        let foldedQuery = Self.normalizeSearchFold(trimmed)
+        let queryTokens = foldedQuery.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let centerLoc = CLLocation(latitude: tacnaCenter.latitude, longitude: tacnaCenter.longitude)
+
+        return deduplicated
+            .sorted { lhs, rhs in
+                let lName = Self.normalizeSearchFold(lhs.name)
+                let rName = Self.normalizeSearchFold(rhs.name)
+                let lExact = lName.contains(foldedQuery) ? 2 : queryTokens.filter { lName.contains($0) }.count
+                let rExact = rName.contains(foldedQuery) ? 2 : queryTokens.filter { rName.contains($0) }.count
+                if lExact != rExact {
+                    return lExact > rExact
+                }
+                let lDist = CLLocation(latitude: lhs.latitude, longitude: lhs.longitude).distance(from: centerLoc)
+                let rDist = CLLocation(latitude: rhs.latitude, longitude: rhs.longitude).distance(from: centerLoc)
+                return lDist < rDist
+            }
+            .prefix(15)
+            .map { $0 }
+    }
+
+    private nonisolated static func searchAppleMapKitDirect(query: String, region: MKCoordinateRegion) async -> [TacnaDestinationPlace] {
+        // Sin agregar ", Tacna, Perú" para no romper la búsqueda de POIs locales en Apple MapKit
+        let primaryReq = MKLocalSearch.Request()
+        primaryReq.naturalLanguageQuery = query
+        primaryReq.resultTypes = [.pointOfInterest, .address]
+        primaryReq.region = region
+
+        var collected: [MKMapItem] = []
+        if let response = try? await MKLocalSearch(request: primaryReq).start() {
+            collected.append(contentsOf: response.mapItems)
+        }
+
+        if collected.count < 4, !normalizeSearchFold(query).contains("tacna") {
+            let scopedReq = MKLocalSearch.Request()
+            scopedReq.naturalLanguageQuery = "\(query) Tacna"
+            scopedReq.resultTypes = [.pointOfInterest, .address]
+            scopedReq.region = region
+            if let scopedResp = try? await MKLocalSearch(request: scopedReq).start() {
+                collected.append(contentsOf: scopedResp.mapItems)
+            }
+        }
+
+        return collected.prefix(10).compactMap { mapItemToDestinationPlace($0, sourceLabel: "Apple Maps") }
+    }
+
+    @MainActor
+    private static func searchAppleMapKitCompleter(query: String, region: MKCoordinateRegion) async -> [TacnaDestinationPlace] {
+        let completions = await TacnaMapCompleterHelper.fetchCompletions(query: query, region: region)
+        guard !completions.isEmpty else { return [] }
+
+        return await withTaskGroup(of: [TacnaDestinationPlace].self) { group in
+            for completion in completions.prefix(6) {
+                group.addTask {
+                    let req = MKLocalSearch.Request(completion: completion)
+                    req.region = region
+                    guard let response = try? await MKLocalSearch(request: req).start() else { return [] }
+                    return response.mapItems.prefix(2).compactMap {
+                        mapItemToDestinationPlace($0, sourceLabel: "Apple Maps")
+                    }
+                }
+            }
+            var resolved: [TacnaDestinationPlace] = []
+            for await items in group {
+                resolved.append(contentsOf: items)
+            }
+            return resolved
+        }
+    }
+
+    private nonisolated static func mapItemToDestinationPlace(_ item: MKMapItem, sourceLabel: String) -> TacnaDestinationPlace? {
+        guard let name = item.name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let coord = item.placemark.coordinate
+        guard CLLocationCoordinate2DIsValid(coord) else { return nil }
+
+        let street = [item.placemark.thoroughfare, item.placemark.subThoroughfare]
+            .compactMap { $0 }
+            .joined(separator: " ")
+        let subLocality = item.placemark.subLocality ?? ""
+        let locality = item.placemark.locality ?? "Tacna"
+        let addressParts = [street, subLocality, locality].filter { !$0.isEmpty }
+        let addressDesc = addressParts.isEmpty ? "Tacna" : addressParts.joined(separator: ", ")
+
+        return TacnaDestinationPlace.fromMapItem(
+            name: name,
+            subtitle: "📍 \(addressDesc) • \(sourceLabel)",
+            coordinate: coord
+        )
+    }
+
+    private nonisolated static func searchPhotonOSMPlaces(query: String) async -> [TacnaDestinationPlace] {
+        var components = URLComponents(string: "https://photon.komoot.io/api/")
+        components?.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "lat", value: "-18.0135"),
+            URLQueryItem(name: "lon", value: "-70.2519"),
+            URLQueryItem(name: "bbox", value: "-70.55,-18.25,-70.00,-17.75"),
+            URLQueryItem(name: "limit", value: "10")
+        ]
+        guard let url = components?.url else { return [] }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 3.5
+
+        struct PhotonResponse: Decodable {
+            struct Feature: Decodable {
+                struct Geometry: Decodable {
+                    let coordinates: [Double]
+                }
+                struct Properties: Decodable {
+                    let name: String?
+                    let street: String?
+                    let housenumber: String?
+                    let district: String?
+                    let city: String?
+                }
+                let geometry: Geometry
+                let properties: Properties
+            }
+            let features: [Feature]
+        }
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode(PhotonResponse.self, from: data) else {
             return []
+        }
+
+        return decoded.features.compactMap { feature in
+            guard feature.geometry.coordinates.count >= 2 else { return nil }
+            let lon = feature.geometry.coordinates[0]
+            let lat = feature.geometry.coordinates[1]
+            let props = feature.properties
+            let streetPart = [props.street, props.housenumber].compactMap { $0 }.joined(separator: " ")
+            let placeName = props.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedName = (placeName?.isEmpty == false ? placeName! : streetPart)
+            guard !resolvedName.isEmpty else { return nil }
+
+            let district = props.district ?? props.city ?? "Tacna"
+            let addressDesc = [streetPart, district].filter { !$0.isEmpty }.joined(separator: ", ")
+            return TacnaDestinationPlace.fromMapItem(
+                name: resolvedName,
+                subtitle: "📍 \(addressDesc.isEmpty ? "Tacna" : addressDesc) • Mapa OSM",
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon)
+            )
+        }
+    }
+
+    private nonisolated static func searchNominatimOSMPlaces(query: String) async -> [TacnaDestinationPlace] {
+        var components = URLComponents(string: "https://nominatim.openstreetmap.org/search")
+        components?.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "viewbox", value: "-70.55,-17.75,-70.00,-18.25"),
+            URLQueryItem(name: "bounded", value: "1"),
+            URLQueryItem(name: "format", value: "jsonv2"),
+            URLQueryItem(name: "addressdetails", value: "1"),
+            URLQueryItem(name: "limit", value: "8")
+        ]
+        guard let url = components?.url else { return [] }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 3.5
+        request.setValue("BusConectado-iOS/1.0", forHTTPHeaderField: "User-Agent")
+
+        struct NominatimItem: Decodable {
+            let lat: String
+            let lon: String
+            let name: String?
+            let display_name: String?
+            let address: NominatimAddress?
+        }
+        struct NominatimAddress: Decodable {
+            let road: String?
+            let suburb: String?
+            let city_district: String?
+            let town: String?
+            let city: String?
+        }
+
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode),
+              let decoded = try? JSONDecoder().decode([NominatimItem].self, from: data) else {
+            return []
+        }
+
+        return decoded.compactMap { item in
+            guard let lat = Double(item.lat), let lon = Double(item.lon) else { return nil }
+            let rawName = item.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let fallbackName = item.display_name?.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            let resolvedName = (rawName?.isEmpty == false ? rawName! : fallbackName) ?? ""
+            guard !resolvedName.isEmpty else { return nil }
+
+            let road = item.address?.road ?? ""
+            let zone = item.address?.suburb ?? item.address?.city_district ?? item.address?.town ?? item.address?.city ?? "Tacna"
+            let addressDesc = [road, zone].filter { !$0.isEmpty }.joined(separator: ", ")
+
+            return TacnaDestinationPlace.fromMapItem(
+                name: resolvedName,
+                subtitle: "📍 \(addressDesc.isEmpty ? "Tacna" : addressDesc) • Mapa OSM",
+                coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon)
+            )
         }
     }
 
@@ -1102,5 +1335,63 @@ final class AuthViewModel: ObservableObject {
                     self.countdownTimer?.cancel()
                 }
             }
+    }
+}
+
+/// Envoltorio seguro para consultar autocompletado nativo de MapKit (`MKLocalSearchCompleter`) en Tacna.
+@MainActor
+private final class TacnaMapCompleterHelper: NSObject, MKLocalSearchCompleterDelegate {
+    private let completer = MKLocalSearchCompleter()
+    private var continuation: CheckedContinuation<[MKLocalSearchCompletion], Never>?
+    private var timeoutWorkItem: DispatchWorkItem?
+    private var retainedSelf: TacnaMapCompleterHelper?
+
+    static func fetchCompletions(query: String, region: MKCoordinateRegion) async -> [MKLocalSearchCompletion] {
+        await withCheckedContinuation { continuation in
+            let helper = TacnaMapCompleterHelper()
+            helper.start(query: query, region: region, continuation: continuation)
+        }
+    }
+
+    private func start(
+        query: String,
+        region: MKCoordinateRegion,
+        continuation: CheckedContinuation<[MKLocalSearchCompletion], Never>
+    ) {
+        self.continuation = continuation
+        self.retainedSelf = self
+        completer.delegate = self
+        completer.region = region
+        completer.resultTypes = [.pointOfInterest, .address, .query]
+
+        let timeout = DispatchWorkItem { [weak self] in
+            self?.finish(with: self?.completer.results ?? [])
+        }
+        self.timeoutWorkItem = timeout
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.25, execute: timeout)
+        completer.queryFragment = query
+    }
+
+    nonisolated func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
+        let items = completer.results
+        Task { @MainActor in
+            self.finish(with: items)
+        }
+    }
+
+    nonisolated func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
+        Task { @MainActor in
+            self.finish(with: [])
+        }
+    }
+
+    private func finish(with results: [MKLocalSearchCompletion]) {
+        guard let cont = continuation else { return }
+        continuation = nil
+        timeoutWorkItem?.cancel()
+        timeoutWorkItem = nil
+        completer.delegate = nil
+        cont.resume(returning: results)
+        retainedSelf = nil
     }
 }
