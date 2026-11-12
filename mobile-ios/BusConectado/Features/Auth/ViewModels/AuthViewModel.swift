@@ -63,11 +63,13 @@ final class AuthViewModel: ObservableObject {
     @Published var liveMapSearchResults: [TacnaDestinationPlace] = []
     @Published var activeRouteOverlayOnMap: TacnaOfficialRouteCatalogItem? = nil
 
-    // Estado del Escenario Pantalla Completa "Ir / Cómo Llegar" (Sección 4.E del Mockup)
+    // Estado del Escenario Pantalla Completa "Ir / Cómo Llegar" (Automatización de Rutas)
     @Published var showRoutePlannerFullScreen: Bool = false
+    @Published var routePlannerInitialOrigin: TacnaDestinationPlace? = nil
     @Published var routePlannerInitialDestination: TacnaDestinationPlace? = nil
     @Published var activeRouteGuidance: ActiveRouteGuidanceState? = nil
     @Published var showCancelRouteGuidanceAlert: Bool = false
+    @Published var showFiveMinuteBoardingBanner: Bool = false
 
     // Control de Cámara del Mapa en Tacna
     @Published var mapFocusTrigger: UUID = UUID()
@@ -159,7 +161,9 @@ final class AuthViewModel: ObservableObject {
         return activeBuses
     }
 
-    /// Catálogo predictivo para el buscador superior: combina los 34 Paraderos Oficiales/Propuestos de Tacna + Lugares del Mapa en vivo (MapKit)
+    /// Catálogo predictivo para el buscador superior:
+    /// Cuando el usuario escribe una búsqueda (ej: "Plaza Vea"), prioriza las ubicaciones reales de la API de Mapas (MKLocalSearch)
+    /// seguidas de los paraderos oficiales de bus que coincidan.
     var filteredSearchDestinations: [TacnaDestinationPlace] {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
@@ -172,45 +176,103 @@ final class AuthViewModel: ObservableObject {
             $0.category.rawValue.localizedCaseInsensitiveContains(trimmed) ||
             $0.routesPassing.joined(separator: " ").localizedCaseInsensitiveContains(trimmed)
         }
-        // Evitar duplicados por nombre con los resultados de MapKit
-        let existingNames = Set(catalogMatches.map { $0.name.lowercased() })
-        let uniqueMapMatches = liveMapSearchResults.filter { !existingNames.contains($0.name.lowercased()) }
-        return catalogMatches + uniqueMapMatches
+        // Priorizar siempre los Puntos de Interés reales devueltos por la API (MKLocalSearch) sin ocultarlos por nombres de paraderos
+        return liveMapSearchResults + catalogMatches
     }
 
     func performLiveMapKitSearchInTacna(query: String) async {
+        let results = await searchMapKitPlacesInTacna(query: query)
+        await MainActor.run {
+            self.liveMapSearchResults = results
+        }
+    }
+
+    /// Consulta directamente la API de Apple MapKit (MKLocalSearch) para obtener ubicaciones y Puntos de Interés reales en Tacna
+    func searchMapKitPlacesInTacna(query: String) async -> [TacnaDestinationPlace] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
-            self.liveMapSearchResults = []
-            return
+            return []
         }
 
         let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = "\(trimmed) Tacna"
+        request.naturalLanguageQuery = "\(trimmed), Tacna, Perú"
+        request.resultTypes = [.pointOfInterest, .address]
         request.region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: -18.0135, longitude: -70.2519),
-            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
+            span: MKCoordinateSpan(latitudeDelta: 0.14, longitudeDelta: 0.14)
         )
 
         let search = MKLocalSearch(request: request)
         do {
             let response = try await search.start()
-            let mapped: [TacnaDestinationPlace] = response.mapItems.prefix(6).compactMap { item in
+            var seenKeys = Set<String>()
+            let mapped: [TacnaDestinationPlace] = response.mapItems.prefix(10).compactMap { item in
                 guard let name = item.name else { return nil }
                 let coord = item.placemark.coordinate
-                // Filtrar que esté dentro del departamento de Tacna
-                guard coord.latitude < -17.5 && coord.latitude > -18.5 else { return nil }
-                let thoroughfare = item.placemark.thoroughfare ?? item.placemark.locality ?? "Tacna"
+                // Filtrar que esté dentro de la región de Tacna
+                guard coord.latitude < -17.4 && coord.latitude > -18.6 else { return nil }
+
+                let street = [item.placemark.thoroughfare, item.placemark.subThoroughfare]
+                    .compactMap { $0 }
+                    .joined(separator: " ")
+                let locality = item.placemark.locality ?? "Tacna"
+                let addressDesc = street.isEmpty ? locality : "\(street), \(locality)"
+
+                let dedupKey = "\(name.lowercased())-\(String(format: "%.4f", coord.latitude))-\(String(format: "%.4f", coord.longitude))"
+                guard !seenKeys.contains(dedupKey) else { return nil }
+                seenKeys.insert(dedupKey)
+
                 return TacnaDestinationPlace.fromMapItem(
                     name: name,
-                    subtitle: "\(thoroughfare) • Ubicación del Mapa en Tacna",
+                    subtitle: "📍 \(addressDesc) • API del Mapa",
                     coordinate: coord
                 )
             }
-            self.liveMapSearchResults = mapped
+            return mapped
         } catch {
-            self.liveMapSearchResults = []
+            return []
         }
+    }
+
+    /// Obtiene el nombre real de la calle o punto de interés en Tacna cuando el usuario fija un punto libre en el mapa
+    func reverseGeocodeCoordinateInTacna(_ coordinate: CLLocationCoordinate2D, roleLabel: String = "Punto en el mapa") async -> TacnaDestinationPlace {
+        let geocoder = CLGeocoder()
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            if let pm = placemarks.first {
+                let street = [pm.thoroughfare, pm.subThoroughfare].compactMap { $0 }.joined(separator: " ")
+                let area = pm.subLocality ?? pm.locality ?? "Tacna"
+                let title = !street.isEmpty ? street : (pm.name ?? roleLabel)
+                let sub = "📍 \(area) (\(String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)))"
+                return TacnaDestinationPlace.fromMapItem(
+                    name: title,
+                    subtitle: sub,
+                    coordinate: coordinate
+                )
+            }
+        } catch {
+            // Fallback a coordenada formateada
+        }
+        return TacnaDestinationPlace.fromMapItem(
+            name: "\(roleLabel) (\(String(format: "%.4f, %.4f", coordinate.latitude, coordinate.longitude)))",
+            subtitle: "📍 Punto personalizado en Tacna",
+            coordinate: coordinate
+        )
+    }
+
+    /// Evalúa automáticamente las mejores opciones de ruta (Ordinarias en servicio, Externas en vía y Caminata)
+    func evaluateAutomatedRoutes(
+        from origin: TacnaDestinationPlace,
+        to destination: TacnaDestinationPlace
+    ) -> RouteAutomationEvaluationResult {
+        RouteAutomationEngine.evaluateRoutes(
+            from: origin,
+            to: destination,
+            stops: dynamicCatalogStops,
+            routes: dynamicRoutes,
+            activeBuses: activeBuses
+        )
     }
 
     /// Proyecta una Ruta (Ordinaria o Externa) desde la pestaña Líneas directamente sobre el mapa principal
@@ -330,30 +392,83 @@ final class AuthViewModel: ObservableObject {
         mapFocusTrigger = UUID()
     }
 
-    func openRoutePlanner(with destination: TacnaDestinationPlace? = nil) {
+    func openRoutePlanner(with destination: TacnaDestinationPlace? = nil, origin: TacnaDestinationPlace? = nil) {
         BCFeedbackManager.shared.impactMedium()
         isSearchDropdownVisible = false
+        if let origin = origin {
+            routePlannerInitialOrigin = origin
+        } else if routePlannerInitialOrigin == nil {
+            routePlannerInitialOrigin = TacnaDestinationPlace.currentLocationPlace()
+        }
         routePlannerInitialDestination = destination ?? searchedDestinationPin
         showRoutePlannerFullScreen = true
     }
 
-    func startGuidedRoute(to destination: TacnaDestinationPlace, optionIndex: Int = 1) {
+    func startGuidedRoute(
+        from origin: TacnaDestinationPlace = TacnaDestinationPlace.currentLocationPlace(),
+        to destination: TacnaDestinationPlace,
+        candidate: EvaluatedRouteCandidate? = nil,
+        optionIndex: Int = 0
+    ) {
         BCFeedbackManager.shared.notificationSuccess()
         showRoutePlannerFullScreen = false
         searchedDestinationPin = nil
 
-        // Inicia el Timer Circular Verde en 02:48 (168 segundos) tal cual el mockup
-        activeRouteGuidance = ActiveRouteGuidanceState(
+        let resolvedCandidate: EvaluatedRouteCandidate?
+        if let candidate = candidate {
+            resolvedCandidate = candidate
+        } else {
+            let eval = evaluateAutomatedRoutes(from: origin, to: destination)
+            resolvedCandidate = eval.candidates.indices.contains(optionIndex)
+                ? eval.candidates[optionIndex]
+                : eval.recommendedCandidate
+        }
+
+        let isOrdinaryRoute = resolvedCandidate?.kind == .ordinaryInService
+        // Si es Ruta Ordinaria, el contador monitorea la llegada del bus al paradero establecido y avisa a los 5 min (300 s)
+        let initialSeconds: Int
+        if let cand = resolvedCandidate, cand.kind == .ordinaryInService {
+            initialSeconds = max(cand.busWaitMinutes * 60, 298)
+        } else if let cand = resolvedCandidate {
+            initialSeconds = max(cand.totalDurationMinutes * 60, 180)
+        } else {
+            initialSeconds = 298
+        }
+
+        var guidanceState = ActiveRouteGuidanceState(
+            origin: origin,
             destination: destination,
             selectedOptionIndex: optionIndex,
-            remainingBusArrivalSeconds: 168
+            candidate: resolvedCandidate,
+            remainingBusArrivalSeconds: initialSeconds,
+            fiveMinuteAlertFired: false
         )
 
+        // Si al presionar "Ir" en una Ruta Ordinaria el bus ya se encuentra a <= 5 minutos (300 s) del paradero establecido,
+        // disparar automáticamente la notificación local y el banner en vivo.
+        if isOrdinaryRoute, let cand = resolvedCandidate, initialSeconds <= 300 {
+            guidanceState.fiveMinuteAlertFired = true
+            showFiveMinuteBoardingBanner = true
+            BCNotificationManager.shared.triggerFiveMinuteBusArrivalNotification(
+                routeCode: cand.routeCode,
+                boardingStopName: cand.boardingPointName,
+                destinationName: destination.shortName,
+                walkMinutesToStop: cand.walkInitialMinutes
+            )
+        } else {
+            showFiveMinuteBoardingBanner = false
+            if isOrdinaryRoute {
+                BCNotificationManager.shared.requestAuthorizationIfNeeded()
+            }
+        }
+
+        activeRouteGuidance = guidanceState
+
         // Encuadrar cámara entre origen y destino en el mapa principal
-        let midLat = (TacnaDestinationPlace.userOriginCoordinate.latitude + destination.latitude) / 2.0
-        let midLon = (TacnaDestinationPlace.userOriginCoordinate.longitude + destination.longitude) / 2.0
-        let latDelta = max(abs(TacnaDestinationPlace.userOriginCoordinate.latitude - destination.latitude) * 1.9, 0.012)
-        let lonDelta = max(abs(TacnaDestinationPlace.userOriginCoordinate.longitude - destination.longitude) * 1.9, 0.012)
+        let midLat = (origin.latitude + destination.latitude) / 2.0
+        let midLon = (origin.longitude + destination.longitude) / 2.0
+        let latDelta = max(abs(origin.latitude - destination.latitude) * 1.9, 0.012)
+        let lonDelta = max(abs(origin.longitude - destination.longitude) * 1.9, 0.012)
         focusMap(
             on: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
             spanDelta: max(latDelta, lonDelta)
@@ -366,9 +481,24 @@ final class AuthViewModel: ObservableObject {
                 guard let self = self, var guidance = self.activeRouteGuidance else { return }
                 if guidance.remainingBusArrivalSeconds > 0 {
                     guidance.remainingBusArrivalSeconds -= 1
+                    // Disparar automáticamente la notificación cuando el bus ordinario llegue al umbral de 5 minutos (300 s) del paradero establecido
+                    if let cand = guidance.candidate,
+                       cand.kind == .ordinaryInService,
+                       !guidance.fiveMinuteAlertFired,
+                       guidance.remainingBusArrivalSeconds <= 300 {
+                        guidance.fiveMinuteAlertFired = true
+                        self.showFiveMinuteBoardingBanner = true
+                        BCFeedbackManager.shared.notificationSuccess()
+                        BCNotificationManager.shared.triggerFiveMinuteBusArrivalNotification(
+                            routeCode: cand.routeCode,
+                            boardingStopName: cand.boardingPointName,
+                            destinationName: guidance.destination.shortName,
+                            walkMinutesToStop: cand.walkInitialMinutes
+                        )
+                    }
                     self.activeRouteGuidance = guidance
                 } else {
-                    guidance.remainingBusArrivalSeconds = 168
+                    guidance.remainingBusArrivalSeconds = 240
                     self.activeRouteGuidance = guidance
                 }
             }
@@ -383,6 +513,7 @@ final class AuthViewModel: ObservableObject {
         BCFeedbackManager.shared.impactLight()
         routeGuidanceTimer?.cancel()
         activeRouteGuidance = nil
+        showFiveMinuteBoardingBanner = false
         showCancelRouteGuidanceAlert = false
     }
 

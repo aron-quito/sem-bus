@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import MapKit
+import UserNotifications
 
 // MARK: - Roles y Tarifas (1 PEN = 10 Puntos BC)
 enum UserRoleType: String, Codable, CaseIterable {
@@ -677,9 +678,9 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
         ),
         TacnaDestinationPlace(
             id: "stop-plaza-vea",
-            name: "Plaza Vea Tacna",
-            shortName: "Plaza Vea",
-            subtitle: "Av. Cusco / Panamericana Sur",
+            name: "Paradero Av. Cusco (Eje Comercial Sur)",
+            shortName: "Paradero Av. Cusco",
+            subtitle: "Av. Cusco / Panamericana Sur • Paradero Oficial",
             category: .marketsCommercial,
             routesPassing: ["Ruta 14", "Ruta 10B", "Ruta A"],
             iconName: "bus.fill",
@@ -695,7 +696,7 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             busRideMinutes: 5,
             walkFinalMinutes: 0,
             boardingStopName: "Tacna Centro",
-            alightingStopName: "Plaza Vea",
+            alightingStopName: "Paradero Av. Cusco",
             intermediateStopName: nil,
             statusNote: nil
         ),
@@ -1675,9 +1676,642 @@ struct TacnaOfficialRouteCatalogItem: Identifiable, Equatable {
 
 // MARK: - Estado de Guía de Ruta Activa en el Mapa Principal (Cuando se presiona [Iniciar])
 struct ActiveRouteGuidanceState: Equatable {
+    let origin: TacnaDestinationPlace
     let destination: TacnaDestinationPlace
     let selectedOptionIndex: Int
+    var candidate: EvaluatedRouteCandidate?
     var remainingBusArrivalSeconds: Int
+    var fiveMinuteAlertFired: Bool = false
+
+    init(
+        origin: TacnaDestinationPlace = TacnaDestinationPlace.currentLocationPlace(),
+        destination: TacnaDestinationPlace,
+        selectedOptionIndex: Int = 0,
+        candidate: EvaluatedRouteCandidate? = nil,
+        remainingBusArrivalSeconds: Int = 305,
+        fiveMinuteAlertFired: Bool = false
+    ) {
+        self.origin = origin
+        self.destination = destination
+        self.selectedOptionIndex = selectedOptionIndex
+        self.candidate = candidate
+        self.remainingBusArrivalSeconds = remainingBusArrivalSeconds
+        self.fiveMinuteAlertFired = fiveMinuteAlertFired
+    }
+}
+
+extension TacnaDestinationPlace {
+    /// Representa la ubicación actual del usuario como punto de partida o llegada
+    static func currentLocationPlace() -> TacnaDestinationPlace {
+        let coord = userOriginCoordinate
+        return TacnaDestinationPlace(
+            id: "user-current-gps-origin",
+            name: "Tu ubicación actual",
+            shortName: "Tu ubicación",
+            subtitle: "Ubicación GPS en Tacna",
+            category: .mapCustomPlace,
+            routesPassing: [],
+            iconName: "location.fill",
+            iconColorHex: "#0A84FF",
+            latitude: coord.latitude,
+            longitude: coord.longitude,
+            routeCase: .walkOnlyNearby,
+            totalDurationMinutes: 0,
+            secondaryDurationMinutes: 0,
+            walkingDirectMinutes: 0,
+            distanceLabel: "0 m",
+            walkInitialMinutes: 0,
+            busRideMinutes: 0,
+            walkFinalMinutes: 0,
+            boardingStopName: "Tu ubicación",
+            alightingStopName: "Tu ubicación",
+            intermediateStopName: nil,
+            statusNote: nil
+        )
+    }
+}
+
+// MARK: - Gestor de Notificaciones Nativas iOS (UNUserNotificationCenter) para Aviso de 5 Minutos
+final class BCNotificationManager: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = BCNotificationManager()
+
+    private override init() {
+        super.init()
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+    }
+
+    func requestAuthorizationIfNeeded() {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    func triggerFiveMinuteBusArrivalNotification(
+        routeCode: String,
+        boardingStopName: String,
+        destinationName: String,
+        walkMinutesToStop: Int
+    ) {
+        requestAuthorizationIfNeeded()
+        let content = UNMutableNotificationContent()
+        content.title = "🚌 ¡\(routeCode) a 5 min de tu paradero!"
+        content.subtitle = "Paradero de subida: \(boardingStopName)"
+        content.body = "Tu bus ordinario llegará en ~5 minutos a \(boardingStopName) rumbo a \(destinationName). Camina hacia el paradero (~\(max(walkMinutesToStop, 1)) min a pie) para abordar con QR."
+        content.sound = .default
+
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.5, repeats: false)
+        let request = UNNotificationRequest(
+            identifier: "bc-5min-alert-\(routeCode)-\(Date().timeIntervalSince1970)",
+            content: content,
+            trigger: trigger
+        )
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+
+    // Mostrar banner y sonido incluso con la app abierta en primer plano
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
+    }
+}
+
+// MARK: - Modelos y Motor de Automatización de Rutas (Rutas Ordinarias vs. Externas + Caminata)
+
+enum RouteCandidateKind: String, Equatable {
+    case ordinaryInService     // Ruta Ordinaria activa: subida/bajada en paraderos oficiales, tracking GPS, QR y aviso a 5 min
+    case externalFreeBoarding  // Ruta Externa: subida/bajada libre en cualquier punto de la vía por donde pasa, sin tracking
+    case walkingDirect         // Caminata directa de inicio a fin
+}
+
+struct EvaluatedRouteCandidate: Identifiable, Equatable {
+    let id: String
+    let kind: RouteCandidateKind
+    let route: TacnaOfficialRouteCatalogItem?
+    let routeCode: String
+    let routeTitle: String
+    let colorHex: String
+
+    let totalDurationMinutes: Int
+    let totalDistanceMeters: Int
+
+    let walkInitialMinutes: Int
+    let walkInitialMeters: Int
+    let busWaitMinutes: Int
+    let busRideMinutes: Int
+    let busRideMeters: Int
+    let walkFinalMinutes: Int
+    let walkFinalMeters: Int
+
+    let boardingStop: TacnaDestinationPlace?
+    let alightingStop: TacnaDestinationPlace?
+    let intermediateStopsCount: Int
+    let intermediateStopNames: [String]
+
+    let boardingPointName: String
+    let alightingPointName: String
+    let boardingLatitude: Double
+    let boardingLongitude: Double
+    let alightingLatitude: Double
+    let alightingLongitude: Double
+
+    /// Polilíneas calculadas para los 3 tramos: Caminata inicial -> Bus (sobre ruta real) -> Caminata final
+    let walkToBoardCoords: [[Double]]
+    let busTransitCoords: [[Double]]
+    let walkFinalCoords: [[Double]]
+
+    var isRecommendedPrimary: Bool
+    var externalRecommendationReason: String?
+
+    var boardingCoordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: boardingLatitude, longitude: boardingLongitude)
+    }
+
+    var alightingCoordinate: CLLocationCoordinate2D {
+        CLLocationCoordinate2D(latitude: alightingLatitude, longitude: alightingLongitude)
+    }
+
+    var walkToBoardCLCoordinates: [CLLocationCoordinate2D] {
+        walkToBoardCoords.compactMap { $0.count >= 2 ? CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) : nil }
+    }
+
+    var busTransitCLCoordinates: [CLLocationCoordinate2D] {
+        busTransitCoords.compactMap { $0.count >= 2 ? CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) : nil }
+    }
+
+    var walkFinalCLCoordinates: [CLLocationCoordinate2D] {
+        walkFinalCoords.compactMap { $0.count >= 2 ? CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) : nil }
+    }
+
+    var totalDistanceLabel: String {
+        if totalDistanceMeters < 1000 {
+            return "\(totalDistanceMeters) m"
+        }
+        return String(format: "%.1f km", Double(totalDistanceMeters) / 1000.0)
+    }
+
+    var walkTotalMeters: Int {
+        walkInitialMeters + walkFinalMeters
+    }
+
+    var supportsFiveMinuteAlert: Bool {
+        kind == .ordinaryInService
+    }
+}
+
+struct RouteAutomationEvaluationResult: Equatable {
+    let origin: TacnaDestinationPlace
+    let destination: TacnaDestinationPlace
+    let candidates: [EvaluatedRouteCandidate]
+    let primaryBannerWarning: String?
+    let hasOrdinaryInService: Bool
+
+    var recommendedCandidate: EvaluatedRouteCandidate? {
+        candidates.first
+    }
+
+    var ordinaryCandidates: [EvaluatedRouteCandidate] {
+        candidates.filter { $0.kind == .ordinaryInService }
+    }
+
+    var externalCandidates: [EvaluatedRouteCandidate] {
+        candidates.filter { $0.kind == .externalFreeBoarding }
+    }
+
+    var walkingCandidate: EvaluatedRouteCandidate? {
+        candidates.first(where: { $0.kind == .walkingDirect })
+    }
+}
+
+enum RouteAutomationEngine {
+    /// Distancia en metros entre dos coordenadas
+    static func distanceMeters(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
+        let locA = CLLocation(latitude: a.latitude, longitude: a.longitude)
+        let locB = CLLocation(latitude: b.latitude, longitude: b.longitude)
+        return locA.distance(from: locB)
+    }
+
+    /// Extrae el sub-segmento de una polilínea vial entre el vértice más cercano a `start` y el más cercano a `end`
+    static func extractRouteSubPolyline(
+        from fullPolyline: [CLLocationCoordinate2D],
+        start: CLLocationCoordinate2D,
+        end: CLLocationCoordinate2D
+    ) -> (subCoords: [CLLocationCoordinate2D], boardVertex: CLLocationCoordinate2D, alightVertex: CLLocationCoordinate2D, lengthMeters: Double) {
+        guard fullPolyline.count >= 2 else {
+            let d = distanceMeters(start, end) * 1.25
+            return ([start, end], start, end, d)
+        }
+
+        var startIdx = 0
+        var minStartDist = Double.greatestFiniteMagnitude
+        var endIdx = 0
+        var minEndDist = Double.greatestFiniteMagnitude
+
+        for (i, pt) in fullPolyline.enumerated() {
+            let ds = distanceMeters(start, pt)
+            if ds < minStartDist {
+                minStartDist = ds
+                startIdx = i
+            }
+            let de = distanceMeters(end, pt)
+            if de < minEndDist {
+                minEndDist = de
+                endIdx = i
+            }
+        }
+
+        if startIdx == endIdx {
+            if endIdx < fullPolyline.count - 1 {
+                endIdx += 1
+            } else if startIdx > 0 {
+                startIdx -= 1
+            }
+        }
+
+        let slice: [CLLocationCoordinate2D]
+        if startIdx <= endIdx {
+            slice = Array(fullPolyline[startIdx...endIdx])
+        } else {
+            slice = Array(fullPolyline[endIdx...startIdx].reversed())
+        }
+
+        var totalMeters: Double = 0
+        if slice.count >= 2 {
+            for k in 0..<(slice.count - 1) {
+                totalMeters += distanceMeters(slice[k], slice[k + 1])
+            }
+        } else {
+            totalMeters = distanceMeters(start, end) * 1.25
+        }
+
+        let boardPt = slice.first ?? start
+        let alightPt = slice.last ?? end
+        return (slice, boardPt, alightPt, max(totalMeters, 120))
+    }
+
+    /// Evalúa de forma automática las opciones para ir desde `origin` hasta `destination`:
+    /// 1) Rutas Ordinarias en servicio (subiendo y bajando obligatoriamente en Paraderos Oficiales de la ruta).
+    /// 2) Rutas Externas (subiendo y bajando en cualquier punto de la calle por donde pasa la ruta).
+    /// 3) Caminata directa.
+    /// Aplica la regla de prioridad: prioriza la Ruta Ordinaria más corta salvo que no haya ninguna en servicio
+    /// o que la Ruta Ordinaria demore +10 min más o exija caminar > 700 m adicionales respecto a una Ruta Externa.
+    static func evaluateRoutes(
+        from origin: TacnaDestinationPlace,
+        to destination: TacnaDestinationPlace,
+        stops: [TacnaDestinationPlace],
+        routes: [TacnaOfficialRouteCatalogItem],
+        activeBuses: [ActiveBusModel]
+    ) -> RouteAutomationEvaluationResult {
+        let originCoord = origin.coordinate
+        let destCoord = destination.coordinate
+        let directRawMeters = distanceMeters(originCoord, destCoord)
+        let directWalkMeters = max(Int(directRawMeters * 1.18), 40)
+        let directWalkMinutes = max(Int(round(Double(directWalkMeters) / 76.0)), 1)
+
+        // 1. Candidato de Caminata Directa (siempre disponible como referencia)
+        let walkCandidate = EvaluatedRouteCandidate(
+            id: "cand-walk-\(origin.id)-\(destination.id)",
+            kind: .walkingDirect,
+            route: nil,
+            routeCode: "A pie",
+            routeTitle: "Caminata directa por las calles de Tacna",
+            colorHex: "#38BDF8",
+            totalDurationMinutes: directWalkMinutes,
+            totalDistanceMeters: directWalkMeters,
+            walkInitialMinutes: directWalkMinutes,
+            walkInitialMeters: directWalkMeters,
+            busWaitMinutes: 0,
+            busRideMinutes: 0,
+            busRideMeters: 0,
+            walkFinalMinutes: 0,
+            walkFinalMeters: 0,
+            boardingStop: nil,
+            alightingStop: nil,
+            intermediateStopsCount: 0,
+            intermediateStopNames: [],
+            boardingPointName: origin.shortName,
+            alightingPointName: destination.shortName,
+            boardingLatitude: originCoord.latitude,
+            boardingLongitude: originCoord.longitude,
+            alightingLatitude: destCoord.latitude,
+            alightingLongitude: destCoord.longitude,
+            walkToBoardCoords: [
+                [originCoord.latitude, originCoord.longitude],
+                [destCoord.latitude, destCoord.longitude]
+            ],
+            busTransitCoords: [],
+            walkFinalCoords: [],
+            isRecommendedPrimary: false,
+            externalRecommendationReason: nil
+        )
+
+        var ordinaryCandidates: [EvaluatedRouteCandidate] = []
+        var externalCandidates: [EvaluatedRouteCandidate] = []
+
+        // 2. Evaluar cada Ruta Ordinaria En Servicio (Abordaje y bajada en Paraderos Oficiales)
+        let activeOrdRoutes = routes.filter { $0.isOrdinary && $0.isInService }
+        for route in activeOrdRoutes {
+            let routeStops = route.resolvedStops(using: stops)
+            guard routeStops.count >= 2 else { continue }
+            let fullPoly = route.resolvedPolylineCoordinates(using: stops)
+
+            var bestPairForRoute: (
+                boardStop: TacnaDestinationPlace,
+                alightStop: TacnaDestinationPlace,
+                boardIdx: Int,
+                alightIdx: Int,
+                walk1Meters: Int,
+                walk2Meters: Int,
+                scoreMinutes: Double
+            )? = nil
+
+            for (i, sBoard) in routeStops.enumerated() {
+                let dWalk1 = distanceMeters(originCoord, sBoard.coordinate) * 1.18
+                for (j, sAlight) in routeStops.enumerated() where i != j {
+                    let dWalk2 = distanceMeters( sAlight.coordinate, destCoord) * 1.18
+                    // Descartar si caminar a los paraderos es más largo que caminar directo al destino + margen
+                    if dWalk1 + dWalk2 > max(directRawMeters * 1.35, 650) {
+                        continue
+                    }
+                    let approxBusDist = distanceMeters(sBoard.coordinate, sAlight.coordinate) * 1.25
+                    let speedMetersPerMin = max(route.averageSpeedKmh, 15.0) * 1000.0 / 60.0
+                    let estMinutes = (dWalk1 + dWalk2) / 76.0 + (approxBusDist / speedMetersPerMin) + Double(abs(j - i)) * 0.32
+                    if bestPairForRoute == nil || estMinutes < bestPairForRoute!.scoreMinutes {
+                        bestPairForRoute = (
+                            sBoard,
+                            sAlight,
+                            i,
+                            j,
+                            max(Int(round(dWalk1)), 20),
+                            max(Int(round(dWalk2)), 0),
+                            estMinutes
+                        )
+                    }
+                }
+            }
+
+            guard let chosen = bestPairForRoute else { continue }
+
+            let subSegment = extractRouteSubPolyline(
+                from: fullPoly,
+                start: chosen.boardStop.coordinate,
+                end: chosen.alightStop.coordinate
+            )
+
+            let speedKmh = max(route.averageSpeedKmh, 16.0)
+            let intermediateIndices: [Int]
+            if chosen.boardIdx < chosen.alightIdx {
+                intermediateIndices = Array((chosen.boardIdx + 1)..<chosen.alightIdx)
+            } else {
+                intermediateIndices = Array((chosen.alightIdx + 1)..<chosen.boardIdx).reversed()
+            }
+            let intermediateNames = intermediateIndices.map { routeStops[$0].shortName }
+
+            let walk1Min = max(1, Int(round(Double(chosen.walk1Meters) / 76.0)))
+            let walk2Min = chosen.walk2Meters < 45 ? 0 : max(1, Int(round(Double(chosen.walk2Meters) / 76.0)))
+            let busMeters = Int(round(subSegment.lengthMeters))
+            let busRideMin = max(2, Int(round((Double(busMeters) / 1000.0) / speedKmh * 60.0 + Double(intermediateNames.count) * 0.35)))
+
+            // ETA del bus al paradero de subida (en vivo si hay unidad activa, o basado en frecuencia)
+            let liveBusEta = activeBuses.first(where: {
+                $0.lineNumber.localizedCaseInsensitiveContains(route.code) ||
+                route.code.localizedCaseInsensitiveContains($0.lineNumber)
+            })?.nextStopEtaMinutes
+            let busWaitMin = liveBusEta ?? min(5, max(3, route.frequencyMinutes))
+
+            let totalMin = walk1Min + busRideMin + walk2Min
+            let totalMeters = chosen.walk1Meters + busMeters + chosen.walk2Meters
+
+            let walk1Coords: [[Double]] = [
+                [originCoord.latitude, originCoord.longitude],
+                [chosen.boardStop.latitude, chosen.boardStop.longitude]
+            ]
+            let busCoords: [[Double]] = subSegment.subCoords.map { [$0.latitude, $0.longitude] }
+            let walk2Coords: [[Double]] = chosen.walk2Meters < 35
+                ? []
+                : [
+                    [chosen.alightStop.latitude, chosen.alightStop.longitude],
+                    [destCoord.latitude, destCoord.longitude]
+                ]
+
+            ordinaryCandidates.append(
+                EvaluatedRouteCandidate(
+                    id: "cand-ord-\(route.id)",
+                    kind: .ordinaryInService,
+                    route: route,
+                    routeCode: route.code,
+                    routeTitle: route.title,
+                    colorHex: route.colorHex,
+                    totalDurationMinutes: totalMin,
+                    totalDistanceMeters: totalMeters,
+                    walkInitialMinutes: walk1Min,
+                    walkInitialMeters: chosen.walk1Meters,
+                    busWaitMinutes: busWaitMin,
+                    busRideMinutes: busRideMin,
+                    busRideMeters: busMeters,
+                    walkFinalMinutes: walk2Min,
+                    walkFinalMeters: chosen.walk2Meters,
+                    boardingStop: chosen.boardStop,
+                    alightingStop: chosen.alightStop,
+                    intermediateStopsCount: intermediateNames.count,
+                    intermediateStopNames: intermediateNames,
+                    boardingPointName: chosen.boardStop.shortName,
+                    alightingPointName: chosen.alightStop.shortName,
+                    boardingLatitude: chosen.boardStop.latitude,
+                    boardingLongitude: chosen.boardStop.longitude,
+                    alightingLatitude: chosen.alightStop.latitude,
+                    alightingLongitude: chosen.alightStop.longitude,
+                    walkToBoardCoords: walk1Coords,
+                    busTransitCoords: busCoords,
+                    walkFinalCoords: walk2Coords,
+                    isRecommendedPrimary: false,
+                    externalRecommendationReason: nil
+                )
+            )
+        }
+
+        // 3. Evaluar cada Ruta Externa (El usuario puede subir y bajar en CUALQUIER punto de la vía por donde pasa la ruta)
+        let extRoutes = routes.filter { $0.isExternal }
+        for route in extRoutes {
+            let fullPoly = route.resolvedPolylineCoordinates(using: stops)
+            guard fullPoly.count >= 2 else { continue }
+
+            let subSegment = extractRouteSubPolyline(
+                from: fullPoly,
+                start: originCoord,
+                end: destCoord
+            )
+
+            let dWalk1 = Int(round(distanceMeters(originCoord, subSegment.boardVertex) * 1.18))
+            let dWalk2 = Int(round(distanceMeters(subSegment.alightVertex, destCoord) * 1.18))
+
+            // Solo incluir si tomar la línea externa ahorra caminata respecto a ir directo a pie
+            if Double(dWalk1 + dWalk2) > max(directRawMeters * 1.30, 600) {
+                continue
+            }
+
+            let walk1Min = dWalk1 < 40 ? 1 : max(1, Int(round(Double(dWalk1) / 76.0)))
+            let walk2Min = dWalk2 < 45 ? 0 : max(1, Int(round(Double(dWalk2) / 76.0)))
+            let busMeters = Int(round(subSegment.lengthMeters))
+            let speedKmh = max(route.averageSpeedKmh, 18.0)
+            let busRideMin = max(2, Int(round((Double(busMeters) / 1000.0) / speedKmh * 60.0)))
+            let totalMin = walk1Min + busRideMin + walk2Min
+            let totalMeters = dWalk1 + busMeters + dWalk2
+
+            // Referencia cercana para nombrar el punto de abordaje libre en la calle
+            let nearestBoardRef = stops.min(by: {
+                distanceMeters($0.coordinate, subSegment.boardVertex) < distanceMeters($1.coordinate, subSegment.boardVertex)
+            })
+            let nearestAlightRef = stops.min(by: {
+                distanceMeters($0.coordinate, subSegment.alightVertex) < distanceMeters($1.coordinate, subSegment.alightVertex)
+            })
+
+            let boardLabel = nearestBoardRef != nil
+                ? "En vía de \(route.code) (alt. \(nearestBoardRef!.shortName))"
+                : "Punto en ruta de \(route.code) (Abordaje libre)"
+            let alightLabel = nearestAlightRef != nil && distanceMeters(nearestAlightRef!.coordinate, subSegment.alightVertex) < 350
+                ? "En vía de \(route.code) (alt. \(nearestAlightRef!.shortName))"
+                : "Tramo de \(route.code) más cercano a \(destination.shortName)"
+
+            let walk1Coords: [[Double]] = [
+                [originCoord.latitude, originCoord.longitude],
+                [subSegment.boardVertex.latitude, subSegment.boardVertex.longitude]
+            ]
+            let busCoords: [[Double]] = subSegment.subCoords.map { [$0.latitude, $0.longitude] }
+            let walk2Coords: [[Double]] = dWalk2 < 35
+                ? []
+                : [
+                    [subSegment.alightVertex.latitude, subSegment.alightVertex.longitude],
+                    [destCoord.latitude, destCoord.longitude]
+                ]
+
+            externalCandidates.append(
+                EvaluatedRouteCandidate(
+                    id: "cand-ext-\(route.id)",
+                    kind: .externalFreeBoarding,
+                    route: route,
+                    routeCode: route.code,
+                    routeTitle: route.title,
+                    colorHex: route.colorHex,
+                    totalDurationMinutes: totalMin,
+                    totalDistanceMeters: totalMeters,
+                    walkInitialMinutes: walk1Min,
+                    walkInitialMeters: dWalk1,
+                    busWaitMinutes: max(4, route.frequencyMinutes),
+                    busRideMinutes: busRideMin,
+                    busRideMeters: busMeters,
+                    walkFinalMinutes: walk2Min,
+                    walkFinalMeters: dWalk2,
+                    boardingStop: nil,
+                    alightingStop: nil,
+                    intermediateStopsCount: 0,
+                    intermediateStopNames: [],
+                    boardingPointName: boardLabel,
+                    alightingPointName: alightLabel,
+                    boardingLatitude: subSegment.boardVertex.latitude,
+                    boardingLongitude: subSegment.boardVertex.longitude,
+                    alightingLatitude: subSegment.alightVertex.latitude,
+                    alightingLongitude: subSegment.alightVertex.longitude,
+                    walkToBoardCoords: walk1Coords,
+                    busTransitCoords: busCoords,
+                    walkFinalCoords: walk2Coords,
+                    isRecommendedPrimary: false,
+                    externalRecommendationReason: nil
+                )
+            )
+        }
+
+        // Ordenar cada grupo por menor duración total y menor caminata
+        ordinaryCandidates.sort {
+            if $0.totalDurationMinutes != $1.totalDurationMinutes {
+                return $0.totalDurationMinutes < $1.totalDurationMinutes
+            }
+            return $0.walkTotalMeters < $1.walkTotalMeters
+        }
+
+        externalCandidates.sort {
+            if $0.totalDurationMinutes != $1.totalDurationMinutes {
+                return $0.totalDurationMinutes < $1.totalDurationMinutes
+            }
+            return $0.walkTotalMeters < $1.walkTotalMeters
+        }
+
+        // 4. Regla de Decisión Principal (Prioridad a Rutas Ordinarias salvo ausencia o exceso de umbral +10 min / > 700 m caminata)
+        var finalCandidates: [EvaluatedRouteCandidate] = []
+        var bannerWarning: String? = nil
+
+        if directRawMeters <= 280 {
+            // Destino a menos de ~3 cuadras: caminar directo es lo óptimo
+            var primaryWalk = walkCandidate
+            primaryWalk.isRecommendedPrimary = true
+            finalCandidates.append(primaryWalk)
+            finalCandidates.append(contentsOf: ordinaryCandidates)
+            finalCandidates.append(contentsOf: externalCandidates)
+        } else if let bestOrd = ordinaryCandidates.first {
+            if let bestExt = externalCandidates.first {
+                let timeExcess = bestOrd.totalDurationMinutes - bestExt.totalDurationMinutes
+                let walkExcess = bestOrd.walkTotalMeters - bestExt.walkTotalMeters
+
+                if timeExcess >= 10 || walkExcess > 700 {
+                    // La ruta ordinaria se pasa del promedio aceptable (+10 min o >700m de caminata extra): sugerir Ruta Externa con advertencia
+                    var recExt = bestExt
+                    recExt.isRecommendedPrimary = true
+                    let reason = timeExcess >= 10
+                        ? "La ruta ordinaria más cercana demora +\(timeExcess) min adicionales."
+                        : "La ruta ordinaria más cercana exige caminar \(walkExcess) m adicionales hasta su paradero."
+                    recExt.externalRecommendationReason = reason
+                    bannerWarning = "⚠️ Se sugiere \(recExt.routeCode) (Ruta Externa): \(reason) En esta ruta puedes abordar en cualquier punto de la calle por donde pasa, pero NO cuenta con tracking GPS, pago QR ni avisos de paradero."
+
+                    finalCandidates.append(recExt)
+                    finalCandidates.append(contentsOf: ordinaryCandidates)
+                    finalCandidates.append(contentsOf: externalCandidates.dropFirst())
+                    finalCandidates.append(walkCandidate)
+                } else {
+                    // Priorizar la Ruta Ordinaria más corta (con Tracking GPS, Pago QR y Notificación a 5 min)
+                    var recOrd = bestOrd
+                    recOrd.isRecommendedPrimary = true
+                    finalCandidates.append(recOrd)
+                    finalCandidates.append(contentsOf: ordinaryCandidates.dropFirst())
+                    finalCandidates.append(contentsOf: externalCandidates)
+                    finalCandidates.append(walkCandidate)
+                }
+            } else {
+                var recOrd = bestOrd
+                recOrd.isRecommendedPrimary = true
+                finalCandidates.append(recOrd)
+                finalCandidates.append(contentsOf: ordinaryCandidates.dropFirst())
+                finalCandidates.append(walkCandidate)
+            }
+        } else if let bestExt = externalCandidates.first {
+            // No hay ninguna Ruta Ordinaria en servicio (o ninguna cubre el trayecto): sugerir Ruta Externa con aviso
+            var recExt = bestExt
+            recExt.isRecommendedPrimary = true
+            let noOrdReason = activeOrdRoutes.isEmpty
+                ? "No hay Rutas Ordinarias en servicio en este momento."
+                : "Ninguna Ruta Ordinaria en servicio pasa cerca de este trayecto."
+            recExt.externalRecommendationReason = noOrdReason
+            bannerWarning = "⚠️ \(noOrdReason) Se sugiere la \(recExt.routeCode) (Ruta Externa): puedes subir en cualquier parte de la calle por donde pasa la ruta, pero no ofrece tracking GPS ni avisos al paradero."
+
+            finalCandidates.append(recExt)
+            finalCandidates.append(contentsOf: externalCandidates.dropFirst())
+            finalCandidates.append(walkCandidate)
+        } else {
+            var primaryWalk = walkCandidate
+            primaryWalk.isRecommendedPrimary = true
+            bannerWarning = "⚠️ Ninguna ruta de bus conecta directamente estos dos puntos. Se muestra la ruta peatonal por las calles de Tacna."
+            finalCandidates.append(primaryWalk)
+        }
+
+        return RouteAutomationEvaluationResult(
+            origin: origin,
+            destination: destination,
+            candidates: finalCandidates,
+            primaryBannerWarning: bannerWarning,
+            hasOrdinaryInService: !activeOrdRoutes.isEmpty
+        )
+    }
 }
 
 // MARK: - Motor Nativo de Alineación a Calles en Apple Maps (MKDirections)

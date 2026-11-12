@@ -129,9 +129,9 @@
   },
   {
     "id": "stop-plaza-vea",
-    "name": "Plaza Vea Tacna",
-    "shortName": "Plaza Vea",
-    "subtitle": "Av. Cusco / Panamericana Sur",
+    "name": "Paradero Av. Cusco (Eje Comercial Sur)",
+    "shortName": "Paradero Av. Cusco",
+    "subtitle": "Av. Cusco / Panamericana Sur • Paradero Oficial",
     "category": "marketsCommercial",
     "categoryLabel": "Mercados y Zonas Comerciales",
     "isOfficial": true,
