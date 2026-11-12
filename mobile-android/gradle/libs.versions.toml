@@ -1,0 +1,12 @@
+[versions]
+agp = "8.3.2"
+kotlin = "1.9.23"
+serialization = "1.6.3"
+
+[libraries]
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+
