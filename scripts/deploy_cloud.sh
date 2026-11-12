@@ -19,11 +19,11 @@ sudo apt-get update -qq
 if ! command -v rsync >/dev/null 2>&1; then
   sudo apt-get install -y -qq rsync
 fi
-mkdir -p /home/admin/sem-bus/backend /home/admin/sem-bus/admin-web
+mkdir -p /home/admin/sem-bus/backend /home/admin/sem-bus/admin-web /home/admin/sem-bus/driver-web
 INIT
 
-# 2. Sincronizar archivos de backend y web admin
-echo "📦 Transfiriendo archivos del backend y panel web..."
+# 2. Sincronizar archivos de backend, web admin y tablet chofer
+echo "📦 Transfiriendo archivos del backend, panel web y tablet chofer..."
 rsync -avz -e "ssh -i $SSH_KEY" \
   --exclude '__pycache__' \
   --exclude '*.pyc' \
@@ -33,6 +33,10 @@ rsync -avz -e "ssh -i $SSH_KEY" \
 rsync -avz -e "ssh -i $SSH_KEY" \
   --exclude '.DS_Store' \
   admin-web/ "$SERVER_USER@$SERVER_IP:$REMOTE_DIR/admin-web/"
+
+rsync -avz -e "ssh -i $SSH_KEY" \
+  --exclude '.DS_Store' \
+  driver-web/ "$SERVER_USER@$SERVER_IP:$REMOTE_DIR/driver-web/"
 
 scp -i "$SSH_KEY" .env.example "$SERVER_USER@$SERVER_IP:$REMOTE_DIR/.env.example"
 
@@ -75,7 +79,7 @@ WantedBy=multi-user.target
 SERVICE
 
 # Permisos para Nginx
-chmod 755 /home/admin /home/admin/sem-bus /home/admin/sem-bus/admin-web
+chmod 755 /home/admin /home/admin/sem-bus /home/admin/sem-bus/admin-web /home/admin/sem-bus/driver-web
 
 # Configurar lista de IPs autorizadas si no existe
 if [ ! -f /etc/nginx/admin_allowed_ips.conf ]; then
@@ -111,6 +115,17 @@ server {
         auth_basic_user_file /etc/nginx/.htpasswd;
 
         try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache";
+    }
+
+    # Terminal / Tablet Cabina Conductor (Protegido con Contraseña)
+    location /chofer {
+        alias /home/admin/sem-bus/driver-web;
+        index index.html;
+        auth_basic "Acceso Chofer Cabina • Bus Conectado";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+
+        try_files $uri $uri/ /chofer/index.html;
         add_header Cache-Control "no-cache";
     }
 
