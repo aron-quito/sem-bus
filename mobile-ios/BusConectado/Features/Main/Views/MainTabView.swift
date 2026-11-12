@@ -344,7 +344,7 @@ struct MainTabView: View {
                                                         .background(BCTheme.amber)
                                                         .clipShape(Capsule())
                                                 } else if place.category == .mapCustomPlace {
-                                                    Text("MAPA")
+                                                    Text("UBICACIÓN API")
                                                         .font(.system(size: 7.5, weight: .black))
                                                         .foregroundColor(.black)
                                                         .padding(.horizontal, 5)

@@ -1,0 +1,619 @@
+[
+  {
+    "id": "stop-mercado-central",
+    "name": "Mercado Central",
+    "shortName": "Mercado Central",
+    "subtitle": "Av. Bolognesi cdra 8 / Calle Zela • Centro Histórico",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.01358,
+    "longitude": -70.25055,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 101"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-mercado-2-mayo",
+    "name": "Mercado 2 de Mayo",
+    "shortName": "Mercado 2 de Mayo",
+    "subtitle": "Calle 2 de Mayo / Av. Leguía • Cercado",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.01085,
+    "longitude": -70.24865,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 203"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-mercado-grau",
+    "name": "Mercado Miguel Grau",
+    "shortName": "Mercado Grau",
+    "subtitle": "Av. Saucini / Av. Industrial • Mayorista",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.0242,
+    "longitude": -70.2621,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 101",
+      "Ruta 203"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-mercado-cenepa",
+    "name": "Mercado Héroes del Cenepa",
+    "shortName": "Mercado Cenepa",
+    "subtitle": "Av. Los Próceres / Av. Cenepa • Gregorio Albarracín",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.0436,
+    "longitude": -70.2452,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 101"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-polvos-rosados",
+    "name": "Mercado Polvos Rosados",
+    "shortName": "Polvos Rosados",
+    "subtitle": "Av. Pinto cdra 11 / Jorge Chávez • Alto de la Alianza",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.00695,
+    "longitude": -70.2459,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-mercado-santa-rosa",
+    "name": "Mercado Santa Rosa",
+    "shortName": "Mercado Santa Rosa",
+    "subtitle": "Av. Santa Rosa de Lima • Cono Sur (Viñani)",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.0487,
+    "longitude": -70.2423,
+    "routesPassing": [
+      "Ruta 14"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-mercado-pesquero",
+    "name": "Mercado Pesquero",
+    "shortName": "Mercado Pesquero",
+    "subtitle": "Av. Internacional • Ciudad Nueva",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.0024,
+    "longitude": -70.2421,
+    "routesPassing": [
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-plaza-vea",
+    "name": "Paradero Av. Cusco (Eje Comercial Sur)",
+    "shortName": "Paradero Av. Cusco",
+    "subtitle": "Av. Cusco / Panamericana Sur • Paradero Oficial",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.0212,
+    "longitude": -70.2532,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-cc-tupac-amaru",
+    "name": "Centro Comercial Túpac Amaru",
+    "shortName": "CC Túpac Amaru",
+    "subtitle": "Av. Coronel Mendoza cdra 12",
+    "category": "marketsCommercial",
+    "categoryLabel": "Mercados y Zonas Comerciales",
+    "isOfficial": true,
+    "latitude": -18.0079,
+    "longitude": -70.2467,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 203"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-parque-locomotora",
+    "name": "Parque de la Locomotora",
+    "shortName": "Parque de la Locomotora",
+    "subtitle": "Av. Miguel Grau / 8 de Octubre • Centro Histórico",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0164,
+    "longitude": -70.25475,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta A"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-plaza-san-francisco",
+    "name": "Plaza San Francisco",
+    "shortName": "Plaza San Francisco",
+    "subtitle": "Calle Zela / Calle San Francisco • Cercado",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0119,
+    "longitude": -70.2546,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-plaza-perez-gamboa",
+    "name": "Plaza Pérez Gamboa",
+    "shortName": "Plaza Pérez Gamboa",
+    "subtitle": "Av. Los Molles / Av. Humboldt • Gregorio Albarracín",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0347,
+    "longitude": -70.2492,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 101"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-plaza-del-maestro",
+    "name": "Plaza del Maestro",
+    "shortName": "Plaza del Maestro",
+    "subtitle": "Av. Pinto / Calle Tarata • Alto de la Alianza",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0086,
+    "longitude": -70.2441,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-plaza-vigil",
+    "name": "Plaza Vigil",
+    "shortName": "Plaza Vigil",
+    "subtitle": "Av. Pinto / Calle Vigil / Calle San Martín",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0091,
+    "longitude": -70.2473,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 203"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-plaza-quinones",
+    "name": "Plaza Quiñones",
+    "shortName": "Plaza Quiñones",
+    "subtitle": "Av. Jorge Basadre Norte / Av. Aviación • Alto de la Alianza",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0043,
+    "longitude": -70.2406,
+    "routesPassing": [
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-plaza-jorge-chavez",
+    "name": "Plaza Jorge Chávez",
+    "shortName": "Plaza Jorge Chávez",
+    "subtitle": "Calle Jorge Chávez / Juan Velasco • Cono Norte",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0029,
+    "longitude": -70.2497,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 203"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-paseo-aguas",
+    "name": "Paseo de las Aguas",
+    "shortName": "Paseo de las Aguas",
+    "subtitle": "Av. Augusto B. Leguía / Calle San Martín",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0096,
+    "longitude": -70.2556,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-tacna-centro",
+    "name": "Tacna Centro",
+    "shortName": "Tacna Centro",
+    "subtitle": "Paseo Cívico / Arco Parabólico / Catedral de Tacna",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0138,
+    "longitude": -70.2519,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta A"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-pasaje-vigil",
+    "name": "Pasaje Vigil",
+    "shortName": "Pasaje Vigil",
+    "subtitle": "Pasaje Peatonal Vigil entre Bolognesi y San Martín",
+    "category": "plazasCentral",
+    "categoryLabel": "Plazas y Zonas Céntricas",
+    "isOfficial": true,
+    "latitude": -18.0126,
+    "longitude": -70.2509,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-unjbg",
+    "name": "Universidad Jorge Basadre (UNJBG)",
+    "shortName": "UNJBG Campus Central",
+    "subtitle": "Av. Miraflores s/n / Calle Los Pinos • Ciudad Universitaria",
+    "category": "institutionsTerminals",
+    "categoryLabel": "Instituciones y Terminales",
+    "isOfficial": true,
+    "latitude": -18.023346,
+    "longitude": -70.24927,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 101"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-terminal-terrestre",
+    "name": "Terminal Terrestre Manuel A. Odría",
+    "shortName": "Terminal Nacional",
+    "subtitle": "Av. Hipólito Unanue / Panamericana Sur",
+    "category": "institutionsTerminals",
+    "categoryLabel": "Instituciones y Terminales",
+    "isOfficial": true,
+    "latitude": -18.0066,
+    "longitude": -70.2576,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta 101",
+      "Ruta 203"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-terminal-bolognesi",
+    "name": "Terminal Bolognesi",
+    "shortName": "Terminal Bolognesi",
+    "subtitle": "Av. Centenario / Salida a Tarata",
+    "category": "institutionsTerminals",
+    "categoryLabel": "Instituciones y Terminales",
+    "isOfficial": true,
+    "latitude": -18.0141,
+    "longitude": -70.2461,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-gobierno-regional",
+    "name": "Gobierno Regional de Tacna",
+    "shortName": "Gobierno Regional",
+    "subtitle": "Calle Gregoria Albarracín 526",
+    "category": "institutionsTerminals",
+    "categoryLabel": "Instituciones y Terminales",
+    "isOfficial": true,
+    "latitude": -18.0196,
+    "longitude": -70.2591,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-poder-judicial",
+    "name": "Poder Judicial",
+    "shortName": "Poder Judicial",
+    "subtitle": "Calle Inclán / Presbítero Andía • Corte Superior",
+    "category": "institutionsTerminals",
+    "categoryLabel": "Instituciones y Terminales",
+    "isOfficial": true,
+    "latitude": -18.0156,
+    "longitude": -70.2536,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta A"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-estadio-jorge-basadre",
+    "name": "Estadio Jorge Basadre",
+    "shortName": "Estadio Basadre",
+    "subtitle": "Av. Arias y Aragüez / Olga Grohmann",
+    "category": "institutionsTerminals",
+    "categoryLabel": "Instituciones y Terminales",
+    "isOfficial": true,
+    "latitude": -18.0056,
+    "longitude": -70.2509,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-radio-nacional",
+    "name": "Radio Nacional",
+    "shortName": "Radio Nacional",
+    "subtitle": "Calle Apurímac / Calle Patricio Meléndez",
+    "category": "institutionsTerminals",
+    "categoryLabel": "Instituciones y Terminales",
+    "isOfficial": true,
+    "latitude": -18.0151,
+    "longitude": -70.2516,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "stop-gran-hotel-tacna",
+    "name": "Gran Hotel Tacna",
+    "shortName": "Gran Hotel Tacna",
+    "subtitle": "Av. Bolognesi 300 / Calle Miller",
+    "category": "institutionsTerminals",
+    "categoryLabel": "Instituciones y Terminales",
+    "isOfficial": true,
+    "latitude": -18.0176,
+    "longitude": -70.2561,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 10B",
+      "Ruta A"
+    ],
+    "colorHex": "#2563EB",
+    "iconName": "bus.fill",
+    "statusNote": null
+  },
+  {
+    "id": "prop-hospital-unanue",
+    "name": "Hospital Regional Hipólito Unanue",
+    "shortName": "Hosp. Hipólito Unanue",
+    "subtitle": "Calle Blondell / Calle 2 de Mayo • Accesibilidad Prioritaria",
+    "category": "proposedHospitals",
+    "categoryLabel": "Propuesta: Hospitales y Salud",
+    "isOfficial": false,
+    "latitude": -18.0101,
+    "longitude": -70.2436,
+    "routesPassing": [
+      "Ruta 10B",
+      "Ruta 14"
+    ],
+    "colorHex": "#F59E0B",
+    "iconName": "bus.fill",
+    "statusNote": "Propuesta Oficialización: Accesibilidad Adulto Mayor / CONADIS"
+  },
+  {
+    "id": "prop-hospital-essalud-calana",
+    "name": "Hospital EsSalud Daniel Alcides Carrión (Calana)",
+    "shortName": "Hosp. EsSalud Calana",
+    "subtitle": "Carretera a Calana Km 7 • Valle Viejo",
+    "category": "proposedHospitals",
+    "categoryLabel": "Propuesta: Hospitales y Salud",
+    "isOfficial": false,
+    "latitude": -17.9716,
+    "longitude": -70.2011,
+    "routesPassing": [
+      "Ruta 10B"
+    ],
+    "colorHex": "#F59E0B",
+    "iconName": "bus.fill",
+    "statusNote": "Propuesta Oficialización: Prioridad Adulto Mayor"
+  },
+  {
+    "id": "prop-postas-medicas",
+    "name": "Posta Médica Cono Sur (Viñani)",
+    "shortName": "Posta Médica Viñani",
+    "subtitle": "Av. Municipal con Calle 10 • Gregorio Albarracín",
+    "category": "proposedHospitals",
+    "categoryLabel": "Propuesta: Hospitales y Salud",
+    "isOfficial": false,
+    "latitude": -18.0551,
+    "longitude": -70.2401,
+    "routesPassing": [
+      "Ruta 14",
+      "Ruta 101"
+    ],
+    "colorHex": "#F59E0B",
+    "iconName": "bus.fill",
+    "statusNote": "Propuesta Oficialización: Red de Atención Primaria"
+  },
+  {
+    "id": "prop-vinani-crecimiento",
+    "name": "Viñani - Av. Municipal",
+    "shortName": "Viñani (Av. Municipal)",
+    "subtitle": "Av. Municipal cdra 20 • Asoc. Nuevas Cono Sur",
+    "category": "proposedUrbanGrowth",
+    "categoryLabel": "Propuesta: Cono Sur y Cono Norte",
+    "isOfficial": false,
+    "latitude": -18.0611,
+    "longitude": -70.2381,
+    "routesPassing": [
+      "Ruta 14"
+    ],
+    "colorHex": "#F59E0B",
+    "iconName": "bus.fill",
+    "statusNote": "Propuesta Oficialización: Parada fija para eliminar paradas informales"
+  },
+  {
+    "id": "prop-ciudad-nueva-crecimiento",
+    "name": "Ciudad Nueva - Av. Internacional",
+    "shortName": "Ciudad Nueva (Plaza Olaya)",
+    "subtitle": "Plaza José Olaya / Av. Internacional • Cono Norte",
+    "category": "proposedUrbanGrowth",
+    "categoryLabel": "Propuesta: Cono Sur y Cono Norte",
+    "isOfficial": false,
+    "latitude": -17.9981,
+    "longitude": -70.2391,
+    "routesPassing": [
+      "Ruta 10B"
+    ],
+    "colorHex": "#F59E0B",
+    "iconName": "bus.fill",
+    "statusNote": "Propuesta Oficialización: Parada fija para eliminar paradas informales"
+  },
+  {
+    "id": "prop-upt-capanique",
+    "name": "Universidad Privada de Tacna (UPT)",
+    "shortName": "UPT Campus Capanique",
+    "subtitle": "Av. Jorge Basadre Grohmann Poniente / Capanique",
+    "category": "proposedEducation",
+    "categoryLabel": "Propuesta: Zonas Educativas (Geofencing)",
+    "isOfficial": false,
+    "latitude": -18.0411,
+    "longitude": -70.2641,
+    "routesPassing": [
+      "Ruta 10B",
+      "Ruta 203"
+    ],
+    "colorHex": "#F59E0B",
+    "iconName": "bus.fill",
+    "statusNote": "Propuesta Oficialización: Geofencing para Tarifa Medio Pasaje Universitario"
+  },
+  {
+    "id": "prop-frontera-santa-rosa",
+    "name": "Complejo Fronterizo Santa Rosa",
+    "shortName": "Complejo Santa Rosa",
+    "subtitle": "Carretera Panamericana Sur Km 1336 • Frontera Perú - Chile",
+    "category": "proposedTouristBorder",
+    "categoryLabel": "Propuesta: Zonas Turísticas y Frontera",
+    "isOfficial": false,
+    "latitude": -18.3151,
+    "longitude": -70.3201,
+    "routesPassing": [
+      "Ruta A"
+    ],
+    "colorHex": "#F59E0B",
+    "iconName": "bus.fill",
+    "statusNote": "Propuesta Oficialización: Equipamiento con Tótem Informativo y llegada de turistas"
+  }
+]

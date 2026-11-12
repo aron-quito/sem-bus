@@ -30,7 +30,7 @@ final class AuthViewModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
     @Published var countdownSeconds: Int = 59
-    @Published var backendHost: String = "localhost:8000"
+    @Published var backendHost: String = "34.44.71.179.sslip.io"
     @Published var isConnectedToBackend: Bool = false
 
     // MARK: - Estado del Monedero y Movimientos (CU-05 / CU-08)
@@ -52,6 +52,10 @@ final class AuthViewModel: ObservableObject {
     @Published var showInsufficientBalanceModal: Bool = false
     @Published var requiredPointsForAttempt: Int = 0
 
+    // Catálogo Dinámico de Paraderos y Rutas (Sincronizados con el Administrador Web y Servidor Cloud)
+    @Published var dynamicCatalogStops: [TacnaDestinationPlace] = TacnaDestinationPlace.catalog
+    @Published var dynamicRoutes: [TacnaOfficialRouteCatalogItem] = TacnaOfficialRouteCatalogItem.officialRoutes
+
     // Estado del Buscador Predictivo y Pin de Destino Buscado
     @Published var isSearchDropdownVisible: Bool = false
     @Published var searchedDestinationPin: TacnaDestinationPlace? = nil
@@ -59,11 +63,13 @@ final class AuthViewModel: ObservableObject {
     @Published var liveMapSearchResults: [TacnaDestinationPlace] = []
     @Published var activeRouteOverlayOnMap: TacnaOfficialRouteCatalogItem? = nil
 
-    // Estado del Escenario Pantalla Completa "Ir / Cómo Llegar" (Sección 4.E del Mockup)
+    // Estado del Escenario Pantalla Completa "Ir / Cómo Llegar" (Automatización de Rutas)
     @Published var showRoutePlannerFullScreen: Bool = false
+    @Published var routePlannerInitialOrigin: TacnaDestinationPlace? = nil
     @Published var routePlannerInitialDestination: TacnaDestinationPlace? = nil
     @Published var activeRouteGuidance: ActiveRouteGuidanceState? = nil
     @Published var showCancelRouteGuidanceAlert: Bool = false
+    @Published var showFiveMinuteBoardingBanner: Bool = false
 
     // Control de Cámara del Mapa en Tacna
     @Published var mapFocusTrigger: UUID = UUID()
@@ -73,12 +79,31 @@ final class AuthViewModel: ObservableObject {
     private var countdownTimer: AnyCancellable?
     private var arrivalAlertTimer: AnyCancellable?
     private var routeGuidanceTimer: AnyCancellable?
+    private var appForegroundCancellable: AnyCancellable?
     private var searchDebounceCancellable: AnyCancellable?
+    private var lastSyncDate: Date? = nil
 
     init() {
         if let savedHost = UserDefaults.standard.string(forKey: "bc_backend_host") {
-            self.backendHost = savedHost
-            APIClient.shared.updateBaseURL("http://\(savedHost)")
+            let host = (savedHost.contains("34.61.17.233") || savedHost == "34.44.71.179" || savedHost == "172.20.10.11:8000" || savedHost == "localhost:8000") ? "34.44.71.179.sslip.io" : savedHost
+            self.backendHost = host
+            APIClient.shared.updateBaseURL(host)
+        } else {
+            self.backendHost = "34.44.71.179.sslip.io"
+            APIClient.shared.updateBaseURL("https://34.44.71.179.sslip.io")
+        }
+
+        // Cargar paraderos y rutas cacheados previamente de la última sincronización con el Administrador Web
+        if let stopsData = UserDefaults.standard.data(forKey: "bc_cached_stops"),
+           let cachedDTOs = try? JSONDecoder().decode([AdminStopDTO].self, from: stopsData),
+           !cachedDTOs.isEmpty {
+            self.dynamicCatalogStops = cachedDTOs.map { $0.toDestinationPlace() }
+        }
+
+        if let routesData = UserDefaults.standard.data(forKey: "bc_cached_routes"),
+           let cachedRouteDTOs = try? JSONDecoder().decode([AdminRouteDTO].self, from: routesData),
+           !cachedRouteDTOs.isEmpty {
+            self.dynamicRoutes = cachedRouteDTOs.map { $0.toRouteCatalogItem() }
         }
 
         if let token = KeychainService.shared.get(key: "access_token"), !token.isEmpty {
@@ -87,11 +112,15 @@ final class AuthViewModel: ObservableObject {
                 self.currentUser = profile
                 self.isLoggedIn = true
                 self.loadLocalTransactions(for: profile.phone)
-                Task {
-                    await refreshStateFromBackendIfAvailable()
-                }
             }
         }
+
+        // Sincronización automática de paraderos al arrancar la app
+        Task {
+            await self.refreshStateFromBackendIfAvailable(isManual: false)
+        }
+
+        setupSmartSync()
 
         // Búsqueda en vivo de cualquier lugar del mapa de Tacna mediante Apple MapKit (MKLocalSearch)
         searchDebounceCancellable = $searchQuery
@@ -132,70 +161,199 @@ final class AuthViewModel: ObservableObject {
         return activeBuses
     }
 
-    /// Catálogo predictivo para el buscador superior: combina los 34 Paraderos Oficiales/Propuestos de Tacna + Lugares del Mapa en vivo (MapKit)
+    /// Catálogo predictivo para el buscador superior:
+    /// Cuando el usuario escribe una búsqueda (ej: "Plaza Vea"), prioriza las ubicaciones reales de la API de Mapas (MKLocalSearch)
+    /// seguidas de los paraderos oficiales de bus que coincidan.
     var filteredSearchDestinations: [TacnaDestinationPlace] {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            return TacnaDestinationPlace.catalog
+            return dynamicCatalogStops
         }
-        let catalogMatches = TacnaDestinationPlace.catalog.filter {
+        let catalogMatches = dynamicCatalogStops.filter {
             $0.name.localizedCaseInsensitiveContains(trimmed) ||
             $0.shortName.localizedCaseInsensitiveContains(trimmed) ||
             $0.subtitle.localizedCaseInsensitiveContains(trimmed) ||
             $0.category.rawValue.localizedCaseInsensitiveContains(trimmed) ||
             $0.routesPassing.joined(separator: " ").localizedCaseInsensitiveContains(trimmed)
         }
-        // Evitar duplicados por nombre con los resultados de MapKit
-        let existingNames = Set(catalogMatches.map { $0.name.lowercased() })
-        let uniqueMapMatches = liveMapSearchResults.filter { !existingNames.contains($0.name.lowercased()) }
-        return catalogMatches + uniqueMapMatches
+        // Priorizar siempre los Puntos de Interés reales devueltos por la API (MKLocalSearch) sin ocultarlos por nombres de paraderos
+        return liveMapSearchResults + catalogMatches
     }
 
     func performLiveMapKitSearchInTacna(query: String) async {
+        let results = await searchMapKitPlacesInTacna(query: query)
+        await MainActor.run {
+            self.liveMapSearchResults = results
+        }
+    }
+
+    /// Consulta directamente la API de Apple MapKit (MKLocalSearch) para obtener ubicaciones y Puntos de Interés reales en Tacna
+    func searchMapKitPlacesInTacna(query: String) async -> [TacnaDestinationPlace] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.count >= 2 else {
-            self.liveMapSearchResults = []
-            return
+            return []
         }
 
         let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = "\(trimmed) Tacna"
+        request.naturalLanguageQuery = "\(trimmed), Tacna, Perú"
+        request.resultTypes = [.pointOfInterest, .address]
         request.region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: -18.0135, longitude: -70.2519),
-            span: MKCoordinateSpan(latitudeDelta: 0.12, longitudeDelta: 0.12)
+            span: MKCoordinateSpan(latitudeDelta: 0.14, longitudeDelta: 0.14)
         )
 
         let search = MKLocalSearch(request: request)
         do {
             let response = try await search.start()
-            let mapped: [TacnaDestinationPlace] = response.mapItems.prefix(6).compactMap { item in
+            var seenKeys = Set<String>()
+            let mapped: [TacnaDestinationPlace] = response.mapItems.prefix(10).compactMap { item in
                 guard let name = item.name else { return nil }
                 let coord = item.placemark.coordinate
-                // Filtrar que esté dentro del departamento de Tacna
-                guard coord.latitude < -17.5 && coord.latitude > -18.5 else { return nil }
-                let thoroughfare = item.placemark.thoroughfare ?? item.placemark.locality ?? "Tacna"
+                // Filtrar que esté dentro de la región de Tacna
+                guard coord.latitude < -17.4 && coord.latitude > -18.6 else { return nil }
+
+                let street = [item.placemark.thoroughfare, item.placemark.subThoroughfare]
+                    .compactMap { $0 }
+                    .joined(separator: " ")
+                let locality = item.placemark.locality ?? "Tacna"
+                let addressDesc = street.isEmpty ? locality : "\(street), \(locality)"
+
+                let dedupKey = "\(name.lowercased())-\(String(format: "%.4f", coord.latitude))-\(String(format: "%.4f", coord.longitude))"
+                guard !seenKeys.contains(dedupKey) else { return nil }
+                seenKeys.insert(dedupKey)
+
                 return TacnaDestinationPlace.fromMapItem(
                     name: name,
-                    subtitle: "\(thoroughfare) • Ubicación del Mapa en Tacna",
+                    subtitle: "📍 \(addressDesc) • API del Mapa",
                     coordinate: coord
                 )
             }
-            self.liveMapSearchResults = mapped
+            return mapped
         } catch {
-            self.liveMapSearchResults = []
+            return []
         }
     }
 
-    /// Proyecta una Ruta Oficial de Tacna desde la pestaña Líneas directamente sobre el mapa principal
+    /// Obtiene el nombre real de la calle o punto de interés en Tacna cuando el usuario fija un punto libre en el mapa
+    func reverseGeocodeCoordinateInTacna(_ coordinate: CLLocationCoordinate2D, roleLabel: String = "Punto en el mapa") async -> TacnaDestinationPlace {
+        let geocoder = CLGeocoder()
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        do {
+            let placemarks = try await geocoder.reverseGeocodeLocation(location)
+            if let pm = placemarks.first {
+                let street = [pm.thoroughfare, pm.subThoroughfare].compactMap { $0 }.joined(separator: " ")
+                let area = pm.subLocality ?? pm.locality ?? "Tacna"
+                let title = !street.isEmpty ? street : (pm.name ?? roleLabel)
+                let sub = "📍 \(area) (\(String(format: "%.5f, %.5f", coordinate.latitude, coordinate.longitude)))"
+                return TacnaDestinationPlace.fromMapItem(
+                    name: title,
+                    subtitle: sub,
+                    coordinate: coordinate
+                )
+            }
+        } catch {
+            // Fallback a coordenada formateada
+        }
+        return TacnaDestinationPlace.fromMapItem(
+            name: "\(roleLabel) (\(String(format: "%.4f, %.4f", coordinate.latitude, coordinate.longitude)))",
+            subtitle: "📍 Punto personalizado en Tacna",
+            coordinate: coordinate
+        )
+    }
+
+    /// Evalúa automáticamente las mejores opciones de ruta (Ordinarias en servicio, Externas en vía y Caminata)
+    func evaluateAutomatedRoutes(
+        from origin: TacnaDestinationPlace,
+        to destination: TacnaDestinationPlace
+    ) -> RouteAutomationEvaluationResult {
+        RouteAutomationEngine.evaluateRoutes(
+            from: origin,
+            to: destination,
+            stops: dynamicCatalogStops,
+            routes: dynamicRoutes,
+            activeBuses: activeBuses
+        )
+    }
+
+    /// Proyecta una Ruta (Ordinaria o Externa) desde la pestaña Líneas directamente sobre el mapa principal
     func projectRouteOnMainMap(_ route: TacnaOfficialRouteCatalogItem) {
         BCFeedbackManager.shared.impactMedium()
         self.activeRouteOverlayOnMap = route
         self.selectedTab = 0
-        if let first = route.resolvedStops.first, let last = route.resolvedStops.last {
+        let coords = route.resolvedPolylineCoordinates(using: dynamicCatalogStops)
+        if let first = coords.first, let last = coords.last {
             let midLat = (first.latitude + last.latitude) / 2.0
             let midLon = (first.longitude + last.longitude) / 2.0
             let span = max(abs(first.latitude - last.latitude) * 1.6, 0.032)
             focusMap(on: CLLocationCoordinate2D(latitude: midLat, longitude: midLon), spanDelta: span)
+        }
+    }
+
+    // MARK: - Reglas de Dominio para Rutas Ordinarias vs Externas y Disponibilidad de Notificación en Paraderos
+
+    /// Busca una ruta en el catálogo dinámico por su código (ej: "Ruta 14", "RUTA 10B", "Ruta 101")
+    func routeItem(forCode rawCode: String) -> TacnaOfficialRouteCatalogItem? {
+        let normalized = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return dynamicRoutes.first {
+            $0.code.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized
+        }
+    }
+
+    /// Devuelve todas las rutas sincronizadas (Ordinarias y Externas) que pasan por un paradero dado
+    func catalogRoutes(for stop: TacnaDestinationPlace) -> [TacnaOfficialRouteCatalogItem] {
+        guard stop.category != .mapCustomPlace else { return [] }
+        var matched: [TacnaOfficialRouteCatalogItem] = []
+
+        // 1. Por códigos registrados en routesPassing del paradero
+        for code in stop.routesPassing {
+            if let route = routeItem(forCode: code), !matched.contains(where: { $0.id == route.id }) {
+                matched.append(route)
+            }
+        }
+
+        // 2. Por asociación directa en keyStopIds del catálogo de rutas sincronizado
+        for route in dynamicRoutes {
+            let resolved = route.resolvedStops(using: dynamicCatalogStops)
+            if resolved.contains(where: { $0.id == stop.id }), !matched.contains(where: { $0.id == route.id }) {
+                matched.append(route)
+            }
+        }
+
+        return matched
+    }
+
+    /// Rutas Ordinarias (propias de la app con tracking y pago QR) que pasan por este paradero
+    func ordinaryRoutes(for stop: TacnaDestinationPlace) -> [TacnaOfficialRouteCatalogItem] {
+        catalogRoutes(for: stop).filter { $0.isOrdinary }
+    }
+
+    /// Rutas Ordinarias que pasan por este paradero y se encuentran actualmente En Servicio
+    func activeOrdinaryRoutes(for stop: TacnaDestinationPlace) -> [TacnaOfficialRouteCatalogItem] {
+        ordinaryRoutes(for: stop).filter { $0.isInService }
+    }
+
+    /// Rutas Externas (líneas tradicionales de Tacna sin tracking) que pasan por este paradero
+    func externalRoutes(for stop: TacnaDestinationPlace) -> [TacnaOfficialRouteCatalogItem] {
+        catalogRoutes(for: stop).filter { $0.isExternal }
+    }
+
+    /// Evalúa la disponibilidad de la opción "Notificación" para un paradero según la regla de negocio:
+    /// - Si no figura ninguna ruta ordinaria -> `.noOrdinaryRoutes` (solo opción "Ir / Punto de encuentro", sin botón de notificación).
+    /// - Si tiene ruta(s) ordinaria(s) registrada(s) pero ninguna está en servicio -> `.ordinaryOutOfService` (muestra aviso + "Ir").
+    /// - Si tiene al menos una ruta ordinaria en servicio -> `.available` (habilita activar notificación de llegada + "Ir").
+    func stopNotificationAvailability(for stop: TacnaDestinationPlace) -> StopNotificationAvailability {
+        guard stop.category != .mapCustomPlace else {
+            return .noOrdinaryRoutes
+        }
+        let ordRoutes = ordinaryRoutes(for: stop)
+        guard !ordRoutes.isEmpty else {
+            return .noOrdinaryRoutes
+        }
+        let activeOrd = ordRoutes.filter { $0.isInService }
+        if !activeOrd.isEmpty {
+            return .available(activeRoutes: activeOrd)
+        } else {
+            return .ordinaryOutOfService(registeredRoutes: ordRoutes)
         }
     }
 
@@ -234,30 +392,83 @@ final class AuthViewModel: ObservableObject {
         mapFocusTrigger = UUID()
     }
 
-    func openRoutePlanner(with destination: TacnaDestinationPlace? = nil) {
+    func openRoutePlanner(with destination: TacnaDestinationPlace? = nil, origin: TacnaDestinationPlace? = nil) {
         BCFeedbackManager.shared.impactMedium()
         isSearchDropdownVisible = false
+        if let origin = origin {
+            routePlannerInitialOrigin = origin
+        } else if routePlannerInitialOrigin == nil {
+            routePlannerInitialOrigin = TacnaDestinationPlace.currentLocationPlace()
+        }
         routePlannerInitialDestination = destination ?? searchedDestinationPin
         showRoutePlannerFullScreen = true
     }
 
-    func startGuidedRoute(to destination: TacnaDestinationPlace, optionIndex: Int = 1) {
+    func startGuidedRoute(
+        from origin: TacnaDestinationPlace = TacnaDestinationPlace.currentLocationPlace(),
+        to destination: TacnaDestinationPlace,
+        candidate: EvaluatedRouteCandidate? = nil,
+        optionIndex: Int = 0
+    ) {
         BCFeedbackManager.shared.notificationSuccess()
         showRoutePlannerFullScreen = false
         searchedDestinationPin = nil
 
-        // Inicia el Timer Circular Verde en 02:48 (168 segundos) tal cual el mockup
-        activeRouteGuidance = ActiveRouteGuidanceState(
+        let resolvedCandidate: EvaluatedRouteCandidate?
+        if let candidate = candidate {
+            resolvedCandidate = candidate
+        } else {
+            let eval = evaluateAutomatedRoutes(from: origin, to: destination)
+            resolvedCandidate = eval.candidates.indices.contains(optionIndex)
+                ? eval.candidates[optionIndex]
+                : eval.recommendedCandidate
+        }
+
+        let isOrdinaryRoute = resolvedCandidate?.kind == .ordinaryInService
+        // Si es Ruta Ordinaria, el contador monitorea la llegada del bus al paradero establecido y avisa a los 5 min (300 s)
+        let initialSeconds: Int
+        if let cand = resolvedCandidate, cand.kind == .ordinaryInService {
+            initialSeconds = max(cand.busWaitMinutes * 60, 298)
+        } else if let cand = resolvedCandidate {
+            initialSeconds = max(cand.totalDurationMinutes * 60, 180)
+        } else {
+            initialSeconds = 298
+        }
+
+        var guidanceState = ActiveRouteGuidanceState(
+            origin: origin,
             destination: destination,
             selectedOptionIndex: optionIndex,
-            remainingBusArrivalSeconds: 168
+            candidate: resolvedCandidate,
+            remainingBusArrivalSeconds: initialSeconds,
+            fiveMinuteAlertFired: false
         )
 
+        // Si al presionar "Ir" en una Ruta Ordinaria el bus ya se encuentra a <= 5 minutos (300 s) del paradero establecido,
+        // disparar automáticamente la notificación local y el banner en vivo.
+        if isOrdinaryRoute, let cand = resolvedCandidate, initialSeconds <= 300 {
+            guidanceState.fiveMinuteAlertFired = true
+            showFiveMinuteBoardingBanner = true
+            BCNotificationManager.shared.triggerFiveMinuteBusArrivalNotification(
+                routeCode: cand.routeCode,
+                boardingStopName: cand.boardingPointName,
+                destinationName: destination.shortName,
+                walkMinutesToStop: cand.walkInitialMinutes
+            )
+        } else {
+            showFiveMinuteBoardingBanner = false
+            if isOrdinaryRoute {
+                BCNotificationManager.shared.requestAuthorizationIfNeeded()
+            }
+        }
+
+        activeRouteGuidance = guidanceState
+
         // Encuadrar cámara entre origen y destino en el mapa principal
-        let midLat = (TacnaDestinationPlace.userOriginCoordinate.latitude + destination.latitude) / 2.0
-        let midLon = (TacnaDestinationPlace.userOriginCoordinate.longitude + destination.longitude) / 2.0
-        let latDelta = max(abs(TacnaDestinationPlace.userOriginCoordinate.latitude - destination.latitude) * 1.9, 0.012)
-        let lonDelta = max(abs(TacnaDestinationPlace.userOriginCoordinate.longitude - destination.longitude) * 1.9, 0.012)
+        let midLat = (origin.latitude + destination.latitude) / 2.0
+        let midLon = (origin.longitude + destination.longitude) / 2.0
+        let latDelta = max(abs(origin.latitude - destination.latitude) * 1.9, 0.012)
+        let lonDelta = max(abs(origin.longitude - destination.longitude) * 1.9, 0.012)
         focusMap(
             on: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
             spanDelta: max(latDelta, lonDelta)
@@ -270,9 +481,24 @@ final class AuthViewModel: ObservableObject {
                 guard let self = self, var guidance = self.activeRouteGuidance else { return }
                 if guidance.remainingBusArrivalSeconds > 0 {
                     guidance.remainingBusArrivalSeconds -= 1
+                    // Disparar automáticamente la notificación cuando el bus ordinario llegue al umbral de 5 minutos (300 s) del paradero establecido
+                    if let cand = guidance.candidate,
+                       cand.kind == .ordinaryInService,
+                       !guidance.fiveMinuteAlertFired,
+                       guidance.remainingBusArrivalSeconds <= 300 {
+                        guidance.fiveMinuteAlertFired = true
+                        self.showFiveMinuteBoardingBanner = true
+                        BCFeedbackManager.shared.notificationSuccess()
+                        BCNotificationManager.shared.triggerFiveMinuteBusArrivalNotification(
+                            routeCode: cand.routeCode,
+                            boardingStopName: cand.boardingPointName,
+                            destinationName: guidance.destination.shortName,
+                            walkMinutesToStop: cand.walkInitialMinutes
+                        )
+                    }
                     self.activeRouteGuidance = guidance
                 } else {
-                    guidance.remainingBusArrivalSeconds = 168
+                    guidance.remainingBusArrivalSeconds = 240
                     self.activeRouteGuidance = guidance
                 }
             }
@@ -287,6 +513,7 @@ final class AuthViewModel: ObservableObject {
         BCFeedbackManager.shared.impactLight()
         routeGuidanceTimer?.cancel()
         activeRouteGuidance = nil
+        showFiveMinuteBoardingBanner = false
         showCancelRouteGuidanceAlert = false
     }
 
@@ -307,9 +534,9 @@ final class AuthViewModel: ObservableObject {
             .replacingOccurrences(of: "http://", with: "")
             .replacingOccurrences(of: "https://", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        self.backendHost = cleaned.isEmpty ? "localhost:8000" : cleaned
+        self.backendHost = cleaned.isEmpty ? "34.44.71.179.sslip.io" : cleaned
         UserDefaults.standard.set(self.backendHost, forKey: "bc_backend_host")
-        APIClient.shared.updateBaseURL("http://\(self.backendHost)")
+        APIClient.shared.updateBaseURL(self.backendHost)
         Task {
             await refreshStateFromBackendIfAvailable()
         }
@@ -402,8 +629,8 @@ final class AuthViewModel: ObservableObject {
                     requiresAuth: false
                 )
 
-                _ = KeychainService.shared.save(key: "access_token", value: res.accessToken)
-                _ = KeychainService.shared.save(key: "refresh_token", value: res.refreshToken)
+                KeychainService.shared.save(key: "access_token", value: res.accessToken)
+                KeychainService.shared.save(key: "refresh_token", value: res.refreshToken)
 
                 self.currentUser = res.user
                 self.saveActiveUserLocally(res.user)
@@ -434,8 +661,8 @@ final class AuthViewModel: ObservableObject {
 
         let phoneKey = normalizedPhone
         let user = loadOrCreateLocalAccount(phone: phoneKey)
-        _ = KeychainService.shared.save(key: "access_token", value: "local_jwt_\(user.id)")
-        _ = KeychainService.shared.save(key: "refresh_token", value: "local_refresh_\(user.id)")
+        KeychainService.shared.save(key: "access_token", value: "local_jwt_\(user.id)")
+        KeychainService.shared.save(key: "refresh_token", value: "local_refresh_\(user.id)")
 
         self.currentUser = user
         self.saveActiveUserLocally(user)
@@ -470,10 +697,83 @@ final class AuthViewModel: ObservableObject {
         self.selectedTab = 0
     }
 
-    // MARK: - Sincronización de Red de Transporte y Monedero con Backend
-    func refreshStateFromBackendIfAvailable() async {
+    private func setupSmartSync() {
+        appForegroundCancellable?.cancel()
+        appForegroundCancellable = NotificationCenter.default
+            .publisher(for: UIApplication.willEnterForegroundNotification)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                Task {
+                    // Sincroniza al volver de segundo plano solo si pasaron al menos 3 minutos (ahorro de batería)
+                    await self.refreshStateFromBackendIfAvailable(isManual: false)
+                }
+            }
+    }
+
+    // MARK: - Sincronización Inteligente de Red y Paraderos (Smart Sync & Battery Saver)
+    func refreshStateFromBackendIfAvailable(isManual: Bool = false) async {
         guard APIClient.shared.canReachRemoteBackend else { return }
 
+        // Protección de batería y datos móviles: throttle de 3 minutos para sincronizaciones automáticas
+        if !isManual, let last = lastSyncDate, Date().timeIntervalSince(last) < 180 {
+            return
+        }
+        self.lastSyncDate = Date()
+
+        // 1. Sincronizar paraderos calibrados en tiempo real desde el Administrador Web y Servidor Cloud
+        do {
+            let adminStops: [AdminStopDTO] = try await APIClient.shared.request(
+                endpoint: "transit/stops",
+                method: "GET",
+                requiresAuth: false
+            )
+            if !adminStops.isEmpty {
+                let converted = adminStops.map { $0.toDestinationPlace() }
+                await MainActor.run {
+                    if self.dynamicCatalogStops != converted {
+                        self.dynamicCatalogStops = converted
+                        if let rawData = try? JSONEncoder().encode(adminStops) {
+                            UserDefaults.standard.set(rawData, forKey: "bc_cached_stops")
+                        }
+                    }
+                    self.isConnectedToBackend = true
+                    if isManual {
+                        BCFeedbackManager.shared.notificationSuccess()
+                    }
+                }
+            }
+        } catch {
+            print("[SYNC] Error sincronizando paraderos desde backend: \(error)")
+        }
+
+        // 2. Sincronizar catálogo de rutas (Ordinarias en Servicio/Fuera de Servicio y Externas)
+        do {
+            let adminRoutes: [AdminRouteDTO] = try await APIClient.shared.request(
+                endpoint: "transit/routes",
+                method: "GET",
+                requiresAuth: false
+            )
+            if !adminRoutes.isEmpty {
+                let convertedRoutes = adminRoutes.map { $0.toRouteCatalogItem() }
+                await MainActor.run {
+                    if self.dynamicRoutes != convertedRoutes {
+                        self.dynamicRoutes = convertedRoutes
+                        if let rawRoutes = try? JSONEncoder().encode(adminRoutes) {
+                            UserDefaults.standard.set(rawRoutes, forKey: "bc_cached_routes")
+                        }
+                        if let currentOverlay = self.activeRouteOverlayOnMap,
+                           let updatedOverlay = convertedRoutes.first(where: { $0.id == currentOverlay.id }) {
+                            self.activeRouteOverlayOnMap = updatedOverlay
+                        }
+                    }
+                    self.isConnectedToBackend = true
+                }
+            }
+        } catch {
+            print("[SYNC] Error sincronizando rutas desde backend: \(error)")
+        }
+
+        // 3. Sincronizar red de transporte activa (unidades en vivo)
         struct NetworkDTO: Decodable {
             let routes: [BusRouteModel]
             let stops: [BusStopModel]
@@ -486,12 +786,14 @@ final class AuthViewModel: ObservableObject {
                 method: "GET",
                 requiresAuth: false
             )
-            self.routes = net.routes
-            self.stops = net.stops
-            self.activeBuses = net.activeBuses
-            self.isConnectedToBackend = true
+            await MainActor.run {
+                self.routes = net.routes
+                self.stops = net.stops
+                self.activeBuses = net.activeBuses
+                self.isConnectedToBackend = true
+            }
         } catch {
-            self.isConnectedToBackend = false
+            // Se mantiene el estado local si el endpoint no tiene buses asignados
         }
     }
 

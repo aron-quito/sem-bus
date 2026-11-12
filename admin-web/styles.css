@@ -546,12 +546,24 @@ html, body {
   flex: 1;
   height: 100%;
   position: relative;
-  background: #000000;
+  background: var(--bg-main);
 }
 
 #tacna-map {
   width: 100%;
   height: 100%;
+  background: var(--bg-main);
+}
+
+/* ── FILTRO MODO OSCURO PARA OPENSTREETMAP (100% Libre sin API Key ni marcas de agua) ── */
+.map-tiles-dark .leaflet-tile,
+.leaflet-tile.map-tiles-dark,
+.leaflet-layer.map-tiles-dark .leaflet-tile {
+  filter: brightness(0.62) invert(1) contrast(2.4) hue-rotate(200deg) saturate(0.35) brightness(0.85);
+}
+
+.leaflet-container {
+  background-color: var(--bg-main) !important;
 }
 
 .map-top-bar {
@@ -656,18 +668,14 @@ html, body {
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  cursor: grab;
-  transition: transform 0.18s ease;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
   position: relative;
 }
 
 .pin-container:hover {
   transform: scale(1.18);
-  cursor: grab;
-}
-
-.pin-container:active {
-  cursor: grabbing;
+  cursor: pointer;
 }
 
 .pin-container.is-official {
@@ -680,10 +688,30 @@ html, body {
   border: 2px solid #FFFFFF;
 }
 
+/* Estado de arrastre y reubicación activa */
 .pin-container.is-dragging {
   transform: scale(1.3);
   box-shadow: 0 8px 24px rgba(56, 189, 248, 0.6);
   border-color: var(--color-accent);
+  cursor: grabbing !important;
+}
+
+.pin-container.is-relocating {
+  cursor: grab !important;
+  transform: scale(1.35) !important;
+  border: 3px solid #38BDF8 !important;
+  box-shadow: 0 0 0 6px rgba(56, 189, 248, 0.35), 0 12px 28px rgba(0, 0, 0, 0.7) !important;
+  animation: pulse-relocating-pin 1.4s infinite alternate ease-in-out;
+  z-index: 99999 !important;
+}
+
+.pin-container.is-relocating:active {
+  cursor: grabbing !important;
+}
+
+@keyframes pulse-relocating-pin {
+  0% { box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.25), 0 8px 20px rgba(0, 0, 0, 0.6); }
+  100% { box-shadow: 0 0 0 10px rgba(56, 189, 248, 0.5), 0 16px 36px rgba(0, 0, 0, 0.85); }
 }
 
 .pin-label {
@@ -901,4 +929,756 @@ dialog::backdrop {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BARRA FLOTANTE DE REUBICACIÓN ("¿Deseas mover?" ➔ "Establecer")
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.relocation-action-bar {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1050;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-radius: var(--radius-lg);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.75), 0 0 24px rgba(56, 189, 248, 0.2);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+  max-width: 90vw;
+}
+
+.relocation-action-bar.hidden {
+  display: none !important;
+}
+
+.relocation-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.relocation-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 10px var(--color-accent);
+  animation: pulse-dot 1.4s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+.relocation-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.relocation-title strong {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.relocation-coords {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+
+.relocation-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-establish {
+  background: #10B981 !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.4) !important;
+  border: none !important;
+  padding: 8px 16px !important;
+}
+
+.btn-establish:hover {
+  background: #059669 !important;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.6) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   POPUP DE SELECCIÓN DE PARADERO (LEAFLET DARK THEME)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.leaflet-popup-content-wrapper {
+  background: rgba(15, 23, 42, 0.96) !important;
+  backdrop-filter: blur(16px) !important;
+  color: #F8FAFC !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65) !important;
+  padding: 0 !important;
+}
+
+.leaflet-popup-content {
+  margin: 14px 16px !important;
+  line-height: 1.4 !important;
+}
+
+.leaflet-popup-tip {
+  background: rgba(15, 23, 42, 0.96) !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  color: #94A3B8 !important;
+  padding: 6px !important;
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover {
+  color: #FFFFFF !important;
+}
+
+.stop-popup-card {
+  font-family: var(--font-sans);
+  min-width: 240px;
+  max-width: 290px;
+}
+
+.popup-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  margin-bottom: 6px;
+}
+
+.popup-badge.official {
+  background: rgba(37, 99, 235, 0.2);
+  color: #60A5FA;
+  border: 1px solid rgba(37, 99, 235, 0.4);
+}
+
+.popup-badge.proposal {
+  background: rgba(245, 158, 11, 0.2);
+  color: #FBBF24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.popup-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #F8FAFC;
+  margin-bottom: 3px;
+}
+
+.popup-subtitle {
+  font-size: 0.72rem;
+  color: #94A3B8;
+  margin-bottom: 6px;
+}
+
+.popup-coords {
+  font-size: 0.68rem;
+  color: #64748B;
+  font-family: var(--font-mono);
+  margin-bottom: 10px;
+}
+
+.popup-move-cta {
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 10px 0 12px 0;
+  text-align: center;
+}
+
+.popup-move-question {
+  font-size: 0.72rem;
+  color: #94A3B8;
+  margin-bottom: 7px;
+  font-weight: 500;
+}
+
+.btn-start-move {
+  width: 100%;
+  font-size: 0.76rem !important;
+  font-weight: 700 !important;
+  background: #2563EB !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+  padding: 6px 12px !important;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4) !important;
+}
+
+.btn-start-move:hover {
+  background: #1D4ED8 !important;
+}
+
+.popup-actions-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+  margin-top: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COLABORACIÓN EN TIEMPO REAL (ESTILO GOOGLE DOCS)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.collab-profile-card {
+  background: rgba(30, 41, 59, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.collab-user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collab-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #FFFFFF;
+  background: #2563EB;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+  flex-shrink: 0;
+}
+
+.collab-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.collab-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collab-sub {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.btn-switch-user {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--color-accent);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-switch-user:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: var(--color-accent);
+}
+
+.collab-presence-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.collab-presence-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.collab-presence-pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.presence-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.presence-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 6px #10B981;
+  animation: pulse-dot 1.8s infinite;
+}
+
+.collab-remote-banner {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid #F59E0B;
+  color: #F8FAFC;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.25);
+  z-index: 1000;
+  font-size: 0.78rem;
+  font-weight: 600;
+  animation: fadeInDown 0.25s ease-out;
+}
+
+.collab-remote-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #F59E0B;
+  box-shadow: 0 0 8px #F59E0B;
+  animation: pulse-dot 1.2s infinite;
+}
+
+/* Indicador de Paradero Bloqueado / En edición por otro admin */
+.marker-locked-ring {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: 2.5px dashed #F59E0B;
+  animation: spin-slow 8s linear infinite;
+  pointer-events: none;
+}
+
+.marker-locked-badge {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #F59E0B;
+  color: #000000;
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  pointer-events: none;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MÓDULO 2: GESTOR DE RUTAS OFICIALES (ORDINARIAS Y EXTERNAS) Y TRAZADOS
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.hidden {
+  display: none !important;
+}
+
+.module-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--bg-input);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.module-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.module-tab:hover {
+  color: var(--text-primary);
+}
+
+.module-tab.active {
+  background: var(--color-official);
+  color: #FFFFFF;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+}
+
+.module-tab-badge {
+  background: rgba(255, 255, 255, 0.16);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.module-header-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.route-chip {
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  font-size: 0.71rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.route-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+}
+
+.route-chip.active {
+  background: rgba(37, 99, 235, 0.22);
+  color: #60A5FA;
+  border-color: #2563EB;
+}
+
+/* Tarjetas de Rutas en Lista Lateral */
+.route-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.18s ease;
+  cursor: pointer;
+}
+
+.route-item:hover {
+  border-color: var(--border-medium);
+  background: rgba(30, 41, 59, 0.65);
+}
+
+.route-item.selected {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.route-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.route-code-box {
+  min-width: 52px;
+  height: 44px;
+  padding: 0 8px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  text-align: center;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+}
+
+.route-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.route-badges-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+
+.badge-ordinary {
+  background: rgba(37, 99, 235, 0.2);
+  color: #60A5FA;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.badge-external {
+  background: rgba(148, 163, 184, 0.14);
+  color: #CBD5E1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.btn-service-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.65rem;
+  font-weight: 800;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.18s ease;
+}
+
+.btn-service-toggle.in-service {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34D399;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.btn-service-toggle.out-of-service {
+  background: rgba(245, 158, 11, 0.15);
+  color: #FBBF24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.route-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  background: rgba(9, 13, 22, 0.55);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.route-metric-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.route-metric-val {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.route-metric-lbl {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.route-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.route-actions-left, .route-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Píldoras de Rutas en Paraderos con distinción Ordinaria vs Externa */
+.route-pill.is-ordinary-active {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6EE7B7;
+  border-color: rgba(16, 185, 129, 0.38);
+}
+
+.route-pill.is-ordinary-inactive {
+  background: rgba(245, 158, 11, 0.15);
+  color: #FCD34D;
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+.route-pill.is-external {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94A3B8;
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+/* Modal de Ruta y Checklist de Paraderos */
+.route-dialog-content {
+  max-width: 680px;
+  width: 94vw;
+}
+
+.color-picker-input {
+  width: 100%;
+  height: 38px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.route-stops-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-eta-preview {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  background: rgba(56, 189, 248, 0.12);
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+}
+
+.field-help-text {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+
+.route-stops-checklist {
+  max-height: 210px;
+  overflow-y: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.stop-check-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.73rem;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.stop-check-item:hover {
+  border-color: var(--border-medium);
+}
+
+.stop-check-item.checked {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.stop-check-seq {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-official);
+  color: #FFF;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Nodos numerados de Secuencia de Ruta en el Mapa */
+.route-seq-node {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #FFFFFF;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.trace-metrics-pill {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(56, 189, 248, 0.2);
+  color: #38BDF8;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 

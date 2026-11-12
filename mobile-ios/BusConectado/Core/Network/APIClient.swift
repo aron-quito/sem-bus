@@ -26,23 +26,22 @@ enum APIError: LocalizedError {
 final class APIClient: ObservableObject {
     static let shared = APIClient()
 
-    @Published var baseURLString: String = "http://localhost:8000/api/v1"
+    /// URL del backend (Servidor Cloud Seguro HTTPS: 34.44.71.179.sslip.io o local en desarrollo)
+    @Published var baseURLString: String = "https://34.44.71.179.sslip.io/api/v1"
 
     private var baseURL: URL {
-        URL(string: baseURLString) ?? URL(string: "http://localhost:8000/api/v1")!
+        URL(string: baseURLString) ?? URL(string: "https://34.44.71.179.sslip.io/api/v1")!
     }
 
     var canReachRemoteBackend: Bool {
-        #if targetEnvironment(simulator)
-        return true
-        #else
-        // En un iPhone físico, "localhost" apunta al propio iPhone; solo conectar por red si se configuró una IP LAN o dominio
-        return !baseURLString.contains("localhost") && !baseURLString.contains("127.0.0.1")
-        #endif
+        return !baseURLString.isEmpty
     }
 
     func updateBaseURL(_ newURL: String) {
-        let trimmed = newURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        var trimmed = newURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.hasPrefix("http://") && !trimmed.hasPrefix("https://") {
+            trimmed = "https://\(trimmed)"
+        }
         if trimmed.hasSuffix("/api/v1") {
             baseURLString = trimmed
         } else if trimmed.hasSuffix("/") {
@@ -56,10 +55,23 @@ final class APIClient: ObservableObject {
     private let session: URLSession
 
     private init() {
+        let savedURL = UserDefaults.standard.string(forKey: "bc_backend_url")
+        let defaultURL = "https://34.44.71.179.sslip.io/api/v1"
+
+        let resolvedURL: String
+        // Migración automática a HTTPS y nueva IP del servidor si tenía guardada una IP anterior
+        if let saved = savedURL, (saved.contains("34.61.17.233") || saved.contains("http://34.44.71.179") || saved.contains("172.20.10.11")) {
+            resolvedURL = defaultURL
+            UserDefaults.standard.set(defaultURL, forKey: "bc_backend_url")
+        } else {
+            resolvedURL = savedURL ?? defaultURL
+        }
+
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 3.0
-        configuration.timeoutIntervalForResource = 6.0
+        configuration.timeoutIntervalForRequest = 4.0
+        configuration.timeoutIntervalForResource = 8.0
         self.session = URLSession(configuration: configuration)
+        self._baseURLString = Published(initialValue: resolvedURL)
     }
 
     func request<T: Decodable>(

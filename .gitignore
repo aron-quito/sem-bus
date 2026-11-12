@@ -126,12 +126,21 @@ __pycache__/
 venv/
 env/
 .env
-.env.local
+.env.*
+*.env
 .pytest_cache/
 .coverage
 htmlcov/
 *.db
 *.sqlite3
+
+# Secrets & Credentials Security
+*.pem
+*.key
+id_*
+credentials.json
+service-account*.json
+secrets.json
 
 # macOS / IDEs
 .DS_Store

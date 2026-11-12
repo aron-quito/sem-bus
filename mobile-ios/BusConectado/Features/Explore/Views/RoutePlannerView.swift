@@ -1,25 +1,31 @@
 import SwiftUI
 import MapKit
 
-enum RoutePlannerScreenState {
-    case selector   // Estado 1: Selector de Origen/Destino y Recientes (#gm-state-selector)
-    case search     // Estado 2: Buscador de Destino con Teclado (#gm-state-search)
-    case routeMap   // Estados 3, 4 y 5: Mapa de Ruta + Bottom Sheet de 3 Niveles (#gm-state-route)
+enum PlannerEndpointTarget: Equatable {
+    case origin
+    case destination
+}
+
+enum RoutePlannerScreenState: Equatable {
+    case selector                              // Estado 1: Selector de Origen/Destino y Recientes
+    case search(target: PlannerEndpointTarget) // Estado 2: Buscador en vivo por API (MKLocalSearch) + Paraderos
+    case mapPicker(target: PlannerEndpointTarget) // Estado 2B: Fijar cualquier punto libre en el mapa de Tacna
+    case routeMap                              // Estados 3, 4 y 5: Mapa de Ruta + Bottom Sheet de 3 Niveles
 }
 
 enum RouteSheetSnapLevel: CaseIterable {
-    case compact    // Nivel 1: Compacto (Peek ~185pt)
-    case medium     // Nivel 2: Detalle Intermedio (Medium ~380pt)
-    case full       // Nivel 3: Todas las Opciones (Full ~600pt)
+    case compact    // Nivel 1: Compacto (Peek ~215pt)
+    case medium     // Nivel 2: Detalle Intermedio (Medium ~420pt)
+    case full       // Nivel 3: Todas las Opciones (Full ~84%)
 
     func height(in totalHeight: CGFloat) -> CGFloat {
         switch self {
         case .compact:
-            return 190
+            return 225
         case .medium:
-            return min(max(totalHeight * 0.48, 360), 430)
+            return min(max(totalHeight * 0.52, 390), 460)
         case .full:
-            return totalHeight * 0.82
+            return totalHeight * 0.84
         }
     }
 
@@ -33,9 +39,9 @@ enum RouteSheetSnapLevel: CaseIterable {
 }
 
 enum RouteQuickFilter: String, CaseIterable {
-    case fastest = "Más rápida"
-    case fewerTransfers = "Menos trasbordos"
-    case freeSeats = "Asientos libres"
+    case recommended = "Recomendadas"
+    case ordinaryOnly = "Ordinarias (QR)"
+    case lessWalking = "Menor caminata"
 }
 
 struct RoutePlannerView: View {
@@ -43,17 +49,41 @@ struct RoutePlannerView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var screenState: RoutePlannerScreenState = .selector
-    @State private var selectedDestination: TacnaDestinationPlace = TacnaDestinationPlace.catalog[0] // Mercado Central por defecto
-    @State private var isEndpointsSwapped: Bool = false
-    @State private var selectedTransportTab: Int = 0 // 0 = Bus, 1 = A pie
-    @State private var destinationSearchText: String = ""
+    @State private var selectedOrigin: TacnaDestinationPlace = TacnaDestinationPlace.currentLocationPlace()
+    @State private var selectedDestination: TacnaDestinationPlace = TacnaDestinationPlace.catalog[0]
+    @State private var selectedTransportTab: Int = 0 // 0 = Bus + Caminata, 1 = Solo A pie
+
+    // Buscador en vivo por API (MKLocalSearch) para Origen o Destino
+    @State private var plannerSearchText: String = ""
+    @State private var apiSearchResults: [TacnaDestinationPlace] = []
+    @State private var isSearchingAPI: Bool = false
+    @State private var searchTask: Task<Void, Never>? = nil
     @FocusState private var isSearchInputFocused: Bool
+
+    // Estado del Selector Interactivo en el Mapa ("Fijar punto en el mapa")
+    @State private var pickerCenterCoordinate: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: -18.0135, longitude: -70.2519)
+    @State private var pickerMapCamera: MapCameraPosition = .region(
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: -18.0135, longitude: -70.2519),
+            span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)
+        )
+    )
+    @State private var pickerResolvedPlace: TacnaDestinationPlace? = nil
+    @State private var isResolvingPickerPoint: Bool = false
+
+    // Resultado del Motor de Automatización de Rutas (Ordinarias en servicio, Externas en vía y Caminata)
+    @State private var evaluationResult: RouteAutomationEvaluationResult? = nil
+    @State private var selectedCandidateIndex: Int = 0
+    @State private var selectedFilter: RouteQuickFilter = .recommended
 
     // Estado de la Hoja Inferior de 3 Niveles (Peek / Medium / Full)
     @State private var sheetSnap: RouteSheetSnapLevel = .compact
     @State private var sheetDragTranslation: CGFloat = 0
-    @State private var selectedOptionIndex: Int = 1 // 1 = Ruta principal (Recomendada), 2 = Ruta alterna, 3 = Caminata directa
-    @State private var selectedFilter: RouteQuickFilter = .fastest
+
+    // Polilíneas alineadas nativamente a las calles de Apple Maps (MKDirections)
+    @State private var plannerWalkStreetCoords: [CLLocationCoordinate2D] = []
+    @State private var plannerBusStreetCoords: [CLLocationCoordinate2D] = []
+    @State private var plannerFinalWalkStreetCoords: [CLLocationCoordinate2D] = []
 
     @State private var routeMapCamera: MapCameraPosition = .region(
         MKCoordinateRegion(
@@ -71,29 +101,67 @@ struct RoutePlannerView: View {
             case .selector:
                 selectorScreenView
                     .transition(.opacity)
-            case .search:
-                searchScreenView
+            case .search(let target):
+                searchScreenView(target: target)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
+            case .mapPicker(let target):
+                mapPickerScreenView(target: target)
+                    .transition(.opacity)
             case .routeMap:
                 routeMapScreenView
                     .transition(.opacity)
             }
         }
         .onAppear {
-            if let initial = viewModel.routePlannerInitialDestination {
-                selectedDestination = initial
+            if let customOrigin = viewModel.routePlannerInitialOrigin {
+                selectedOrigin = customOrigin
+            } else {
+                selectedOrigin = TacnaDestinationPlace.currentLocationPlace()
+            }
+
+            if let initialDest = viewModel.routePlannerInitialDestination {
+                selectedDestination = initialDest
+                recalculateAutomatedRoutes(resetSelection: true)
                 screenState = .routeMap
-                updateCameraForDestination(initial)
             } else {
                 screenState = .selector
             }
         }
+        .onChange(of: plannerSearchText) { _, newValue in
+            triggerLiveAPISearch(query: newValue)
+        }
     }
 
-    // MARK: - ESTADO 1: Selector de Origen / Destino y Recientes (#gm-state-selector)
+    // MARK: - Candidatos Filtrados y Opción Activa
+    private var displayedCandidates: [EvaluatedRouteCandidate] {
+        guard let eval = evaluationResult else { return [] }
+        if selectedTransportTab == 1 {
+            return eval.candidates.filter { $0.kind == .walkingDirect }
+        }
+        switch selectedFilter {
+        case .recommended:
+            return eval.candidates
+        case .ordinaryOnly:
+            let ord = eval.candidates.filter { $0.kind == .ordinaryInService }
+            return ord.isEmpty ? eval.candidates : ord
+        case .lessWalking:
+            return eval.candidates.sorted { $0.walkTotalMeters < $1.walkTotalMeters }
+        }
+    }
+
+    private var activeCandidate: EvaluatedRouteCandidate? {
+        let list = displayedCandidates
+        guard !list.isEmpty else { return evaluationResult?.recommendedCandidate }
+        if list.indices.contains(selectedCandidateIndex) {
+            return list[selectedCandidateIndex]
+        }
+        return list.first
+    }
+
+    // MARK: - ESTADO 1: Selector de Punto de Inicio (Origen) y Punto de Llegada (Destino)
     private var selectorScreenView: some View {
         VStack(spacing: 0) {
-            // Cabecera con botón Volver y Tarjeta de Origen / Destino
+            // Cabecera con botón Volver y Tarjeta Interactiva de Origen / Destino
             HStack(alignment: .center, spacing: 10) {
                 Button {
                     BCFeedbackManager.shared.impactLight()
@@ -108,62 +176,112 @@ struct RoutePlannerView: View {
                 }
 
                 VStack(spacing: 0) {
-                    // Fila Origen
+                    // Fila Punto de Inicio (Origen)
                     HStack(spacing: 10) {
-                        Circle()
-                            .stroke(Color(hex: "#60A5FA"), lineWidth: 2.5)
-                            .frame(width: 10, height: 10)
+                        Button {
+                            BCFeedbackManager.shared.impactLight()
+                            plannerSearchText = ""
+                            apiSearchResults = []
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                screenState = .search(target: .origin)
+                                isSearchInputFocused = true
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Circle()
+                                    .stroke(Color(hex: "#60A5FA"), lineWidth: 2.5)
+                                    .frame(width: 10, height: 10)
 
-                        Text(isEndpointsSwapped ? selectedDestination.shortName : "Tu ubicación")
-                            .font(.footnote.weight(.medium))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("PUNTO DE INICIO")
+                                        .font(.system(size: 8.5, weight: .heavy))
+                                        .foregroundColor(Color(hex: "#60A5FA"))
+                                    Text(selectedOrigin.name)
+                                        .font(.footnote.weight(.semibold))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                }
 
-                        Spacer()
+                                Spacer()
+                            }
+                        }
 
                         Button {
                             BCFeedbackManager.shared.impactLight()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                isEndpointsSwapped.toggle()
-                            }
+                            openMapCrosshairPicker(for: .origin)
+                        } label: {
+                            Image(systemName: "scope")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(BCTheme.cyanAccent)
+                                .frame(width: 28, height: 28)
+                                .background(Color.white.opacity(0.08))
+                                .clipShape(Circle())
+                        }
+                        .accessibilityLabel("Fijar origen en el mapa")
+
+                        Button {
+                            swapOriginAndDestination()
                         } label: {
                             Image(systemName: "arrow.up.arrow.down")
                                 .font(.caption.weight(.semibold))
-                                .foregroundColor(.white.opacity(0.65))
+                                .foregroundColor(.white.opacity(0.75))
                                 .frame(width: 28, height: 28)
-                                .background(Color.white.opacity(0.06))
+                                .background(Color.white.opacity(0.08))
                                 .clipShape(Circle())
                         }
                     }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, 9)
 
                     Divider()
                         .background(Color(hex: "#3A3A3C"))
                         .padding(.horizontal, 12)
 
-                    // Fila Destino
-                    Button {
-                        BCFeedbackManager.shared.impactLight()
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            screenState = .search
-                            isSearchInputFocused = true
+                    // Fila Punto de Llegada (Destino)
+                    HStack(spacing: 10) {
+                        Button {
+                            BCFeedbackManager.shared.impactLight()
+                            plannerSearchText = ""
+                            apiSearchResults = []
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                screenState = .search(target: .destination)
+                                isSearchInputFocused = true
+                            }
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "mappin.and.ellipse")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(Color(hex: "#FB7185"))
+
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text("PUNTO DE LLEGADA (DESTINO)")
+                                        .font(.system(size: 8.5, weight: .heavy))
+                                        .foregroundColor(Color(hex: "#FB7185"))
+                                    Text("Buscar en API (ej. Plaza Vea) o elegir destino ›")
+                                        .font(.footnote)
+                                        .foregroundColor(.white.opacity(0.75))
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+                            }
                         }
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "mappin.and.ellipse")
+
+                        Button {
+                            BCFeedbackManager.shared.impactLight()
+                            openMapCrosshairPicker(for: .destination)
+                        } label: {
+                            Image(systemName: "scope")
                                 .font(.caption.weight(.bold))
                                 .foregroundColor(Color(hex: "#FB7185"))
-
-                            Text("Elige un destino ›")
-                                .font(.footnote)
-                                .foregroundColor(.white.opacity(0.6))
-
-                            Spacer()
+                                .frame(width: 28, height: 28)
+                                .background(Color.white.opacity(0.08))
+                                .clipShape(Circle())
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
+                        .accessibilityLabel("Fijar destino en el mapa")
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
                 }
                 .background(Color(hex: "#2C2C2E"))
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -171,239 +289,140 @@ struct RoutePlannerView: View {
             .padding(.horizontal, 14)
             .padding(.top, 12)
 
-            // Pestañas de Modo de Transporte (Bus / A pie)
-            HStack(spacing: 12) {
+            // Pestañas de Modo de Transporte (Bus / A pie) + Botones rápidos de Fijar en Mapa
+            HStack(spacing: 10) {
                 Button {
                     BCFeedbackManager.shared.impactLight()
                     selectedTransportTab = 0
                 } label: {
-                    VStack(spacing: 3) {
+                    HStack(spacing: 5) {
                         Image(systemName: "bus.fill")
-                            .font(.subheadline)
-                        Text("Bus")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.caption)
+                        Text("Bus + Caminata")
+                            .font(.system(size: 11, weight: .semibold))
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(selectedTransportTab == 0 ? Color(hex: "#0A84FF") : Color(hex: "#2C2C2E"))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
 
                 Button {
                     BCFeedbackManager.shared.impactLight()
                     selectedTransportTab = 1
                 } label: {
-                    VStack(spacing: 3) {
+                    HStack(spacing: 5) {
                         Image(systemName: "figure.walk")
-                            .font(.subheadline)
-                        Text("A pie")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.caption)
+                        Text("Solo a pie")
+                            .font(.system(size: 11, weight: .semibold))
                     }
                     .foregroundColor(selectedTransportTab == 1 ? .white : .white.opacity(0.65))
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(selectedTransportTab == 1 ? Color(hex: "#0A84FF") : Color(hex: "#2C2C2E"))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
 
                 Spacer()
             }
             .padding(.horizontal, 16)
-            .padding(.top, 14)
+            .padding(.top, 12)
 
-            // Accesos Rápidos (Casa / Trabajo)
+            // Accesos Directos: Fijar Punto en el Mapa (Inicio o Llegada) y Buscador API
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    savedPlacePill(icon: "house.fill", title: "Casa", subtitle: "Definir lugar") {
-                        selectDestinationAndShowRoute(TacnaDestinationPlace.catalog[1]) // Mercado 2 de Mayo
+                    savedPlacePill(
+                        icon: "mappin.and.ellipse",
+                        title: "Fijar Destino en Mapa",
+                        subtitle: "Cualquier calle o esquina"
+                    ) {
+                        openMapCrosshairPicker(for: .destination)
                     }
-                    savedPlacePill(icon: "briefcase.fill", title: "Universidad / Trabajo", subtitle: "Campus UNJBG") {
-                        selectDestinationAndShowRoute(TacnaDestinationPlace.catalog.first(where: { $0.id == "stop-unjbg" }) ?? TacnaDestinationPlace.catalog[0])
+
+                    savedPlacePill(
+                        icon: "location.north.circle.fill",
+                        title: "Fijar Inicio en Mapa",
+                        subtitle: "Cambiar punto de partida"
+                    ) {
+                        openMapCrosshairPicker(for: .origin)
+                    }
+
+                    savedPlacePill(
+                        icon: "magnifyingglass.circle.fill",
+                        title: "Buscar Lugar (API)",
+                        subtitle: "Plaza Vea, Hospital, etc."
+                    ) {
+                        plannerSearchText = ""
+                        apiSearchResults = []
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            screenState = .search(target: .destination)
+                            isSearchInputFocused = true
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
             }
-            .padding(.top, 14)
+            .padding(.top, 12)
 
-            // Título Recientes
+            // Título de Paraderos Sincronizados
             HStack {
-                Text("Recientes y Paraderos en Tacna")
+                Text("Paraderos Sincronizados y Puntos de Referencia")
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
                 Spacer()
-                Image(systemName: "info.circle")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.45))
+                Text("\(viewModel.dynamicRoutes.filter { $0.isOrdinaryInService }.count) ord. activas")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(BCTheme.emerald)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 18)
+            .padding(.top, 16)
             .padding(.bottom, 8)
 
-            // Lista de Destinos Recientes (idéntica al Mockup)
+            // Lista de Paraderos Sincronizados con cálculo dinámico de tiempo desde el Origen actual
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(TacnaDestinationPlace.catalog) { place in
+                    ForEach(viewModel.dynamicCatalogStops) { place in
                         Button {
-                            selectDestinationAndShowRoute(place)
+                            selectEndpointAndContinue(place, for: .destination)
                         } label: {
                             HStack(spacing: 14) {
                                 ZStack {
                                     Circle()
                                         .fill(Color(hex: "#2C2C2E"))
                                         .frame(width: 38, height: 38)
-                                    Image(systemName: "clock")
+                                    Image(systemName: place.displayIconName)
                                         .font(.subheadline)
-                                        .foregroundColor(.white.opacity(0.65))
+                                        .foregroundColor(Color(hex: place.displayColorHex))
                                 }
 
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text(place.name)
-                                        .font(.subheadline.weight(.medium))
-                                        .foregroundColor(.white)
-                                        .lineLimit(1)
-
-                                    if let note = place.statusNote {
-                                        Text(note)
-                                            .font(.caption)
-                                            .foregroundColor(Color.orange)
+                                    HStack(spacing: 6) {
+                                        Text(place.name)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundColor(.white)
                                             .lineLimit(1)
-                                    } else {
-                                        Text(place.subtitle)
-                                            .font(.caption)
-                                            .foregroundColor(.white.opacity(0.5))
-                                            .lineLimit(1)
+                                        Text(place.displayBadgeText)
+                                            .font(.system(size: 8, weight: .heavy))
+                                            .foregroundColor(Color(hex: place.displayColorHex))
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1.5)
+                                            .background(Color(hex: place.displayColorHex).opacity(0.15))
+                                            .clipShape(Capsule())
                                     }
-                                }
 
-                                Spacer()
-
-                                Image(systemName: "arrow.up.left")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.35))
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 13)
-                        }
-
-                        Divider()
-                            .background(Color(hex: "#2C2C2E"))
-                            .padding(.leading, 68)
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: - ESTADO 2: Buscador de Destino con Teclado (#gm-state-search)
-    private var searchScreenView: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
-                Button {
-                    BCFeedbackManager.shared.impactLight()
-                    isSearchInputFocused = false
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        screenState = .selector
-                    }
-                } label: {
-                    Image(systemName: "arrow.left")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundColor(.white)
-                        .frame(width: 38, height: 38)
-                        .background(Color(hex: "#2C2C2E"))
-                        .clipShape(Circle())
-                }
-
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.5))
-
-                    TextField("Elige un destino en Tacna", text: $destinationSearchText)
-                        .font(.subheadline)
-                        .foregroundColor(.white)
-                        .focused($isSearchInputFocused)
-                        .autocorrectionDisabled()
-
-                    if !destinationSearchText.isEmpty {
-                        Button {
-                            destinationSearchText = ""
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.white.opacity(0.6))
-                        }
-                    } else {
-                        Image(systemName: "mic.fill")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                }
-                .padding(.horizontal, 14)
-                .frame(height: 42)
-                .background(Color(hex: "#2C2C2E"))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 10)
-
-            // Opción "Elegir en el mapa"
-            Button {
-                selectDestinationAndShowRoute(selectedDestination)
-            } label: {
-                HStack(spacing: 14) {
-                    ZStack {
-                        Circle()
-                            .fill(Color(hex: "#2C2C2E"))
-                            .frame(width: 36, height: 36)
-                        Image(systemName: "mappin.and.ellipse")
-                            .font(.subheadline)
-                            .foregroundColor(BCTheme.cyanAccent)
-                    }
-                    Text("Elegir en el mapa")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundColor(.white)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color(hex: "#1C1C1E"))
-            }
-
-            Divider().background(Color(hex: "#2C2C2E"))
-
-            // Resultados Filtrados
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(filteredDestinationsInPlanner) { place in
-                        Button {
-                            isSearchInputFocused = false
-                            selectDestinationAndShowRoute(place)
-                        } label: {
-                            HStack(spacing: 14) {
-                                ZStack {
-                                    Circle()
-                                        .fill(Color(hex: "#2C2C2E"))
-                                        .frame(width: 38, height: 38)
-                                    Image(systemName: place.iconName)
-                                        .font(.subheadline)
-                                        .foregroundColor(Color(hex: place.iconColorHex))
-                                }
-
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(place.name)
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundColor(.white)
                                     Text(place.subtitle)
                                         .font(.caption)
                                         .foregroundColor(.white.opacity(0.55))
+                                        .lineLimit(1)
                                 }
 
                                 Spacer()
 
-                                Text("\(place.totalDurationMinutes) min")
-                                    .font(.caption.weight(.bold).monospacedDigit())
-                                    .foregroundColor(BCTheme.emerald)
+                                Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                    .font(.caption)
+                                    .foregroundColor(BCTheme.cyanAccent)
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
@@ -418,16 +437,415 @@ struct RoutePlannerView: View {
         }
     }
 
+    // MARK: - ESTADO 2: Buscador en Vivo conectado a la API de Mapas (MKLocalSearch) + Paraderos
+    private func searchScreenView(target: PlannerEndpointTarget) -> some View {
+        let isEditingOrigin = (target == .origin)
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Button {
+                    BCFeedbackManager.shared.impactLight()
+                    isSearchInputFocused = false
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        screenState = evaluationResult != nil ? .routeMap : .selector
+                    }
+                } label: {
+                    Image(systemName: "arrow.left")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(.white)
+                        .frame(width: 38, height: 38)
+                        .background(Color(hex: "#2C2C2E"))
+                        .clipShape(Circle())
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption)
+                        .foregroundColor(isEditingOrigin ? Color(hex: "#60A5FA") : Color(hex: "#FB7185"))
+
+                    TextField(
+                        isEditingOrigin
+                            ? "Buscar punto de inicio en Tacna (ej. Plaza Vea, calle...)"
+                            : "Buscar destino en la API (ej. Plaza Vea, Hospital...)",
+                        text: $plannerSearchText
+                    )
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                    .focused($isSearchInputFocused)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+
+                    if !plannerSearchText.isEmpty {
+                        Button {
+                            plannerSearchText = ""
+                            apiSearchResults = []
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(Color(hex: "#2C2C2E"))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            // Acciones rápidas: Fijar cualquier punto en el mapa o usar mi ubicación GPS
+            VStack(spacing: 0) {
+                Button {
+                    isSearchInputFocused = false
+                    openMapCrosshairPicker(for: target)
+                } label: {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(BCTheme.cyanAccent.opacity(0.18))
+                                .frame(width: 36, height: 36)
+                            Image(systemName: "scope")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundColor(BCTheme.cyanAccent)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(isEditingOrigin ? "Fijar punto de inicio en el mapa" : "Fijar punto de llegada en el mapa")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                            Text("Mueve el mapa para elegir cualquier calle, esquina o lugar exacto")
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.55))
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                }
+
+                if isEditingOrigin {
+                    Divider().background(Color(hex: "#2C2C2E"))
+                    Button {
+                        isSearchInputFocused = false
+                        selectEndpointAndContinue(TacnaDestinationPlace.currentLocationPlace(), for: .origin)
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(BCTheme.royalBlue.opacity(0.2))
+                                    .frame(width: 36, height: 36)
+                                Image(systemName: "location.fill")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundColor(Color(hex: "#60A5FA"))
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Usar mi ubicación actual (GPS)")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(Color(hex: "#60A5FA"))
+                                Text("Punto de partida según tu ubicación en tiempo real")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.55))
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                    }
+                }
+            }
+            .background(Color(hex: "#1C1C1E"))
+
+            Divider().background(Color(hex: "#2C2C2E"))
+
+            // Lista combinada: 1º Resultados Reales de la API del Mapa (MKLocalSearch) + 2º Paraderos Oficiales
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if isSearchingAPI {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                                .tint(BCTheme.cyanAccent)
+                            Text("Consultando ubicaciones reales en la API del Mapa...")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.65))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                    }
+
+                    if !apiSearchResults.isEmpty {
+                        Text("UBICACIONES REALES DE LA API DEL MAPA (\(apiSearchResults.count))")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundColor(BCTheme.cyanAccent)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .padding(.bottom, 6)
+
+                        ForEach(apiSearchResults) { apiPlace in
+                            Button {
+                                isSearchInputFocused = false
+                                selectEndpointAndContinue(apiPlace, for: target)
+                            } label: {
+                                HStack(spacing: 14) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(BCTheme.cyanAccent.opacity(0.18))
+                                            .frame(width: 38, height: 38)
+                                        Image(systemName: "mappin.and.ellipse")
+                                            .font(.subheadline.weight(.bold))
+                                            .foregroundColor(BCTheme.cyanAccent)
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        HStack(spacing: 6) {
+                                            Text(apiPlace.name)
+                                                .font(.subheadline.weight(.bold))
+                                                .foregroundColor(.white)
+                                                .lineLimit(1)
+                                            Text("PUNTO DE INTERÉS • API")
+                                                .font(.system(size: 8, weight: .black))
+                                                .foregroundColor(.black)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 1.5)
+                                                .background(BCTheme.cyanAccent)
+                                                .clipShape(Capsule())
+                                        }
+                                        Text(apiPlace.subtitle)
+                                            .font(.caption)
+                                            .foregroundColor(.white.opacity(0.65))
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "arrow.up.right.circle.fill")
+                                        .font(.subheadline)
+                                        .foregroundColor(BCTheme.cyanAccent)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                            }
+
+                            Divider()
+                                .background(Color(hex: "#2C2C2E"))
+                                .padding(.leading, 68)
+                        }
+                    }
+
+                    Text("PARADEROS DE TRANSPORTE EN TACNA (\(filteredStopsInPlanner.count))")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundColor(.white.opacity(0.5))
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 6)
+
+                    ForEach(filteredStopsInPlanner) { stopPlace in
+                        Button {
+                            isSearchInputFocused = false
+                            selectEndpointAndContinue(stopPlace, for: target)
+                        } label: {
+                            HStack(spacing: 14) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(hex: "#2C2C2E"))
+                                        .frame(width: 38, height: 38)
+                                    Image(systemName: "bus.fill")
+                                        .font(.subheadline)
+                                        .foregroundColor(Color(hex: stopPlace.displayColorHex))
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 6) {
+                                        Text(stopPlace.name)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundColor(.white)
+                                            .lineLimit(1)
+                                        Text("PARADERO")
+                                            .font(.system(size: 8, weight: .bold))
+                                            .foregroundColor(Color(hex: stopPlace.displayColorHex))
+                                            .padding(.horizontal, 5)
+                                            .padding(.vertical, 1.5)
+                                            .background(Color(hex: stopPlace.displayColorHex).opacity(0.16))
+                                            .clipShape(Capsule())
+                                    }
+                                    Text(stopPlace.subtitle)
+                                        .font(.caption)
+                                        .foregroundColor(.white.opacity(0.55))
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                        }
+
+                        Divider()
+                            .background(Color(hex: "#2C2C2E"))
+                            .padding(.leading, 68)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - ESTADO 2B: Selector Interactivo en el Mapa ("Fijar Punto en el Mapa" para Inicio o Destino)
+    private func mapPickerScreenView(target: PlannerEndpointTarget) -> some View {
+        let isOrigin = (target == .origin)
+        let accentColor = isOrigin ? Color(hex: "#60A5FA") : Color(hex: "#FB7185")
+
+        return ZStack {
+            Map(position: $pickerMapCamera) {
+                ForEach(viewModel.dynamicCatalogStops) { stop in
+                    Annotation(stop.shortName, coordinate: stop.coordinate) {
+                        Circle()
+                            .fill(Color(hex: "#2563EB"))
+                            .frame(width: 10, height: 10)
+                            .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                    }
+                }
+            }
+            .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .all))
+            .ignoresSafeArea()
+            .onMapCameraChange(frequency: .onEnd) { context in
+                let center = context.region.center
+                pickerCenterCoordinate = center
+                isResolvingPickerPoint = true
+                Task {
+                    let resolved = await viewModel.reverseGeocodeCoordinateInTacna(
+                        center,
+                        roleLabel: isOrigin ? "Punto de inicio" : "Punto de destino"
+                    )
+                    await MainActor.run {
+                        pickerResolvedPlace = resolved
+                        isResolvingPickerPoint = false
+                    }
+                }
+            }
+
+            // Mira Central Fija (Pin de Selección en Calle o Punto de Interés)
+            VStack(spacing: 4) {
+                Text(isOrigin ? "FIJAR PUNTO DE INICIO" : "FIJAR PUNTO DE LLEGADA")
+                    .font(.system(size: 9.5, weight: .black))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(accentColor)
+                    .clipShape(Capsule())
+                    .shadow(radius: 4)
+
+                Image(systemName: "mappin.circle.fill")
+                    .font(.system(size: 36, weight: .bold))
+                    .foregroundColor(accentColor)
+                    .background(Circle().fill(Color.white).frame(width: 18, height: 18))
+                    .shadow(color: .black.opacity(0.45), radius: 6, y: 3)
+            }
+            .offset(y: -18)
+            .allowsHitTesting(false)
+
+            // Barra Superior e Inferior del Selector en Mapa
+            VStack {
+                HStack {
+                    Button {
+                        BCFeedbackManager.shared.impactLight()
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            screenState = evaluationResult != nil ? .routeMap : .selector
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.left")
+                            Text("Volver")
+                        }
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(BCTheme.elevatedSurface.opacity(0.95))
+                        .clipShape(Capsule())
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+
+                Spacer()
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .fill(accentColor.opacity(0.2))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: isOrigin ? "location.fill" : "mappin.and.ellipse")
+                                .foregroundColor(accentColor)
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(isOrigin ? "Punto de Inicio seleccionado" : "Punto de Destino seleccionado")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(accentColor)
+                            Text(
+                                isResolvingPickerPoint
+                                    ? "Identificando calle o lugar en Tacna..."
+                                    : (pickerResolvedPlace?.name ?? "Mueve el mapa para ubicar el punto")
+                            )
+                            .font(.subheadline.weight(.bold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+
+                            Text(pickerResolvedPlace?.subtitle ?? String(format: "%.5f, %.5f", pickerCenterCoordinate.latitude, pickerCenterCoordinate.longitude))
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.65))
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                    }
+
+                    Button {
+                        let finalPlace = pickerResolvedPlace ?? TacnaDestinationPlace.fromMapItem(
+                            name: isOrigin ? "Inicio en mapa" : "Destino en mapa",
+                            subtitle: "📍 Punto personalizado en Tacna",
+                            coordinate: pickerCenterCoordinate
+                        )
+                        selectEndpointAndContinue(finalPlace, for: target)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.subheadline.weight(.bold))
+                            Text(isOrigin ? "Establecer como Punto de Inicio" : "Establecer como Destino y Calcular Ruta")
+                                .font(.subheadline.weight(.bold))
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(BCTheme.cyanAccent)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                }
+                .padding(16)
+                .background(BCTheme.elevatedSurface.opacity(0.98))
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .padding(.horizontal, 14)
+                .padding(.bottom, 16)
+                .shadow(color: .black.opacity(0.5), radius: 14)
+            }
+        }
+    }
+
     // MARK: - ESTADOS 3, 4 y 5: Mapa de Ruta + Hoja Inferior Interactiva de 3 Niveles (#gm-state-route)
     private var routeMapScreenView: some View {
-        GeometryReader { geo in
+        let cand = activeCandidate
+
+        return GeometryReader { geo in
             ZStack(alignment: .top) {
-                // 1. Mapa de Fondo con Polilíneas Multimodales (Caminata + Bus + Pin Rojo)
+                // 1. Mapa de Fondo con Polilíneas Multimodales Calculadas en Tiempo Real
                 Map(position: $routeMapCamera) {
-                    // Pin de Origen ("Tu ubicación")
-                    Annotation("Tu ubicación", coordinate: TacnaDestinationPlace.userOriginCoordinate) {
+                    // Pin de Origen (Ubicación actual o Punto de inicio elegido por el usuario)
+                    Annotation(selectedOrigin.shortName, coordinate: selectedOrigin.coordinate) {
                         VStack(spacing: 2) {
-                            Text("Tu ubicación")
+                            Text("Inicio: \(selectedOrigin.shortName)")
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 6)
@@ -438,71 +856,90 @@ struct RoutePlannerView: View {
                             ZStack {
                                 Circle()
                                     .fill(BCTheme.royalBlue.opacity(0.28))
-                                    .frame(width: 28, height: 28)
+                                    .frame(width: 26, height: 26)
                                 Circle()
                                     .fill(BCTheme.royalBlue)
-                                    .frame(width: 14, height: 14)
+                                    .frame(width: 13, height: 13)
                                     .overlay(Circle().stroke(Color.white, lineWidth: 2))
                             }
                         }
                     }
 
-                    // Tramo 1: Caminata hacia el Paradero Plaza Zela (Punteado Cian)
-                    MapPolyline(coordinates: selectedDestination.walkingToBoardCoordinates)
-                        .stroke(
-                            BCTheme.cyanAccent,
-                            style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: [6, 7])
-                        )
-
-                    // Si el destino usa Bus (Caso 2 y Caso 3) y no eligió la Opción 3 (Caminata Directa)
-                    if selectedDestination.routeCase != .walkOnlyNearby && selectedOptionIndex != 3 {
-                        // Tramo 2: Recorrido en Bus (Azul Eléctrico continuo)
-                        MapPolyline(coordinates: selectedDestination.busTransitCoordinates)
+                    // Tramo 1: Caminata desde el Origen hasta el Paradero (Ordinaria) o hasta la Vía (Externa)
+                    if plannerWalkStreetCoords.count >= 2 {
+                        MapPolyline(coordinates: plannerWalkStreetCoords)
                             .stroke(
-                                BCTheme.royalBlue,
-                                style: StrokeStyle(lineWidth: 7, lineCap: .round, lineJoin: .round)
+                                BCTheme.cyanAccent,
+                                style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: [6, 7])
+                            )
+                    }
+
+                    // Tramo 2: Recorrido en Bus (Ruta Ordinaria por Paraderos vs Ruta Externa en Vía)
+                    if let cand = cand, cand.kind != .walkingDirect, plannerBusStreetCoords.count >= 2 {
+                        let isOrd = cand.kind == .ordinaryInService
+                        MapPolyline(coordinates: plannerBusStreetCoords)
+                            .stroke(
+                                Color(hex: cand.colorHex),
+                                style: StrokeStyle(
+                                    lineWidth: isOrd ? 7 : 5.5,
+                                    lineCap: .round,
+                                    lineJoin: .round,
+                                    dash: isOrd ? [] : [9, 6]
+                                )
                             )
 
-                        // Marcador de Paradero de Abordaje
-                        Annotation(selectedDestination.boardingStopName, coordinate: selectedDestination.boardingCoordinate) {
+                        // Marcador de Abordaje
+                        Annotation(cand.boardingPointName, coordinate: cand.boardingCoordinate) {
                             HStack(spacing: 4) {
                                 Circle()
-                                    .fill(BCTheme.royalBlue)
-                                    .frame(width: 18, height: 18)
+                                    .fill(isOrd ? BCTheme.emerald : BCTheme.amber)
+                                    .frame(width: 16, height: 16)
                                     .overlay(Circle().stroke(Color.white, lineWidth: 2))
 
-                                Text("Subir aquí: \(selectedRouteLabel)")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(BCTheme.emerald)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(Color(hex: "#052E16").opacity(0.95))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .stroke(BCTheme.emerald.opacity(0.7), lineWidth: 1)
-                                    )
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                Text(
+                                    isOrd
+                                        ? "Subir en Paradero: \(cand.boardingPointName) (\(cand.routeCode))"
+                                        : "Subir en vía: \(cand.routeCode) (Externa • Sin paradero fijo)"
+                                )
+                                .font(.system(size: 8.5, weight: .bold))
+                                .foregroundColor(isOrd ? BCTheme.emerald : BCTheme.amber)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color(hex: "#0F172A").opacity(0.95))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke((isOrd ? BCTheme.emerald : BCTheme.amber).opacity(0.7), lineWidth: 1)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                         }
 
-                        // Marcador de Parada Intermedia (si la ruta pasa por un paradero clave antes del destino)
-                        if let intermediate = selectedDestination.intermediateStopName,
-                           selectedDestination.busTransitCoordinates.count >= 2 {
-                            Annotation(intermediate, coordinate: selectedDestination.busTransitCoordinates[1]) {
-                                Text("Parada intermedia • \(intermediate)")
-                                    .font(.system(size: 8.5, weight: .semibold))
-                                    .foregroundColor(.white.opacity(0.85))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 3)
-                                    .background(BCTheme.elevatedSurface.opacity(0.95))
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                        // Marcador de Descenso (Bajada)
+                        Annotation(cand.alightingPointName, coordinate: cand.alightingCoordinate) {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(BCTheme.cyanAccent)
+                                    .frame(width: 14, height: 14)
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+
+                                Text(
+                                    isOrd
+                                        ? "Bajar en Paradero: \(cand.alightingPointName)"
+                                        : "Bajar en vía: \(cand.alightingPointName)"
+                                )
+                                .font(.system(size: 8.5, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(BCTheme.elevatedSurface.opacity(0.95))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
                             }
                         }
                     }
 
-                    // Tramo 3: Caminata final desde el paradero de bajada hasta el destino (si aplica)
-                    if !selectedDestination.walkingFinalCoordinates.isEmpty {
-                        MapPolyline(coordinates: selectedDestination.walkingFinalCoordinates)
+                    // Tramo 3: Caminata final desde el paradero/punto de bajada hasta el Destino final
+                    if plannerFinalWalkStreetCoords.count >= 2 {
+                        MapPolyline(coordinates: plannerFinalWalkStreetCoords)
                             .stroke(
                                 BCTheme.cyanAccent,
                                 style: StrokeStyle(lineWidth: 5, lineCap: .round, lineJoin: .round, dash: [6, 7])
@@ -537,20 +974,22 @@ struct RoutePlannerView: View {
                         }
                     }
                 }
-                .mapStyle(.standard(elevation: .realistic))
+                .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .all))
                 .ignoresSafeArea()
 
-                // 2. Cabecera Flotante Opaca de Ruteo (Sin transparencias con la barra de estado)
+                // 2. Cabecera Flotante Opaca de Ruteo (Con edición de Origen y Destino + Aviso de Ruta Externa)
                 floatingRouteHeader
 
-                // 3. Botón Flotante de Mi Ubicación en el Mapa de Ruta
+                // 3. Botón Flotante para Re-encuadrar la Ruta en el Mapa
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
                         Button {
                             BCFeedbackManager.shared.impactLight()
-                            updateCameraForDestination(selectedDestination)
+                            if let cand = activeCandidate {
+                                updatePolylinesAndCamera(for: cand)
+                            }
                         } label: {
                             ZStack {
                                 Circle()
@@ -560,9 +999,9 @@ struct RoutePlannerView: View {
                                         Circle()
                                             .stroke(BCTheme.hairlineBorder, lineWidth: 1)
                                     )
-                                Image(systemName: "location.fill")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundColor(BCTheme.royalBlue)
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(BCTheme.cyanAccent)
                             }
                             .shadow(color: .black.opacity(0.45), radius: 6)
                         }
@@ -581,19 +1020,16 @@ struct RoutePlannerView: View {
         }
     }
 
-    // MARK: - Cabecera Superior de Ruteo + Píldora Multimodal (#gm-route-steps-bar)
+    // MARK: - Cabecera Superior de Ruteo + Píldora Multimodal
     private var floatingRouteHeader: some View {
-        VStack(spacing: 8) {
+        let cand = activeCandidate
+
+        return VStack(spacing: 8) {
             HStack(spacing: 10) {
-                // Botón Retroceso [<]
                 Button {
                     BCFeedbackManager.shared.impactLight()
-                    if viewModel.routePlannerInitialDestination != nil {
-                        dismiss()
-                    } else {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            screenState = .selector
-                        }
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        screenState = .selector
                     }
                 } label: {
                     Image(systemName: "arrow.left")
@@ -618,36 +1054,66 @@ struct RoutePlannerView: View {
                         .foregroundColor(Color(hex: "#FB7185"))
                 }
 
-                // Textos de Origen y Destino
-                VStack(alignment: .leading, spacing: 6) {
-                    Button {
-                        withAnimation { screenState = .selector }
-                    } label: {
-                        Text(isEndpointsSwapped ? selectedDestination.shortName : "Tu ubicación")
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(Color(hex: "#60A5FA"))
-                            .lineLimit(1)
+                // Botones de Origen y Destino (Editables por búsqueda API o fijando en el mapa)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Button {
+                            plannerSearchText = ""
+                            apiSearchResults = []
+                            withAnimation {
+                                screenState = .search(target: .origin)
+                                isSearchInputFocused = true
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("Desde: \(selectedOrigin.shortName)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(Color(hex: "#60A5FA"))
+                                    .lineLimit(1)
+                                Spacer()
+                            }
+                        }
+
+                        Button {
+                            openMapCrosshairPicker(for: .origin)
+                        } label: {
+                            Image(systemName: "scope")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(BCTheme.cyanAccent)
+                        }
                     }
 
                     Divider().background(Color.white.opacity(0.1))
 
-                    Button {
-                        withAnimation {
-                            screenState = .search
-                            isSearchInputFocused = true
+                    HStack {
+                        Button {
+                            plannerSearchText = ""
+                            apiSearchResults = []
+                            withAnimation {
+                                screenState = .search(target: .destination)
+                                isSearchInputFocused = true
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text("Hasta: \(selectedDestination.name)")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(.white)
+                                    .lineLimit(1)
+                                Spacer()
+                            }
                         }
-                    } label: {
-                        HStack {
-                            Text(isEndpointsSwapped ? "Tu ubicación" : selectedDestination.name)
-                                .font(.caption.weight(.bold))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                            Spacer()
+
+                        Button {
+                            openMapCrosshairPicker(for: .destination)
+                        } label: {
+                            Image(systemName: "scope")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(Color(hex: "#FB7185"))
                         }
                     }
                 }
 
-                // Botones de Opciones [...] e Inversión [⇅]
+                // Botones de Todas las Opciones [...] e Inversión [⇅]
                 VStack(spacing: 6) {
                     Button {
                         BCFeedbackManager.shared.impactLight()
@@ -655,23 +1121,20 @@ struct RoutePlannerView: View {
                             sheetSnap = .full
                         }
                     } label: {
-                        Image(systemName: "ellipsis")
+                        Image(systemName: "list.bullet")
                             .font(.caption.weight(.bold))
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(.white.opacity(0.85))
                             .frame(width: 28, height: 28)
                             .background(Color(hex: "#1E293B"))
                             .clipShape(Circle())
                     }
 
                     Button {
-                        BCFeedbackManager.shared.impactLight()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            isEndpointsSwapped.toggle()
-                        }
+                        swapOriginAndDestination()
                     } label: {
                         Image(systemName: "arrow.up.arrow.down")
                             .font(.caption2.weight(.bold))
-                            .foregroundColor(.white.opacity(0.8))
+                            .foregroundColor(.white.opacity(0.85))
                             .frame(width: 28, height: 28)
                             .background(Color(hex: "#1E293B"))
                             .clipShape(Circle())
@@ -686,89 +1149,97 @@ struct RoutePlannerView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
 
-            // Píldora Multimodal Flotante (#gm-route-steps-bar)
-            HStack(spacing: 6) {
-                if selectedDestination.routeCase == .walkOnlyNearby || selectedOptionIndex == 3 {
-                    HStack(spacing: 5) {
-                        Image(systemName: "figure.walk")
-                            .font(.caption2.weight(.bold))
-                            .foregroundColor(BCTheme.cyanAccent)
-                        Text("\(activeDurationMinutes) min a pie · \(selectedDestination.distanceLabel)")
-                            .font(.caption2.weight(.bold))
-                            .foregroundColor(BCTheme.cyanAccent)
-                    }
-                    Spacer()
-                    Text("Sin costo (Gratis)")
-                        .font(.caption2.weight(.heavy).monospaced())
-                        .foregroundColor(BCTheme.emerald)
-                } else {
-                    HStack(spacing: 5) {
-                        Label("\(selectedDestination.walkInitialMinutes)m", systemImage: "figure.walk")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(BCTheme.cyanAccent)
-
-                        Text("➔")
-                            .font(.system(size: 9))
-                            .foregroundColor(.gray)
-
-                        HStack(spacing: 4) {
-                            Image(systemName: "bus.fill")
-                                .font(.system(size: 9, weight: .bold))
-                            Text("\(selectedRouteLabel) (\(selectedDestination.busRideMinutes)m)")
-                                .font(.system(size: 10, weight: .bold).monospaced())
+            // Resumen Multimodal Flotante de la Opción Activa
+            if let cand = cand {
+                HStack(spacing: 6) {
+                    if cand.kind == .walkingDirect {
+                        HStack(spacing: 5) {
+                            Image(systemName: "figure.walk")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(BCTheme.cyanAccent)
+                            Text("\(cand.totalDurationMinutes) min a pie · \(cand.totalDistanceLabel)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundColor(BCTheme.cyanAccent)
                         }
-                        .foregroundColor(Color(hex: "#93C5FD"))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Color(hex: "#172554"))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(BCTheme.royalBlue.opacity(0.6), lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                        Spacer()
+                        Text("Caminata directa")
+                            .font(.caption2.weight(.heavy))
+                            .foregroundColor(BCTheme.emerald)
+                    } else {
+                        let isOrd = cand.kind == .ordinaryInService
+                        HStack(spacing: 4) {
+                            Label("\(cand.walkInitialMinutes)m", systemImage: "figure.walk")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(BCTheme.cyanAccent)
 
-                        if selectedDestination.walkFinalMinutes > 0 {
                             Text("➔")
                                 .font(.system(size: 9))
                                 .foregroundColor(.gray)
 
-                            Label("\(selectedDestination.walkFinalMinutes)m", systemImage: "figure.walk")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(BCTheme.cyanAccent)
+                            HStack(spacing: 4) {
+                                Image(systemName: "bus.fill")
+                                    .font(.system(size: 9, weight: .bold))
+                                Text("\(cand.routeCode) (\(cand.busRideMinutes)m)")
+                                    .font(.system(size: 10, weight: .bold).monospaced())
+                                Text(isOrd ? "ORD" : "EXT")
+                                    .font(.system(size: 7.5, weight: .black))
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 1)
+                                    .background(isOrd ? BCTheme.emerald.opacity(0.28) : BCTheme.amber.opacity(0.28))
+                                    .clipShape(Capsule())
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color(hex: cand.colorHex).opacity(0.35))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .stroke(Color(hex: cand.colorHex), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+
+                            if cand.walkFinalMinutes > 0 {
+                                Text("➔")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.gray)
+
+                                Label("\(cand.walkFinalMinutes)m", systemImage: "figure.walk")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(BCTheme.cyanAccent)
+                            }
                         }
+
+                        Spacer()
+
+                        Text(isOrd ? "~\(cand.totalDurationMinutes) min · \(formattedUserFare)" : "~\(cand.totalDurationMinutes) min · Sin QR")
+                            .font(.caption2.weight(.heavy).monospaced())
+                            .foregroundColor(isOrd ? BCTheme.emerald : BCTheme.amber)
                     }
-
-                    Spacer()
-
-                    Text("\(activeDurationMinutes) min · \(formattedUserFare)")
-                        .font(.caption2.weight(.heavy).monospaced())
-                        .foregroundColor(BCTheme.emerald)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(BCTheme.elevatedSurface.opacity(0.96))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(BCTheme.elevatedSurface.opacity(0.96))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(BCTheme.hairlineBorder, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
-        .padding(.bottom, 10)
+        .padding(.bottom, 8)
         .background(
             BCTheme.background.opacity(0.95)
                 .ignoresSafeArea(edges: .top)
         )
     }
 
-    // MARK: - Hoja Inferior Interactiva de 3 Niveles (#gmaps-bottom-sheet)
+    // MARK: - Hoja Inferior Interactiva de 3 Niveles
     private func interactiveBottomSheet(totalHeight: CGFloat) -> some View {
         let targetHeight = currentSheetHeight(in: totalHeight)
 
         return VStack(spacing: 0) {
-            // Barra de Arrastre (Drag Handle + Toque para alternar entre los 3 niveles)
             Button {
                 BCFeedbackManager.shared.impactLight()
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
@@ -783,7 +1254,7 @@ struct RoutePlannerView: View {
 
                     Text(sheetSnapLabel)
                         .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundColor(.white.opacity(0.45))
                         .padding(.bottom, 4)
                 }
                 .frame(maxWidth: .infinity)
@@ -839,67 +1310,76 @@ struct RoutePlannerView: View {
 
     // ——— NIVEL 1: COMPACTO (Peek) ———
     private var compactSheetContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Pestañas de Duración Rápida
-            HStack(spacing: 18) {
-                durationTabPill(minutes: selectedDestination.totalDurationMinutes, index: 1)
-                if selectedDestination.routeCase != .walkOnlyNearby {
-                    durationTabPill(minutes: selectedDestination.secondaryDurationMinutes, index: 2)
-                    durationTabPill(minutes: selectedDestination.walkingDirectMinutes, index: 3)
-                }
-                Spacer()
-            }
+        let cand = activeCandidate
 
-            // Fila de Tiempo, Distancia, Compartir y Cerrar
-            HStack {
-                HStack(spacing: 4) {
-                    Text("\(activeDurationMinutes) min · ")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundColor(.white)
-                    Text(selectedDestination.distanceLabel)
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.6))
-                }
-
-                Spacer()
-
-                HStack(spacing: 8) {
-                    Button {
-                        BCFeedbackManager.shared.impactLight()
-                    } label: {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.caption.weight(.bold))
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(width: 34, height: 34)
-                            .background(Color(hex: "#2C2C2E"))
-                            .clipShape(Circle())
-                    }
-
-                    Button {
-                        BCFeedbackManager.shared.impactLight()
-                        dismiss()
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption.weight(.bold))
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(width: 34, height: 34)
-                            .background(Color(hex: "#2C2C2E"))
-                            .clipShape(Circle())
+        return VStack(alignment: .leading, spacing: 10) {
+            // Pestañas rápidas de las primeras opciones evaluadas
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(Array(displayedCandidates.prefix(4).enumerated()), id: \.element.id) { idx, item in
+                        durationTabPill(candidate: item, index: idx)
                     }
                 }
             }
 
-            // Botones de Acción: [Iniciar] (Verde) + [ETA]
+            // Aviso prominente si la opción sugerida/activa es una Ruta Externa o si es Ruta Ordinaria con aviso automático a 5 min
+            if let cand = cand {
+                if cand.kind == .externalFreeBoarding {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2.weight(.bold))
+                            .foregroundColor(BCTheme.amber)
+                            .padding(.top, 1)
+                        Text(
+                            evaluationResult?.primaryBannerWarning
+                                ?? "⚠️ Ruta Externa (\(cand.routeCode)): Abordaje en cualquier parte de la ruta • Sin tracking GPS ni aviso de paradero."
+                        )
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(BCTheme.amber)
+                        .lineLimit(2)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(BCTheme.amber.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else if cand.kind == .ordinaryInService {
+                    HStack(spacing: 6) {
+                        Image(systemName: "bell.badge.fill")
+                            .font(.caption2.weight(.bold))
+                            .foregroundColor(BCTheme.emerald)
+                        Text("Subir en Paradero \(cand.boardingPointName) • Al iniciar recibirás aviso automático a 5 min del bus")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(BCTheme.emerald)
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(BCTheme.emerald.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+            }
+
+            // Botones de Acción: [Ir / Iniciar] + [Ver Opciones (Ordinarias y Externas)]
             HStack(spacing: 10) {
                 Button {
-                    viewModel.startGuidedRoute(to: selectedDestination, optionIndex: selectedOptionIndex)
+                    guard let chosen = cand else { return }
+                    viewModel.startGuidedRoute(
+                        from: selectedOrigin,
+                        to: selectedDestination,
+                        candidate: chosen,
+                        optionIndex: selectedCandidateIndex
+                    )
                     dismiss()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "location.north.fill")
                             .font(.subheadline.weight(.bold))
-                        Text("Iniciar")
-                            .font(.subheadline.weight(.bold))
+                        Text(
+                            cand?.kind == .ordinaryInService
+                                ? "Ir (Activa aviso a 5 min)"
+                                : "Ir con esta ruta"
+                        )
+                        .font(.subheadline.weight(.bold))
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
@@ -911,17 +1391,17 @@ struct RoutePlannerView: View {
                 Button {
                     BCFeedbackManager.shared.impactLight()
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                        sheetSnap = .medium
+                        sheetSnap = .full
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "dot.radiowaves.left.and.right")
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.up.and.down.text.horizontal")
                             .font(.caption.weight(.bold))
-                        Text("ETA")
+                        Text("Ver todas (\(displayedCandidates.count))")
                             .font(.caption.weight(.bold))
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 18)
+                    .padding(.horizontal, 14)
                     .frame(height: 44)
                     .background(Color(hex: "#2C2C2E"))
                     .clipShape(Capsule())
@@ -929,185 +1409,188 @@ struct RoutePlannerView: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 18)
+        .padding(.bottom, 14)
     }
 
     // ——— NIVEL 2: DETALLE INTERMEDIO (Medium) ———
     private var mediumSheetContent: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                // Selector de Modo
-                HStack(spacing: 20) {
-                    Button {
-                        selectedOptionIndex = 1
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: "bus.fill")
-                                .foregroundColor(selectedOptionIndex != 3 ? Color(hex: "#0A84FF") : .gray)
-                            Text("\(selectedDestination.totalDurationMinutes) min")
-                                .font(.caption.weight(.bold))
-                                .foregroundColor(.white)
-                            Rectangle()
-                                .fill(selectedOptionIndex != 3 ? Color(hex: "#0A84FF") : Color.clear)
-                                .frame(width: 44, height: 2)
-                        }
-                    }
+        let cand = activeCandidate
 
-                    Button {
-                        selectedOptionIndex = 3
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: "figure.walk")
-                                .foregroundColor(selectedOptionIndex == 3 ? Color(hex: "#0A84FF") : .gray)
-                            Text("\(selectedDestination.walkingDirectMinutes) min")
-                                .font(.caption)
-                                .foregroundColor(.white.opacity(0.65))
-                            Rectangle()
-                                .fill(selectedOptionIndex == 3 ? Color(hex: "#0A84FF") : Color.clear)
-                                .frame(width: 44, height: 2)
-                        }
-                    }
-
-                    Spacer()
-
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                            sheetSnap = .full
-                        }
-                    } label: {
-                        Text("Todas las opciones ›")
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(Color(hex: "#0A84FF"))
-                    }
-                }
-                .padding(.bottom, 4)
-
-                // Gran indicador de Tiempo y Ahorro Ecológico
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("\(activeDurationMinutes) min")
-                        .font(.title2.weight(.black))
-                        .foregroundColor(.white)
-                    Text("Ruta recomendada · \(selectedDestination.distanceLabel) · 🌿 Ahorra 6% combustible")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.65))
-                }
-
-                // Tarjeta de Próximo Bus / Estado de Flota
-                VStack(alignment: .leading, spacing: 4) {
-                    if selectedDestination.routeCase == .walkOnlyNearby || selectedOptionIndex == 3 {
-                        Text("🚶‍♂️ Trayecto directo a pie")
-                            .font(.caption.weight(.bold))
+        return ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 12) {
+                if let cand = cand {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("~\(cand.totalDurationMinutes) min")
+                            .font(.title2.weight(.black))
                             .foregroundColor(.white)
-                        Text("Camina directamente hacia \(selectedDestination.shortName) (\(selectedDestination.distanceLabel)) sin necesidad de abordar bus.")
-                            .font(.caption2)
+
+                        Text("· \(cand.totalDistanceLabel)")
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(.white.opacity(0.65))
-                    } else {
-                        HStack {
-                            Text("🚌 Próximo bus · \(selectedRouteLabel)")
+
+                        Spacer()
+
+                        Button {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                sheetSnap = .full
+                            }
+                        } label: {
+                            Text("Comparar ordinarias y externas ›")
                                 .font(.caption.weight(.bold))
-                                .foregroundColor(.white)
-                            Spacer()
-                            if viewModel.activeBuses.isEmpty {
-                                Text("Cuenta Prueba")
-                                    .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(Color(hex: "#0A84FF"))
+                        }
+                    }
+
+                    // Aviso o Estado Operativo según Tipo de Ruta
+                    if cand.kind == .externalFreeBoarding {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(BCTheme.amber)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Ruta Externa de Tacna (\(cand.routeCode)) • Sin Tracking GPS")
+                                    .font(.caption.weight(.bold))
                                     .foregroundColor(BCTheme.amber)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(BCTheme.amber.opacity(0.15))
-                                    .clipShape(Capsule())
+                                Text(
+                                    evaluationResult?.primaryBannerWarning
+                                        ?? "En las rutas externas no necesitas caminar a un paradero fijo: puedes subir y bajar en cualquier punto de la calle por donde pasa la ruta. No incluye pago QR ni notificaciones de llegada."
+                                )
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.85))
                             }
                         }
-                        Text("Abordaje en \(selectedDestination.boardingStopName) · \(liveEtaShortLabel)")
-                            .font(.caption2)
-                            .foregroundColor(.white.opacity(0.75))
-                        Text("Descenso en \(selectedDestination.alightingStopName) · Tarifa aplicable: \(formattedUserFare)")
-                            .font(.caption2)
-                            .foregroundColor(BCTheme.emerald)
-                    }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(hex: "#2C2C2E"))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                // Desglose Paso a Paso Legible
-                VStack(alignment: .leading, spacing: 8) {
-                    stepRow(
-                        icon: "figure.walk",
-                        bgHex: "#1E3A8A",
-                        iconColor: Color(hex: "#93C5FD"),
-                        text: "Camina \(selectedDestination.walkInitialMinutes) min hasta \(selectedDestination.boardingStopName)"
-                    )
-
-                    if selectedDestination.routeCase != .walkOnlyNearby && selectedOptionIndex != 3 {
-                        stepRow(
-                            icon: "bus.fill",
-                            bgHex: "#14532D",
-                            iconColor: Color(hex: "#86EFAC"),
-                            text: "Toma \(selectedRouteLabel) · \(formattedUserFare)"
+                        .padding(10)
+                        .background(BCTheme.amber.opacity(0.14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(BCTheme.amber.opacity(0.45), lineWidth: 1)
                         )
-
-                        stepRow(
-                            icon: "mappin.and.ellipse",
-                            bgHex: "#1E3A8A",
-                            iconColor: Color(hex: "#93C5FD"),
-                            text: selectedDestination.walkFinalMinutes > 0
-                                ? "Baja en \(selectedDestination.alightingStopName) · Camina \(selectedDestination.walkFinalMinutes) min al destino"
-                                : "Baja directamente en \(selectedDestination.alightingStopName)"
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    } else if cand.kind == .ordinaryInService {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "bell.badge.fill")
+                                .foregroundColor(BCTheme.emerald)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Ruta Ordinaria en Servicio (\(cand.routeCode)) • Tracking & Pago QR")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(BCTheme.emerald)
+                                Text("Abordaje en Paradero Oficial \(cand.boardingPointName). Al presionar 'Ir', recibirás automáticamente una notificación cuando el bus se encuentre a 5 minutos del paradero establecido.")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.85))
+                            }
+                        }
+                        .padding(10)
+                        .background(BCTheme.emerald.opacity(0.14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(BCTheme.emerald.opacity(0.45), lineWidth: 1)
                         )
-                    }
-                }
-
-                // Barra de Acción Inferior en Nivel Medio
-                HStack(spacing: 10) {
-                    Button {
-                        viewModel.startGuidedRoute(to: selectedDestination, optionIndex: selectedOptionIndex)
-                        dismiss()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "location.north.fill")
-                                .font(.subheadline.weight(.bold))
-                            Text("Iniciar")
-                                .font(.subheadline.weight(.bold))
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(Color(hex: "#34C759"))
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
 
-                    Button {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                            sheetSnap = .full
+                    // Desglose Paso a Paso Calculado por el Motor
+                    VStack(alignment: .leading, spacing: 8) {
+                        if cand.kind == .walkingDirect {
+                            stepRow(
+                                icon: "figure.walk",
+                                bgHex: "#1E3A8A",
+                                iconColor: Color(hex: "#93C5FD"),
+                                text: "Camina \(cand.walkInitialMinutes) min (\(cand.walkInitialMeters) m) desde \(selectedOrigin.shortName) hasta \(selectedDestination.shortName)"
+                            )
+                        } else {
+                            let isOrd = cand.kind == .ordinaryInService
+                            stepRow(
+                                icon: "figure.walk",
+                                bgHex: "#1E3A8A",
+                                iconColor: Color(hex: "#93C5FD"),
+                                text: isOrd
+                                    ? "1. Camina \(cand.walkInitialMinutes) min (\(cand.walkInitialMeters) m) hasta el Paradero \(cand.boardingPointName)"
+                                    : "1. Camina \(cand.walkInitialMinutes) min (\(cand.walkInitialMeters) m) hasta la vía de \(cand.routeCode) (\(cand.boardingPointName))"
+                            )
+
+                            stepRow(
+                                icon: "bus.fill",
+                                bgHex: isOrd ? "#14532D" : "#78350F",
+                                iconColor: isOrd ? Color(hex: "#86EFAC") : Color(hex: "#FCD34D"),
+                                text: isOrd
+                                    ? "2. Sube a \(cand.routeCode) (Ordinaria • \(formattedUserFare)) · Viaja ~\(cand.busRideMinutes) min (\(cand.intermediateStopsCount) paradas intermedias)"
+                                    : "2. Toma \(cand.routeCode) en cualquier punto de la calle (Externa • Sin QR) · Viaja ~\(cand.busRideMinutes) min"
+                            )
+
+                            stepRow(
+                                icon: "mappin.and.ellipse",
+                                bgHex: "#1E3A8A",
+                                iconColor: Color(hex: "#93C5FD"),
+                                text: cand.walkFinalMinutes > 0
+                                    ? "3. Baja en \(cand.alightingPointName) y camina \(cand.walkFinalMinutes) min (\(cand.walkFinalMeters) m) hasta \(selectedDestination.shortName)"
+                                    : "3. Baja en \(cand.alightingPointName) (frente a \(selectedDestination.shortName))"
+                            )
                         }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "list.bullet.below.rectangle")
-                                .font(.caption.weight(.bold))
-                            Text("Opciones")
-                                .font(.caption.weight(.bold))
+                    }
+                    .padding(12)
+                    .background(Color(hex: "#2C2C2E"))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                    HStack(spacing: 10) {
+                        Button {
+                            viewModel.startGuidedRoute(
+                                from: selectedOrigin,
+                                to: selectedDestination,
+                                candidate: cand,
+                                optionIndex: selectedCandidateIndex
+                            )
+                            dismiss()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "location.north.fill")
+                                    .font(.subheadline.weight(.bold))
+                                Text(
+                                    cand.kind == .ordinaryInService
+                                        ? "Ir (Notificar a 5 min del paradero)"
+                                        : "Ir con esta ruta"
+                                )
+                                .font(.subheadline.weight(.bold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(Color(hex: "#34C759"))
+                            .clipShape(Capsule())
                         }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .frame(height: 44)
-                        .background(Color(hex: "#2C2C2E"))
-                        .clipShape(Capsule())
                     }
                 }
-                .padding(.top, 4)
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 22)
+            .padding(.bottom, 20)
         }
     }
 
-    // ——— NIVEL 3: TODAS LAS OPCIONES (Full) ———
+    // ——— NIVEL 3: TODAS LAS OPCIONES (Rutas Ordinarias + Rutas Externas + Caminata) ———
     private var fullSheetContent: some View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
-                    // Chips de Filtro Rápido (Más rápida, Menos trasbordos, Asientos libres)
+                    // Banner de advertencia general si se está sugiriendo una Ruta Externa por falta de Ordinarias o por exceso de tiempo/caminata
+                    if let warning = evaluationResult?.primaryBannerWarning {
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(BCTheme.amber)
+                                .padding(.top, 2)
+                            Text(warning)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.9))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(12)
+                        .background(BCTheme.amber.opacity(0.15))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(BCTheme.amber.opacity(0.5), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+
+                    // Chips de Filtro Rápido
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
                             ForEach(RouteQuickFilter.allCases, id: \.self) { filter in
@@ -1115,10 +1598,9 @@ struct RoutePlannerView: View {
                                 Button {
                                     BCFeedbackManager.shared.impactLight()
                                     selectedFilter = filter
-                                    if filter == .freeSeats {
-                                        selectedOptionIndex = 2
-                                    } else if filter == .fastest {
-                                        selectedOptionIndex = 1
+                                    selectedCandidateIndex = 0
+                                    if let first = displayedCandidates.first {
+                                        updatePolylinesAndCamera(for: first)
                                     }
                                 } label: {
                                     Text(filter.rawValue)
@@ -1137,112 +1619,172 @@ struct RoutePlannerView: View {
                         }
                     }
 
-                    // OPCIÓN 1: Recomendada (Ruta principal o Caminata Directa)
-                    routeOptionCard(
-                        index: 1,
-                        badge: "BUS",
-                        title: selectedDestination.routeCase == .walkOnlyNearby ? "Caminata Directa" : selectedDestination.primaryRouteName,
-                        isRecommended: true,
-                        subtitle: selectedDestination.routeCase == .walkOnlyNearby
-                            ? "Paradero más próximo · \(selectedDestination.distanceLabel) a pie"
-                            : "\(liveEtaShortLabel) · \(selectedDestination.boardingStopName) → \(selectedDestination.alightingStopName)",
-                        durationMinutes: selectedDestination.totalDurationMinutes,
-                        footerText: selectedDestination.routeCase == .walkOnlyNearby
-                            ? "Sin costo (Gratis) · 0 emisiones"
-                            : "Tarifa: \(formattedUserFare) · \(liveEtaShortLabel) · 🌿 Eco"
-                    )
+                    Text("OPCIONES EVALUADAS ENTRE RUTAS ORDINARIAS, EXTERNAS Y CAMINATA (\(displayedCandidates.count))")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundColor(.white.opacity(0.5))
+                        .padding(.top, 2)
 
-                    // OPCIÓN 2: Ruta alterna
-                    if selectedDestination.routeCase != .walkOnlyNearby {
-                        routeOptionCard(
-                            index: 2,
-                            badge: "BUS",
-                            title: secondaryRouteName,
-                            isRecommended: false,
-                            subtitle: "Ruta alterna · \(liveEtaShortLabel)",
-                            durationMinutes: selectedDestination.secondaryDurationMinutes,
-                            footerText: "Tarifa: \(formattedUserFare) · Alternativa por otra vía"
-                        )
+                    ForEach(Array(displayedCandidates.enumerated()), id: \.element.id) { idx, candidate in
+                        evaluatedCandidateCard(candidate: candidate, index: idx)
                     }
-
-                    // OPCIÓN 3: Caminata Directa
-                    if selectedDestination.routeCase != .walkOnlyNearby {
-                        routeOptionCard(
-                            index: 3,
-                            badge: "PIE",
-                            title: "Caminata directa",
-                            isRecommended: false,
-                            subtitle: "\(selectedDestination.distanceLabel) · Cero emisiones",
-                            durationMinutes: selectedDestination.walkingDirectMinutes,
-                            footerText: "Sin costo (Gratis) · Ruta peatonal por Tacna"
-                        )
-                    }
-
-                    // Tarjeta Visual del Destino
-                    VStack(spacing: 0) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "mappin.and.ellipse")
-                                .foregroundColor(Color(hex: "#FB7185"))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(selectedDestination.name)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundColor(.white)
-                                Text(selectedDestination.subtitle)
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.55))
-                            }
-                            Spacer()
-                        }
-                        .padding(12)
-
-                        ZStack {
-                            LinearGradient(
-                                colors: [Color(hex: "#1E3A8A"), Color(hex: "#0F172A")],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                            VStack(spacing: 3) {
-                                Text(selectedDestination.shortName.uppercased())
-                                    .font(.subheadline.weight(.black))
-                                    .foregroundColor(.white)
-                                Text("Red Oficial Bus Conectado · Tacna")
-                                    .font(.caption2)
-                                    .foregroundColor(BCTheme.cyanAccent)
-                            }
-                        }
-                        .frame(height: 76)
-                    }
-                    .background(Color(hex: "#2C2C2E"))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
-                .padding(.bottom, 12)
+                .padding(.bottom, 14)
             }
 
-            // Botón Inferior Fijo [Iniciar] en Nivel Completo
-            VStack(spacing: 0) {
-                Divider().background(Color(hex: "#2C2C2E"))
-                Button {
-                    viewModel.startGuidedRoute(to: selectedDestination, optionIndex: selectedOptionIndex)
-                    dismiss()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "location.north.fill")
+            // Botón Inferior Fijo [Ir / Iniciar Guía en el Mapa]
+            if let cand = activeCandidate {
+                VStack(spacing: 0) {
+                    Divider().background(Color(hex: "#2C2C2E"))
+                    Button {
+                        viewModel.startGuidedRoute(
+                            from: selectedOrigin,
+                            to: selectedDestination,
+                            candidate: cand,
+                            optionIndex: selectedCandidateIndex
+                        )
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "location.north.fill")
+                                .font(.subheadline.weight(.bold))
+                            Text(
+                                cand.kind == .ordinaryInService
+                                    ? "Ir con \(cand.routeCode) (Aviso auto. a 5 min del paradero)"
+                                    : "Ir con \(cand.routeCode)"
+                            )
                             .font(.subheadline.weight(.bold))
-                        Text("Iniciar Guía en el Mapa")
-                            .font(.subheadline.weight(.bold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Color(hex: "#34C759"))
+                        .clipShape(Capsule())
                     }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(Color(hex: "#34C759"))
-                    .clipShape(Capsule())
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .background(Color(hex: "#1C1C1E"))
             }
+        }
+    }
+
+    // MARK: - Tarjeta de Candidato Evaluado (Ordinaria vs Externa vs A Pie)
+    private func evaluatedCandidateCard(candidate: EvaluatedRouteCandidate, index: Int) -> some View {
+        let isSelected = selectedCandidateIndex == index
+        let isOrd = candidate.kind == .ordinaryInService
+        let isExt = candidate.kind == .externalFreeBoarding
+
+        return Button {
+            BCFeedbackManager.shared.impactLight()
+            selectedCandidateIndex = index
+            updatePolylinesAndCamera(for: candidate)
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color(hex: candidate.colorHex).opacity(0.22))
+                                .frame(width: 36, height: 36)
+                            Image(systemName: candidate.kind == .walkingDirect ? "figure.walk" : "bus.fill")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundColor(Color(hex: candidate.colorHex))
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text(candidate.routeCode)
+                                    .font(.system(size: 11, weight: .black).monospaced())
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(Color(hex: candidate.colorHex))
+                                    .clipShape(RoundedRectangle(cornerRadius: 5))
+
+                                Text(
+                                    isOrd
+                                        ? "ORDINARIA • TRACKING & QR"
+                                        : (isExt ? "EXTERNA • ABORDAJE EN VÍA" : "PEATONAL")
+                                )
+                                .font(.system(size: 8.5, weight: .heavy))
+                                .foregroundColor(isOrd ? BCTheme.emerald : (isExt ? BCTheme.amber : BCTheme.cyanAccent))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background((isOrd ? BCTheme.emerald : (isExt ? BCTheme.amber : BCTheme.cyanAccent)).opacity(0.15))
+                                .clipShape(Capsule())
+
+                                if candidate.isRecommendedPrimary {
+                                    Text("★ Sugerida")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundColor(Color(hex: "#4ADE80"))
+                                }
+                            }
+
+                            if candidate.kind == .walkingDirect {
+                                Text("Caminata directa (\(candidate.totalDistanceLabel)) de \(selectedOrigin.shortName) a \(selectedDestination.shortName)")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.75))
+                                    .multilineTextAlignment(.leading)
+                            } else if isOrd {
+                                Text("Subir en Paradero \(candidate.boardingPointName) (\(candidate.walkInitialMinutes)m a pie) → Bajar en Paradero \(candidate.alightingPointName) (\(candidate.walkFinalMinutes)m a pie)")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .multilineTextAlignment(.leading)
+                            } else {
+                                Text("Subir en cualquier punto de la vía (\(candidate.boardingPointName), a \(candidate.walkInitialMinutes)m) → Bajar en vía (\(candidate.walkFinalMinutes)m a pie)")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.8))
+                                    .multilineTextAlignment(.leading)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("~\(candidate.totalDurationMinutes) min")
+                            .font(.subheadline.weight(.black).monospacedDigit())
+                            .foregroundColor(candidate.isRecommendedPrimary ? Color(hex: "#4ADE80") : .white)
+                        Text(candidate.totalDistanceLabel)
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.55))
+                    }
+                }
+
+                Divider().background(Color(hex: "#2C2C2E"))
+
+                HStack {
+                    if isOrd {
+                        Image(systemName: "bell.badge.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(BCTheme.emerald)
+                        Text("Tarifa QR: \(formattedUserFare) • Notificación automática a 5 min del paradero")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(BCTheme.emerald)
+                    } else if isExt {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(BCTheme.amber)
+                        Text("Ruta Externa referencial: Sin tracking GPS, sin pago QR ni avisos de paradero")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(BCTheme.amber)
+                    } else {
+                        Text("Sin costo (Gratis) · Ruta peatonal por las calles de Tacna")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.65))
+                    }
+                    Spacer()
+                }
+            }
+            .padding(12)
             .background(Color(hex: "#1C1C1E"))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(isSelected ? Color(hex: "#0A84FF") : Color(hex: "#2C2C2E"), lineWidth: isSelected ? 2 : 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
 
@@ -1256,7 +1798,7 @@ struct RoutePlannerView: View {
                         .frame(width: 30, height: 30)
                     Image(systemName: icon)
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.85))
+                        .foregroundColor(BCTheme.cyanAccent)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title)
@@ -1264,7 +1806,7 @@ struct RoutePlannerView: View {
                         .foregroundColor(.white)
                     Text(subtitle)
                         .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(.white.opacity(0.55))
                 }
             }
             .padding(.horizontal, 12)
@@ -1274,26 +1816,33 @@ struct RoutePlannerView: View {
         }
     }
 
-    private func durationTabPill(minutes: Int, index: Int) -> some View {
-        let isSelected = selectedOptionIndex == index
+    private func durationTabPill(candidate: EvaluatedRouteCandidate, index: Int) -> some View {
+        let isSelected = selectedCandidateIndex == index
+        let isOrd = candidate.kind == .ordinaryInService
         return Button {
             BCFeedbackManager.shared.impactLight()
-            selectedOptionIndex = index
+            selectedCandidateIndex = index
+            updatePolylinesAndCamera(for: candidate)
         } label: {
             VStack(spacing: 3) {
-                Text("\(minutes) min")
-                    .font(.caption.weight(isSelected ? .bold : .medium))
-                    .foregroundColor(isSelected ? .white : .white.opacity(0.55))
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(isOrd ? BCTheme.emerald : (candidate.kind == .externalFreeBoarding ? BCTheme.amber : BCTheme.cyanAccent))
+                        .frame(width: 6, height: 6)
+                    Text("\(candidate.routeCode) · \(candidate.totalDurationMinutes)m")
+                        .font(.caption.weight(isSelected ? .bold : .medium))
+                        .foregroundColor(isSelected ? .white : .white.opacity(0.6))
+                }
                 Rectangle()
                     .fill(isSelected ? Color(hex: "#0A84FF") : Color.clear)
-                    .frame(width: 38, height: 2.5)
+                    .frame(width: 58, height: 2.5)
                     .clipShape(Capsule())
             }
         }
     }
 
     private func stepRow(icon: String, bgHex: String, iconColor: Color, text: String) -> some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
             ZStack {
                 Circle()
                     .fill(Color(hex: bgHex))
@@ -1304,129 +1853,148 @@ struct RoutePlannerView: View {
             }
             Text(text)
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.88))
+                .foregroundColor(.white.opacity(0.9))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private func routeOptionCard(
-        index: Int,
-        badge: String,
-        title: String,
-        isRecommended: Bool,
-        subtitle: String,
-        durationMinutes: Int,
-        footerText: String
-    ) -> some View {
-        let isSelected = selectedOptionIndex == index
-        return Button {
-            BCFeedbackManager.shared.impactLight()
-            selectedOptionIndex = index
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top) {
-                    HStack(spacing: 10) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(isSelected ? Color(hex: "#1D3461") : Color(hex: "#2C2C2E"))
-                                .frame(width: 34, height: 34)
-                            Image(systemName: badge == "PIE" ? "figure.walk" : "bus.fill")
-                                .font(.subheadline)
-                                .foregroundColor(isSelected ? Color(hex: "#60A5FA") : .gray)
-                        }
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                Text(badge)
-                                    .font(.system(size: 10, weight: .black).monospaced())
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(isSelected ? Color(hex: "#0A84FF") : Color(hex: "#334155"))
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                                Text(title)
-                                    .font(.caption.weight(.bold))
-                                    .foregroundColor(.white)
-
-                                if isRecommended {
-                                    Text("★ Recomendada")
-                                        .font(.system(size: 9.5, weight: .bold))
-                                        .foregroundColor(Color(hex: "#4ADE80"))
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color(hex: "#4ADE80").opacity(0.15))
-                                        .clipShape(Capsule())
-                                }
-                            }
-
-                            Text(subtitle)
-                                .font(.caption2)
-                                .foregroundColor(.white.opacity(0.65))
-                                .multilineTextAlignment(.leading)
-                        }
-                    }
-
-                    Spacer()
-
-                    Text("\(durationMinutes) min")
-                        .font(.subheadline.weight(.black).monospacedDigit())
-                        .foregroundColor(isRecommended ? Color(hex: "#4ADE80") : .white)
-                }
-
-                Divider().background(Color(hex: "#2C2C2E"))
-
-                Text(footerText)
-                    .font(.system(size: 10.5))
-                    .foregroundColor(.white.opacity(0.65))
-            }
-            .padding(12)
-            .background(Color(hex: "#1C1C1E"))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isSelected ? Color(hex: "#0A84FF") : Color(hex: "#2C2C2E"), lineWidth: isSelected ? 2 : 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
-    }
-
-    // MARK: - Helpers de Estado
-    private var filteredDestinationsInPlanner: [TacnaDestinationPlace] {
-        let trimmed = destinationSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    // MARK: - Lógica de Búsqueda API, Selector en Mapa y Evaluación Automática
+    private var filteredStopsInPlanner: [TacnaDestinationPlace] {
+        let trimmed = plannerSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceList = viewModel.dynamicCatalogStops.isEmpty ? TacnaDestinationPlace.catalog : viewModel.dynamicCatalogStops
         if trimmed.isEmpty {
-            return TacnaDestinationPlace.catalog
+            return sourceList
         }
-        return TacnaDestinationPlace.catalog.filter {
+        return sourceList.filter {
             $0.name.localizedCaseInsensitiveContains(trimmed) ||
             $0.shortName.localizedCaseInsensitiveContains(trimmed) ||
             $0.subtitle.localizedCaseInsensitiveContains(trimmed)
         }
     }
 
-    private var activeDurationMinutes: Int {
-        switch selectedOptionIndex {
-        case 2: return selectedDestination.secondaryDurationMinutes
-        case 3: return selectedDestination.walkingDirectMinutes
-        default: return selectedDestination.totalDurationMinutes
+    private func triggerLiveAPISearch(query: String) {
+        searchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            apiSearchResults = []
+            isSearchingAPI = false
+            return
+        }
+        isSearchingAPI = true
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 240_000_000)
+            guard !Task.isCancelled else { return }
+            let results = await viewModel.searchMapKitPlacesInTacna(query: trimmed)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self.apiSearchResults = results
+                self.isSearchingAPI = false
+            }
         }
     }
 
-    /// Ruta principal o alterna según la opción elegida (Ej: "Ruta 14" / "Ruta 10B")
-    private var selectedRouteLabel: String {
-        selectedOptionIndex == 2 ? secondaryRouteName : selectedDestination.primaryRouteName
-    }
-
-    private var secondaryRouteName: String {
-        selectedDestination.routesPassing.count > 1
-            ? selectedDestination.routesPassing[1]
-            : selectedDestination.primaryRouteName
-    }
-
-    /// ETA real solo cuando existen unidades en operación; en cuentas de prueba no se inventan buses
-    private var liveEtaShortLabel: String {
-        if let bus = viewModel.activeBuses.first {
-            return "Próximo bus en ~\(bus.nextStopEtaMinutes) min · \(bus.occupancyPercentage)% aforo"
+    private func openMapCrosshairPicker(for target: PlannerEndpointTarget) {
+        let basePlace = (target == .origin) ? selectedOrigin : selectedDestination
+        pickerCenterCoordinate = basePlace.coordinate
+        pickerResolvedPlace = basePlace
+        pickerMapCamera = .region(
+            MKCoordinateRegion(
+                center: basePlace.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.010, longitudeDelta: 0.010)
+            )
+        )
+        withAnimation(.easeInOut(duration: 0.25)) {
+            screenState = .mapPicker(target: target)
         }
-        return "ETA en vivo al activarse unidades"
+    }
+
+    private func selectEndpointAndContinue(_ place: TacnaDestinationPlace, for target: PlannerEndpointTarget) {
+        BCFeedbackManager.shared.impactMedium()
+        switch target {
+        case .origin:
+            selectedOrigin = place
+            viewModel.routePlannerInitialOrigin = place
+        case .destination:
+            selectedDestination = place
+            viewModel.routePlannerInitialDestination = place
+        }
+        recalculateAutomatedRoutes(resetSelection: true)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            screenState = .routeMap
+        }
+    }
+
+    private func swapOriginAndDestination() {
+        BCFeedbackManager.shared.impactLight()
+        let temp = selectedOrigin
+        selectedOrigin = selectedDestination
+        selectedDestination = temp
+        recalculateAutomatedRoutes(resetSelection: true)
+    }
+
+    private func recalculateAutomatedRoutes(resetSelection: Bool) {
+        let result = viewModel.evaluateAutomatedRoutes(from: selectedOrigin, to: selectedDestination)
+        evaluationResult = result
+        if resetSelection {
+            selectedCandidateIndex = 0
+            selectedFilter = .recommended
+            sheetSnap = .compact
+        }
+        if let first = displayedCandidates.first ?? result.recommendedCandidate {
+            updatePolylinesAndCamera(for: first)
+        }
+    }
+
+    private func updatePolylinesAndCamera(for candidate: EvaluatedRouteCandidate) {
+        let orig = selectedOrigin.coordinate
+        let dest = selectedDestination.coordinate
+        let midLat = (orig.latitude + dest.latitude) / 2.0 - 0.0020
+        let midLon = (orig.longitude + dest.longitude) / 2.0
+        let spanLat = max(abs(orig.latitude - dest.latitude) * 2.2, 0.014)
+        let spanLon = max(abs(orig.longitude - dest.longitude) * 2.2, 0.014)
+
+        withAnimation(.easeInOut(duration: 0.35)) {
+            routeMapCamera = .region(
+                MKCoordinateRegion(
+                    center: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
+                    span: MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLon)
+                )
+            )
+        }
+
+        let rawWalk = candidate.walkToBoardCLCoordinates
+        let rawBus = candidate.busTransitCLCoordinates
+        let rawFinal = candidate.walkFinalCLCoordinates
+
+        plannerWalkStreetCoords = rawWalk
+        plannerBusStreetCoords = rawBus
+        plannerFinalWalkStreetCoords = rawFinal
+
+        let candidateId = candidate.id
+        Task {
+            async let walkAligned = NativeStreetRouter.alignPolylineToStreets(
+                waypoints: rawWalk,
+                transportType: .walking
+            )
+            async let busAligned = (rawBus.count > 6)
+                ? rawBus
+                : await NativeStreetRouter.alignPolylineToStreets(
+                    waypoints: rawBus,
+                    transportType: .automobile
+                )
+            async let finalAligned = NativeStreetRouter.alignPolylineToStreets(
+                waypoints: rawFinal,
+                transportType: .walking
+            )
+            let (wCoords, bCoords, fCoords) = await (walkAligned, busAligned, finalAligned)
+            await MainActor.run {
+                if activeCandidate?.id == candidateId {
+                    plannerWalkStreetCoords = wCoords
+                    plannerBusStreetCoords = bCoords
+                    plannerFinalWalkStreetCoords = fCoords
+                }
+            }
+        }
     }
 
     private var formattedUserFare: String {
@@ -1438,8 +2006,8 @@ struct RoutePlannerView: View {
 
     private var sheetSnapLabel: String {
         switch sheetSnap {
-        case .compact: return "Desliza o toca para ver detalles de ruta"
-        case .medium: return "Desliza hacia arriba para ver todas las opciones"
+        case .compact: return "Desliza hacia arriba para ver pasos y todas las rutas (Ordinarias y Externas)"
+        case .medium: return "Desliza hacia arriba para comparar todas las rutas disponibles"
         case .full: return "Toca para contraer hoja de rutas"
         }
     }
@@ -1447,35 +2015,6 @@ struct RoutePlannerView: View {
     private func currentSheetHeight(in totalHeight: CGFloat) -> CGFloat {
         let base = sheetSnap.height(in: totalHeight)
         let adjusted = base - sheetDragTranslation
-        return min(max(adjusted, 165), totalHeight * 0.86)
-    }
-
-    private func selectDestinationAndShowRoute(_ place: TacnaDestinationPlace) {
-        BCFeedbackManager.shared.impactMedium()
-        selectedDestination = place
-        selectedOptionIndex = 1
-        sheetSnap = .compact
-        updateCameraForDestination(place)
-        withAnimation(.easeInOut(duration: 0.25)) {
-            screenState = .routeMap
-        }
-    }
-
-    private func updateCameraForDestination(_ place: TacnaDestinationPlace) {
-        let origin = TacnaDestinationPlace.userOriginCoordinate
-        let midLat = (origin.latitude + place.latitude) / 2.0 - 0.0020
-        let midLon = (origin.longitude + place.longitude) / 2.0
-        let spanLat = max(abs(origin.latitude - place.latitude) * 2.2, 0.012)
-        let spanLon = max(abs(origin.longitude - place.longitude) * 2.2, 0.012)
-
-        withAnimation(.easeInOut(duration: 0.35)) {
-            routeMapCamera = .region(
-                MKCoordinateRegion(
-                    center: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
-                    span: MKCoordinateSpan(latitudeDelta: spanLat, longitudeDelta: spanLon)
-                )
-            )
-        }
+        return min(max(adjusted, 195), totalHeight * 0.88)
     }
 }
-
