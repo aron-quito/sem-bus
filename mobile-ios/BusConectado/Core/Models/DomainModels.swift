@@ -308,7 +308,7 @@ struct AdminStopDTO: Codable, Identifiable {
         default: cat = (isOfficial == false) ? .proposedUrbanGrowth : .institutionsTerminals
         }
 
-        let routes = routesPassing ?? ["Ruta 14"]
+        let routes = routesPassing ?? []
         let defaultIcon = "bus.fill"
         let defaultColor = cat.isProposedModernization ? "#F59E0B" : "#2563EB"
 
@@ -479,10 +479,10 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
             id: "map-\(name)-\(coordinate.latitude)-\(coordinate.longitude)",
             name: name,
             shortName: name,
-            subtitle: subtitle.isEmpty ? "Punto seleccionado en el mapa de Tacna" : subtitle,
+            subtitle: subtitle.isEmpty ? "Punto de encuentro en el mapa de Tacna" : subtitle,
             category: .mapCustomPlace,
-            routesPassing: ["Ruta 14", "Ruta 10B"],
-            iconName: "bus.fill",
+            routesPassing: [],
+            iconName: "mappin.and.ellipse",
             iconColorHex: "#38BDF8",
             latitude: coordinate.latitude,
             longitude: coordinate.longitude,
@@ -1344,21 +1344,171 @@ struct TacnaDestinationPlace: Identifiable, Equatable {
     ]
 }
 
-// MARK: - Catálogo Oficial de las Rutas Principales de Tacna (Sistema de 33 Rutas Urbanas)
+// MARK: - Clasificación Operativa de Rutas (Ordinarias con Tracking/QR vs Externas Referenciales)
+enum RouteServiceType: String, Codable, Equatable {
+    case ordinary = "ordinary" // Rutas propias de Bus Conectado (Con Tracking GPS, Pago QR y Notificación)
+    case external = "external" // Líneas tradicionales de Tacna (Solo referenciales, sin tracking ni QR)
+}
+
+/// Estado de disponibilidad de notificación de llegada para un paradero según las rutas ordinarias que pasan por él
+enum StopNotificationAvailability: Equatable {
+    /// Pasa al menos una Ruta Ordinaria y se encuentra En Servicio activo
+    case available(activeRoutes: [TacnaOfficialRouteCatalogItem])
+    /// El paradero tiene registrada al menos una Ruta Ordinaria, pero ninguna está en servicio actualmente
+    case ordinaryOutOfService(registeredRoutes: [TacnaOfficialRouteCatalogItem])
+    /// No pasa ninguna Ruta Ordinaria por este punto (solo rutas externas o punto de encuentro del mapa)
+    case noOrdinaryRoutes
+}
+
+// MARK: - DTO de Rutas para Sincronización con el Panel Administrador Web (/api/v1/transit/routes)
+struct AdminRouteDTO: Codable, Identifiable {
+    let id: String
+    let code: String
+    let title: String
+    let routeType: String?
+    let isInService: Bool?
+    let supportsQrPayment: Bool?
+    let supportsArrivalNotification: Bool?
+    let statusLabel: String?
+    let corridor: String?
+    let frequencyMinutes: Int?
+    let averageSpeedKmh: Double?
+    let totalDistanceKm: Double?
+    let estimatedTotalMinutes: Int?
+    let scheduleLabel: String?
+    let colorHex: String?
+    let iconName: String?
+    let keyStopIds: [String]?
+    let pathCoordinates: [[Double]]?
+
+    func toRouteCatalogItem() -> TacnaOfficialRouteCatalogItem {
+        let resolvedType: RouteServiceType = (routeType?.lowercased() == "external") ? .external : .ordinary
+        let inService = (resolvedType == .ordinary) ? (isInService ?? true) : false
+        let freqMins = frequencyMinutes ?? (resolvedType == .ordinary ? 6 : 0)
+        let freqLabel: String
+        if resolvedType == .ordinary {
+            freqLabel = inService ? "Cada \(max(1, freqMins)) min" : "Fuera de servicio"
+        } else {
+            freqLabel = "Referencial (Sin GPS)"
+        }
+
+        let defaultStatus: String
+        if resolvedType == .ordinary {
+            defaultStatus = inService
+                ? "En Servicio • GPS & Pago QR Activo"
+                : "Fuera de Servicio Temporal • Sin unidades activas"
+        } else {
+            defaultStatus = "Línea Externa de Tacna • Sin Tracking GPS"
+        }
+
+        return TacnaOfficialRouteCatalogItem(
+            id: id,
+            code: code.uppercased(),
+            title: title,
+            routeType: resolvedType,
+            isInService: inService,
+            supportsQrPayment: supportsQrPayment ?? (resolvedType == .ordinary),
+            supportsArrivalNotification: supportsArrivalNotification ?? (resolvedType == .ordinary),
+            statusLabel: statusLabel ?? defaultStatus,
+            corridorSummary: corridor ?? title,
+            frequencyMinutes: freqMins,
+            averageSpeedKmh: averageSpeedKmh ?? 22.0,
+            totalDistanceKm: totalDistanceKm ?? 12.5,
+            estimatedTotalMinutes: estimatedTotalMinutes ?? 38,
+            frequencyLabel: freqLabel,
+            scheduleLabel: scheduleLabel ?? "05:30 - 22:30",
+            colorHex: colorHex ?? (resolvedType == .ordinary ? "#2563EB" : "#64748B"),
+            keyStopIds: keyStopIds ?? [],
+            pathCoordinates: pathCoordinates ?? []
+        )
+    }
+}
+
+// MARK: - Catálogo Oficial de Rutas (Ordinarias con Tracking/QR y Externas Referenciales de Tacna)
 struct TacnaOfficialRouteCatalogItem: Identifiable, Equatable {
     let id: String
     let code: String
     let title: String
+    let routeType: RouteServiceType
+    var isInService: Bool
+    let supportsQrPayment: Bool
+    let supportsArrivalNotification: Bool
+    let statusLabel: String
     let corridorSummary: String
+    let frequencyMinutes: Int
+    let averageSpeedKmh: Double
+    let totalDistanceKm: Double
+    let estimatedTotalMinutes: Int
     let frequencyLabel: String
     let scheduleLabel: String
     let colorHex: String
     let keyStopIds: [String]
+    let pathCoordinates: [[Double]]
 
-    var resolvedStops: [TacnaDestinationPlace] {
-        keyStopIds.compactMap { stopId in
-            TacnaDestinationPlace.catalog.first(where: { $0.id == stopId })
+    var isOrdinary: Bool {
+        routeType == .ordinary
+    }
+
+    var isOrdinaryInService: Bool {
+        routeType == .ordinary && isInService
+    }
+
+    var isExternal: Bool {
+        routeType == .external
+    }
+
+    /// Resuelve los paraderos de la ruta usando el catálogo sincronizado en memoria (compatible con IDs con o sin prefijo "stop-")
+    func resolvedStops(using catalog: [TacnaDestinationPlace] = TacnaDestinationPlace.catalog) -> [TacnaDestinationPlace] {
+        keyStopIds.compactMap { rawId in
+            let normalized = rawId.trimmingCharacters(in: .whitespacesAndNewlines)
+            let withoutStopPrefix = normalized.replacingOccurrences(of: "stop-", with: "")
+            let withStopPrefix = normalized.hasPrefix("stop-") ? normalized : "stop-\(normalized)"
+
+            return catalog.first { place in
+                place.id == normalized ||
+                place.id == withoutStopPrefix ||
+                place.id == withStopPrefix ||
+                (normalized == "mercado-2-de-mayo" && place.id == "stop-mercado-2-mayo") ||
+                (normalized == "stop-mercado-2-mayo" && place.id == "mercado-2-de-mayo") ||
+                (normalized == "prop-vinani-crecimiento" && place.id == "prop-vinani-albarracin") ||
+                (normalized == "prop-ciudad-nueva-crecimiento" && place.id == "prop-ciudad-nueva") ||
+                (normalized == "prop-upt-capanique" && place.id == "prop-upt-colegios") ||
+                (normalized == "prop-frontera-santa-rosa" && place.id == "prop-complejo-santa-rosa")
+            }
         }
+    }
+
+    /// Compatibilidad directa cuando no se pasa catálogo explícito
+    var resolvedStops: [TacnaDestinationPlace] {
+        resolvedStops(using: TacnaDestinationPlace.catalog)
+    }
+
+    /// Coordenadas para trazar la polilínea en el mapa (usa pathCoordinates trazadas por el administrador o los paraderos resueltos)
+    func resolvedPolylineCoordinates(using catalog: [TacnaDestinationPlace] = TacnaDestinationPlace.catalog) -> [CLLocationCoordinate2D] {
+        if pathCoordinates.count >= 2 {
+            return pathCoordinates.compactMap { pair in
+                guard pair.count >= 2 else { return nil }
+                return CLLocationCoordinate2D(latitude: pair[0], longitude: pair[1])
+            }
+        }
+        return resolvedStops(using: catalog).map(\.coordinate)
+    }
+
+    /// Calcula el tiempo aproximado acumulado (en minutos) desde el inicio de la ruta hasta el paradero indicado (Referencia App + Chofer)
+    func estimatedArrivalMinutesFromOrigin(forStopAt index: Int, using catalog: [TacnaDestinationPlace]) -> Int {
+        let stops = resolvedStops(using: catalog)
+        guard index > 0, index < stops.count else { return 0 }
+        var cumulativeMeters: Double = 0
+        for i in 1...index {
+            let prev = CLLocation(latitude: stops[i - 1].latitude, longitude: stops[i - 1].longitude)
+            let curr = CLLocation(latitude: stops[i].latitude, longitude: stops[i].longitude)
+            cumulativeMeters += prev.distance(from: curr) * 1.25
+        }
+        let km = cumulativeMeters / 1000.0
+        let speed = max(10.0, averageSpeedKmh)
+        let driveMins = (km / speed) * 60.0
+        let dwellMins = Double(index) * 0.42
+        return max(1, Int(round(driveMins + dwellMins)))
     }
 
     static let officialRoutes: [TacnaOfficialRouteCatalogItem] = [
@@ -1366,108 +1516,158 @@ struct TacnaOfficialRouteCatalogItem: Identifiable, Equatable {
             id: "tacna-ruta-14",
             code: "RUTA 14",
             title: "Eje Troncal Cono Norte – Centro – UNJBG – Cono Sur",
+            routeType: .ordinary,
+            isInService: true,
+            supportsQrPayment: true,
+            supportsArrivalNotification: true,
+            statusLabel: "En Servicio • GPS & Pago QR Activo",
             corridorSummary: "Ciudad Nueva ⇄ C.C. Túpac Amaru ⇄ Mercado 2 de Mayo ⇄ Mercado Central ⇄ UNJBG ⇄ Gregorio Albarracín (Viñani)",
+            frequencyMinutes: 5,
+            averageSpeedKmh: 22.0,
+            totalDistanceKm: 20.31,
+            estimatedTotalMinutes: 68,
             frequencyLabel: "Cada 5 min",
             scheduleLabel: "05:30 - 22:30",
             colorHex: "#2563EB",
             keyStopIds: [
-                "prop-ciudad-nueva",
-                "stop-plaza-jorge-chavez",
-                "stop-estadio-jorge-basadre",
-                "stop-cc-tupac-amaru",
-                "stop-plaza-vigil",
-                "stop-pasaje-vigil",
-                "stop-mercado-2-mayo",
-                "stop-mercado-central",
-                "stop-tacna-centro",
-                "stop-plaza-vea",
-                "stop-gobierno-regional",
-                "stop-plaza-del-maestro",
-                "stop-unjbg",
-                "stop-plaza-perez-gamboa",
-                "stop-mercado-cenepa",
-                "stop-mercado-santa-rosa",
-                "prop-vinani-albarracin"
-            ]
+                "prop-ciudad-nueva-crecimiento",
+                "plaza-jorge-chavez",
+                "estadio-jorge-basadre",
+                "cc-tupac-amaru",
+                "plaza-vigil",
+                "pasaje-vigil",
+                "mercado-2-de-mayo",
+                "mercado-central",
+                "tacna-centro",
+                "plaza-vea",
+                "gobierno-regional",
+                "plaza-del-maestro",
+                "unjbg",
+                "plaza-perez-gamboa",
+                "mercado-cenepa",
+                "mercado-santa-rosa",
+                "prop-vinani-crecimiento"
+            ],
+            pathCoordinates: []
         ),
         TacnaOfficialRouteCatalogItem(
             id: "tacna-ruta-10b",
             code: "RUTA 10B",
             title: "Corredor Universitario, Hospitalario y Céntrico",
+            routeType: .ordinary,
+            isInService: false,
+            supportsQrPayment: true,
+            supportsArrivalNotification: true,
+            statusLabel: "Fuera de Servicio Temporal • Sin unidades activas",
             corridorSummary: "Polvos Rosados ⇄ Paseo de las Aguas ⇄ Plaza San Francisco ⇄ Hosp. Unanue ⇄ UNJBG ⇄ UPT ⇄ EsSalud Calana",
-            frequencyLabel: "Cada 6 min",
+            frequencyMinutes: 6,
+            averageSpeedKmh: 21.0,
+            totalDistanceKm: 24.59,
+            estimatedTotalMinutes: 82,
+            frequencyLabel: "Fuera de servicio",
             scheduleLabel: "06:00 - 22:00",
             colorHex: "#10B981",
             keyStopIds: [
-                "stop-polvos-rosados",
-                "stop-paseo-aguas",
-                "stop-plaza-san-francisco",
-                "stop-gran-hotel-tacna",
-                "stop-poder-judicial",
-                "stop-parque-locomotora",
+                "polvos-rosados",
+                "paseo-aguas",
+                "plaza-san-francisco",
+                "gran-hotel-tacna",
+                "poder-judicial",
+                "parque-locomotora",
                 "prop-hospital-unanue",
-                "stop-plaza-quinones",
-                "stop-unjbg",
-                "prop-upt-colegios",
+                "plaza-quinones",
+                "unjbg",
+                "prop-upt-capanique",
                 "prop-hospital-essalud-calana"
-            ]
+            ],
+            pathCoordinates: []
         ),
         TacnaOfficialRouteCatalogItem(
             id: "tacna-ruta-101",
             code: "RUTA 101",
             title: "Corredor Comercial, Terminales y Parque Industrial",
+            routeType: .external,
+            isInService: false,
+            supportsQrPayment: false,
+            supportsArrivalNotification: false,
+            statusLabel: "Línea Externa de Tacna • Sin Tracking GPS",
             corridorSummary: "Mercado Pesquero ⇄ Terminal Terrestre ⇄ Terminal Bolognesi ⇄ Mercado Grau ⇄ Radio Nacional ⇄ Mercado Central",
-            frequencyLabel: "Cada 7 min",
+            frequencyMinutes: 8,
+            averageSpeedKmh: 20.0,
+            totalDistanceKm: 9.5,
+            estimatedTotalMinutes: 32,
+            frequencyLabel: "Referencial (Sin GPS)",
             scheduleLabel: "05:30 - 22:00",
             colorHex: "#F59E0B",
             keyStopIds: [
-                "stop-mercado-pesquero",
-                "stop-terminal-terrestre",
-                "stop-terminal-bolognesi",
-                "stop-mercado-grau",
-                "stop-radio-nacional",
-                "stop-cc-tupac-amaru",
-                "stop-plaza-vigil",
-                "stop-mercado-central"
-            ]
+                "mercado-pesquero",
+                "terminal-terrestre",
+                "terminal-bolognesi",
+                "mercado-grau",
+                "radio-nacional",
+                "cc-tupac-amaru",
+                "plaza-vigil",
+                "mercado-central"
+            ],
+            pathCoordinates: []
         ),
         TacnaOfficialRouteCatalogItem(
             id: "tacna-ruta-203",
             code: "RUTA 203",
             title: "Expreso Cono Sur – Mercados – Campus UNJBG",
+            routeType: .external,
+            isInService: false,
+            supportsQrPayment: false,
+            supportsArrivalNotification: false,
+            statusLabel: "Línea Externa de Tacna • Sin Tracking GPS",
             corridorSummary: "Mercado 2 de Mayo ⇄ Plaza del Maestro ⇄ UNJBG ⇄ Plaza Pérez Gamboa ⇄ Postas Médicas ⇄ Mdo. Cenepa ⇄ Viñani",
-            frequencyLabel: "Cada 6 min",
+            frequencyMinutes: 7,
+            averageSpeedKmh: 22.0,
+            totalDistanceKm: 7.84,
+            estimatedTotalMinutes: 25,
+            frequencyLabel: "Referencial (Sin GPS)",
             scheduleLabel: "05:45 - 22:15",
             colorHex: "#A855F7",
             keyStopIds: [
-                "stop-mercado-2-mayo",
-                "stop-plaza-del-maestro",
-                "stop-unjbg",
-                "stop-plaza-perez-gamboa",
+                "mercado-2-de-mayo",
+                "plaza-del-maestro",
+                "unjbg",
+                "plaza-perez-gamboa",
                 "prop-postas-medicas",
-                "stop-mercado-cenepa",
-                "stop-mercado-santa-rosa",
-                "prop-vinani-albarracin"
-            ]
+                "mercado-cenepa",
+                "mercado-santa-rosa",
+                "prop-vinani-crecimiento"
+            ],
+            pathCoordinates: []
         ),
         TacnaOfficialRouteCatalogItem(
             id: "tacna-ruta-a",
             code: "RUTA A",
             title: "Anillo Histórico y Turístico – Complejo Santa Rosa",
+            routeType: .external,
+            isInService: false,
+            supportsQrPayment: false,
+            supportsArrivalNotification: false,
+            statusLabel: "Línea Externa de Tacna • Sin Tracking GPS",
             corridorSummary: "Parque de la Locomotora ⇄ Tacna Centro ⇄ Gran Hotel Tacna ⇄ Paseo de las Aguas ⇄ Terminal Terrestre ⇄ Santa Rosa",
-            frequencyLabel: "Cada 10 min",
+            frequencyMinutes: 12,
+            averageSpeedKmh: 25.0,
+            totalDistanceKm: 41.94,
+            estimatedTotalMinutes: 103,
+            frequencyLabel: "Referencial (Sin GPS)",
             scheduleLabel: "06:00 - 21:30",
             colorHex: "#06B6D4",
             keyStopIds: [
-                "stop-parque-locomotora",
-                "stop-tacna-centro",
-                "stop-gran-hotel-tacna",
-                "stop-plaza-san-francisco",
-                "stop-paseo-aguas",
-                "stop-plaza-vea",
-                "stop-terminal-terrestre",
-                "prop-complejo-santa-rosa"
-            ]
+                "parque-locomotora",
+                "tacna-centro",
+                "gran-hotel-tacna",
+                "plaza-san-francisco",
+                "paseo-aguas",
+                "plaza-vea",
+                "terminal-terrestre",
+                "prop-frontera-santa-rosa"
+            ],
+            pathCoordinates: []
         )
     ]
 }

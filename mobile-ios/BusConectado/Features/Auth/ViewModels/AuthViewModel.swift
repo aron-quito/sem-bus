@@ -52,8 +52,9 @@ final class AuthViewModel: ObservableObject {
     @Published var showInsufficientBalanceModal: Bool = false
     @Published var requiredPointsForAttempt: Int = 0
 
-    // Catálogo Dinámico de Paraderos (Sincronizado en tiempo real con el Administrador Web y Backend Local)
+    // Catálogo Dinámico de Paraderos y Rutas (Sincronizados con el Administrador Web y Servidor Cloud)
     @Published var dynamicCatalogStops: [TacnaDestinationPlace] = TacnaDestinationPlace.catalog
+    @Published var dynamicRoutes: [TacnaOfficialRouteCatalogItem] = TacnaOfficialRouteCatalogItem.officialRoutes
 
     // Estado del Buscador Predictivo y Pin de Destino Buscado
     @Published var isSearchDropdownVisible: Bool = false
@@ -90,11 +91,17 @@ final class AuthViewModel: ObservableObject {
             APIClient.shared.updateBaseURL("https://34.61.17.233.sslip.io")
         }
 
-        // Cargar paraderos cacheados previamente de la última sincronización con el Administrador Web
+        // Cargar paraderos y rutas cacheados previamente de la última sincronización con el Administrador Web
         if let stopsData = UserDefaults.standard.data(forKey: "bc_cached_stops"),
            let cachedDTOs = try? JSONDecoder().decode([AdminStopDTO].self, from: stopsData),
            !cachedDTOs.isEmpty {
             self.dynamicCatalogStops = cachedDTOs.map { $0.toDestinationPlace() }
+        }
+
+        if let routesData = UserDefaults.standard.data(forKey: "bc_cached_routes"),
+           let cachedRouteDTOs = try? JSONDecoder().decode([AdminRouteDTO].self, from: routesData),
+           !cachedRouteDTOs.isEmpty {
+            self.dynamicRoutes = cachedRouteDTOs.map { $0.toRouteCatalogItem() }
         }
 
         if let token = KeychainService.shared.get(key: "access_token"), !token.isEmpty {
@@ -206,16 +213,85 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    /// Proyecta una Ruta Oficial de Tacna desde la pestaña Líneas directamente sobre el mapa principal
+    /// Proyecta una Ruta (Ordinaria o Externa) desde la pestaña Líneas directamente sobre el mapa principal
     func projectRouteOnMainMap(_ route: TacnaOfficialRouteCatalogItem) {
         BCFeedbackManager.shared.impactMedium()
         self.activeRouteOverlayOnMap = route
         self.selectedTab = 0
-        if let first = route.resolvedStops.first, let last = route.resolvedStops.last {
+        let coords = route.resolvedPolylineCoordinates(using: dynamicCatalogStops)
+        if let first = coords.first, let last = coords.last {
             let midLat = (first.latitude + last.latitude) / 2.0
             let midLon = (first.longitude + last.longitude) / 2.0
             let span = max(abs(first.latitude - last.latitude) * 1.6, 0.032)
             focusMap(on: CLLocationCoordinate2D(latitude: midLat, longitude: midLon), spanDelta: span)
+        }
+    }
+
+    // MARK: - Reglas de Dominio para Rutas Ordinarias vs Externas y Disponibilidad de Notificación en Paraderos
+
+    /// Busca una ruta en el catálogo dinámico por su código (ej: "Ruta 14", "RUTA 10B", "Ruta 101")
+    func routeItem(forCode rawCode: String) -> TacnaOfficialRouteCatalogItem? {
+        let normalized = rawCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return dynamicRoutes.first {
+            $0.code.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == normalized
+        }
+    }
+
+    /// Devuelve todas las rutas sincronizadas (Ordinarias y Externas) que pasan por un paradero dado
+    func catalogRoutes(for stop: TacnaDestinationPlace) -> [TacnaOfficialRouteCatalogItem] {
+        guard stop.category != .mapCustomPlace else { return [] }
+        var matched: [TacnaOfficialRouteCatalogItem] = []
+
+        // 1. Por códigos registrados en routesPassing del paradero
+        for code in stop.routesPassing {
+            if let route = routeItem(forCode: code), !matched.contains(where: { $0.id == route.id }) {
+                matched.append(route)
+            }
+        }
+
+        // 2. Por asociación directa en keyStopIds del catálogo de rutas sincronizado
+        for route in dynamicRoutes {
+            let resolved = route.resolvedStops(using: dynamicCatalogStops)
+            if resolved.contains(where: { $0.id == stop.id }), !matched.contains(where: { $0.id == route.id }) {
+                matched.append(route)
+            }
+        }
+
+        return matched
+    }
+
+    /// Rutas Ordinarias (propias de la app con tracking y pago QR) que pasan por este paradero
+    func ordinaryRoutes(for stop: TacnaDestinationPlace) -> [TacnaOfficialRouteCatalogItem] {
+        catalogRoutes(for: stop).filter { $0.isOrdinary }
+    }
+
+    /// Rutas Ordinarias que pasan por este paradero y se encuentran actualmente En Servicio
+    func activeOrdinaryRoutes(for stop: TacnaDestinationPlace) -> [TacnaOfficialRouteCatalogItem] {
+        ordinaryRoutes(for: stop).filter { $0.isInService }
+    }
+
+    /// Rutas Externas (líneas tradicionales de Tacna sin tracking) que pasan por este paradero
+    func externalRoutes(for stop: TacnaDestinationPlace) -> [TacnaOfficialRouteCatalogItem] {
+        catalogRoutes(for: stop).filter { $0.isExternal }
+    }
+
+    /// Evalúa la disponibilidad de la opción "Notificación" para un paradero según la regla de negocio:
+    /// - Si no figura ninguna ruta ordinaria -> `.noOrdinaryRoutes` (solo opción "Ir / Punto de encuentro", sin botón de notificación).
+    /// - Si tiene ruta(s) ordinaria(s) registrada(s) pero ninguna está en servicio -> `.ordinaryOutOfService` (muestra aviso + "Ir").
+    /// - Si tiene al menos una ruta ordinaria en servicio -> `.available` (habilita activar notificación de llegada + "Ir").
+    func stopNotificationAvailability(for stop: TacnaDestinationPlace) -> StopNotificationAvailability {
+        guard stop.category != .mapCustomPlace else {
+            return .noOrdinaryRoutes
+        }
+        let ordRoutes = ordinaryRoutes(for: stop)
+        guard !ordRoutes.isEmpty else {
+            return .noOrdinaryRoutes
+        }
+        let activeOrd = ordRoutes.filter { $0.isInService }
+        if !activeOrd.isEmpty {
+            return .available(activeRoutes: activeOrd)
+        } else {
+            return .ordinaryOutOfService(registeredRoutes: ordRoutes)
         }
     }
 
@@ -523,9 +599,7 @@ final class AuthViewModel: ObservableObject {
             if !adminStops.isEmpty {
                 let converted = adminStops.map { $0.toDestinationPlace() }
                 await MainActor.run {
-                    let hasChanged = (self.dynamicCatalogStops.count != converted.count) ||
-                        zip(self.dynamicCatalogStops, converted).contains { $0.latitude != $1.latitude || $0.longitude != $1.longitude || $0.shortName != $1.shortName || $0.resolvedIconName != $1.resolvedIconName }
-                    if hasChanged {
+                    if self.dynamicCatalogStops != converted {
                         self.dynamicCatalogStops = converted
                         if let rawData = try? JSONEncoder().encode(adminStops) {
                             UserDefaults.standard.set(rawData, forKey: "bc_cached_stops")
@@ -541,7 +615,34 @@ final class AuthViewModel: ObservableObject {
             print("[SYNC] Error sincronizando paraderos desde backend: \(error)")
         }
 
-        // 2. Sincronizar red de transporte
+        // 2. Sincronizar catálogo de rutas (Ordinarias en Servicio/Fuera de Servicio y Externas)
+        do {
+            let adminRoutes: [AdminRouteDTO] = try await APIClient.shared.request(
+                endpoint: "transit/routes",
+                method: "GET",
+                requiresAuth: false
+            )
+            if !adminRoutes.isEmpty {
+                let convertedRoutes = adminRoutes.map { $0.toRouteCatalogItem() }
+                await MainActor.run {
+                    if self.dynamicRoutes != convertedRoutes {
+                        self.dynamicRoutes = convertedRoutes
+                        if let rawRoutes = try? JSONEncoder().encode(adminRoutes) {
+                            UserDefaults.standard.set(rawRoutes, forKey: "bc_cached_routes")
+                        }
+                        if let currentOverlay = self.activeRouteOverlayOnMap,
+                           let updatedOverlay = convertedRoutes.first(where: { $0.id == currentOverlay.id }) {
+                            self.activeRouteOverlayOnMap = updatedOverlay
+                        }
+                    }
+                    self.isConnectedToBackend = true
+                }
+            }
+        } catch {
+            print("[SYNC] Error sincronizando rutas desde backend: \(error)")
+        }
+
+        // 3. Sincronizar red de transporte activa (unidades en vivo)
         struct NetworkDTO: Decodable {
             let routes: [BusRouteModel]
             let stops: [BusStopModel]

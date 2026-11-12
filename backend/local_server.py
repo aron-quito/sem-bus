@@ -73,6 +73,8 @@ def get_local_ip_addresses():
 
 
 PARADEROS_BACKUP_PATH = ADMIN_WEB_DIR / "paraderos_tacna.backup.json"
+RUTAS_JSON_PATH = ADMIN_WEB_DIR / "rutas_tacna.json"
+RUTAS_BACKUP_PATH = ADMIN_WEB_DIR / "rutas_tacna.backup.json"
 file_io_lock = threading.Lock()
 
 
@@ -109,17 +111,14 @@ def save_paraderos(stops_data):
 
     with file_io_lock:
         try:
-            # 1. Escribir a archivo temporal
             temp_path = PARADEROS_JSON_PATH.with_suffix(".tmp")
             with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(stops_data, f, indent=2, ensure_ascii=False)
                 f.flush()
                 os.fsync(f.fileno())
 
-            # 2. Reemplazo atómico POSIX
             os.replace(temp_path, PARADEROS_JSON_PATH)
 
-            # 3. Guardar copia de backup de seguridad
             try:
                 import shutil
                 shutil.copy2(PARADEROS_JSON_PATH, PARADEROS_BACKUP_PATH)
@@ -130,6 +129,89 @@ def save_paraderos(stops_data):
         except Exception as e:
             print(f"[ERROR] Error al guardar {PARADEROS_JSON_PATH}: {e}")
             return False
+
+
+def load_rutas():
+    """Lee el catálogo de rutas (Ordinarias y Externas) desde rutas_tacna.json con recuperación automática."""
+    with file_io_lock:
+        if RUTAS_JSON_PATH.exists():
+            try:
+                with open(RUTAS_JSON_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list) and len(data) > 0:
+                        return data
+            except Exception as e:
+                print(f"[WARN] Error al leer {RUTAS_JSON_PATH}: {e}")
+
+        if RUTAS_BACKUP_PATH.exists():
+            try:
+                with open(RUTAS_BACKUP_PATH, "r", encoding="utf-8") as f:
+                    backup_data = json.load(f)
+                    if isinstance(backup_data, list) and len(backup_data) > 0:
+                        print("[RESTORE] Rutas restauradas exitosamente desde backup de seguridad.")
+                        return backup_data
+            except Exception:
+                pass
+    return []
+
+
+def save_rutas(routes_data, sync_stops=True):
+    """Guarda el catálogo de rutas de forma atómica POSIX y sincroniza la pertenencia en los paraderos."""
+    if not isinstance(routes_data, list):
+        print("[WARN] Intento de guardar estructura de rutas inválida rechazado.")
+        return False
+
+    with file_io_lock:
+        try:
+            temp_path = RUTAS_JSON_PATH.with_suffix(".tmp")
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(routes_data, f, indent=2, ensure_ascii=False)
+                f.flush()
+                os.fsync(f.fileno())
+
+            os.replace(temp_path, RUTAS_JSON_PATH)
+
+            if len(routes_data) > 0:
+                try:
+                    import shutil
+                    shutil.copy2(RUTAS_JSON_PATH, RUTAS_BACKUP_PATH)
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[ERROR] Error al guardar {RUTAS_JSON_PATH}: {e}")
+            return False
+
+    if sync_stops:
+        sync_paraderos_from_rutas(routes_data)
+    return True
+
+
+def sync_paraderos_from_rutas(routes_data):
+    """Mantiene sincronizada la propiedad routesPassing de cada paradero según las rutas vigentes."""
+    stops = load_paraderos()
+    if not stops:
+        return stops
+
+    stop_routes_map = {s.get("id"): [] for s in stops}
+    for r in routes_data:
+        code = (r.get("code") or "").strip()
+        if not code:
+            continue
+        for sid in (r.get("keyStopIds") or []):
+            if sid in stop_routes_map and code not in stop_routes_map[sid]:
+                stop_routes_map[sid].append(code)
+
+    changed = False
+    for s in stops:
+        sid = s.get("id")
+        new_routes = stop_routes_map.get(sid, [])
+        if s.get("routesPassing") != new_routes:
+            s["routesPassing"] = new_routes
+            changed = True
+
+    if changed:
+        save_paraderos(stops)
+    return stops
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -338,14 +420,22 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
             stops = load_paraderos()
             return self.send_json(stops, cacheable=True)
 
+        # ── API: Catálogo de Rutas de Tacna (Ordinarias con Tracking/QR y Externas Referenciales) ──
+        if path == "/api/v1/transit/routes":
+            routes_catalog = load_rutas()
+            return self.send_json(routes_catalog, cacheable=True)
+
         # ── API: Red de Transporte Completa (CU-07 / AuthViewModel.refreshStateFromBackend) ──
         if path == "/api/v1/transit/network":
             stops_raw = load_paraderos()
+            routes_catalog = load_rutas()
+            stops_by_id = {s.get("id"): s for s in stops_raw}
+
             bus_stops = []
             for idx, s in enumerate(stops_raw):
                 bus_stops.append({
                     "id": s.get("id"),
-                    "route_id": "ruta-14",
+                    "route_id": (s.get("routesPassing") or ["Ruta 14"])[0] if s.get("routesPassing") else "Sin Ruta",
                     "name": s.get("name"),
                     "subtitle": s.get("subtitle", ""),
                     "latitude": s.get("latitude"),
@@ -356,33 +446,42 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                     "approaching_buses": []
                 })
 
-            routes = [
-                {
-                    "id": "ruta-14",
-                    "line_number": "14",
-                    "name": "Ruta 14 (Cono Sur • Centro • Cono Norte)",
-                    "origin_name": "Asoc. Vista Alegre / Viñani",
-                    "destination_name": "Ciudad Nueva / Cono Norte",
-                    "frequency_minutes": 6,
-                    "operating_hours": "05:00 - 22:30",
-                    "color_hex": "#2563EB",
-                    "stops": bus_stops
-                },
-                {
-                    "id": "ruta-10b",
-                    "line_number": "10B",
-                    "name": "Ruta 10B (Gregorio Albarracín • Mercado Grau • Leguía)",
-                    "origin_name": "Mercado Cenepa",
-                    "destination_name": "Cono Norte",
-                    "frequency_minutes": 8,
-                    "operating_hours": "05:30 - 22:00",
-                    "color_hex": "#0D9488",
-                    "stops": []
-                }
-            ]
+            routes = []
+            for r in routes_catalog:
+                r_stops = []
+                for seq_idx, sid in enumerate(r.get("keyStopIds") or []):
+                    st = stops_by_id.get(sid)
+                    if st:
+                        r_stops.append({
+                            "id": st.get("id"),
+                            "route_id": r.get("id"),
+                            "name": st.get("name"),
+                            "subtitle": st.get("subtitle", ""),
+                            "latitude": st.get("latitude"),
+                            "longitude": st.get("longitude"),
+                            "sequence_order": seq_idx + 1,
+                            "direction": "CORREDOR",
+                            "is_key_stop": st.get("isOfficial", True),
+                            "approaching_buses": []
+                        })
+                corridor_parts = (r.get("corridorSummary") or "Tacna ⇄ Centro").split("⇄")
+                origin_name = corridor_parts[0].strip() if corridor_parts else "Tacna"
+                dest_name = corridor_parts[-1].strip() if len(corridor_parts) > 1 else "Tacna"
+                routes.append({
+                    "id": r.get("id"),
+                    "line_number": r.get("code", "").replace("Ruta ", "").replace("RUTA ", "").strip() or r.get("code", "14"),
+                    "name": f"{r.get('code', 'Ruta')} • {r.get('title', '')}",
+                    "origin_name": origin_name,
+                    "destination_name": dest_name,
+                    "frequency_minutes": r.get("frequencyMinutes", 6),
+                    "operating_hours": r.get("scheduleLabel", "05:30 - 22:00"),
+                    "color_hex": r.get("colorHex", "#2563EB"),
+                    "stops": r_stops
+                })
 
             return self.send_json({
                 "routes": routes,
+                "catalog_routes": routes_catalog,
                 "stops": bus_stops,
                 "active_buses": []
             }, cacheable=True)
@@ -534,6 +633,43 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                                 "user": current_user
                             }, exclude_id=client_id)
 
+                        elif mtype == "save_route":
+                            route_data = msg.get("route")
+                            if route_data:
+                                route_id = route_data.get("id")
+                                routes_list = load_rutas()
+                                updated = False
+                                for i, r in enumerate(routes_list):
+                                    if r.get("id") == route_id:
+                                        routes_list[i] = route_data
+                                        updated = True
+                                        break
+                                if not updated:
+                                    routes_list.append(route_data)
+                                save_rutas(routes_list, sync_stops=True)
+                                updated_stops = load_paraderos()
+                                ws_hub.broadcast({
+                                    "type": "route_saved",
+                                    "route": route_data,
+                                    "routes": routes_list,
+                                    "stops": updated_stops,
+                                    "user": current_user
+                                })
+
+                        elif mtype == "delete_route":
+                            route_id = msg.get("routeId")
+                            routes_list = load_rutas()
+                            routes_list = [r for r in routes_list if r.get("id") != route_id]
+                            save_rutas(routes_list, sync_stops=True)
+                            updated_stops = load_paraderos()
+                            ws_hub.broadcast({
+                                "type": "route_deleted",
+                                "routeId": route_id,
+                                "routes": routes_list,
+                                "stops": updated_stops,
+                                "user": current_user
+                            })
+
                     except Exception as e:
                         pass
         except Exception:
@@ -579,6 +715,36 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 })
             else:
                 return self.send_json({"error": "Payload inválido. Se esperaba lista de paraderos."}, status_code=400)
+
+        # ── API: Guardar Actualización de Rutas Oficiales y Externas (Enviado desde admin-web) ──
+        if path == "/api/v1/transit/routes" or path == "/api/v1/transit/routes/save-all":
+            routes_list = None
+            if isinstance(payload, list):
+                routes_list = payload
+            elif isinstance(payload, dict) and "routes" in payload:
+                routes_list = payload["routes"]
+
+            if routes_list is not None:
+                success = save_rutas(routes_list, sync_stops=True)
+                if success:
+                    updated_stops = load_paraderos()
+                    print(f"✅ [BACKEND] {len(routes_list)} rutas actualizadas y sincronizadas con paraderos.")
+                    ws_hub.broadcast({
+                        "type": "routes_reloaded",
+                        "count": len(routes_list),
+                        "routes": routes_list,
+                        "stops": updated_stops
+                    })
+                    return self.send_json({
+                        "status": "success",
+                        "message": f"{len(routes_list)} rutas guardadas y sincronizadas con éxito",
+                        "count": len(routes_list),
+                        "stops": updated_stops
+                    })
+                else:
+                    return self.send_json({"error": "No se pudo escribir rutas_tacna.json"}, status_code=500)
+            else:
+                return self.send_json({"error": "Payload inválido. Se esperaba lista de rutas."}, status_code=400)
 
         # ── API: Autenticación OTP (Simulación Local) ──
         if path == "/api/v1/auth/otp/send":

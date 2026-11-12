@@ -1322,3 +1322,363 @@ dialog::backdrop {
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   MÓDULO 2: GESTOR DE RUTAS OFICIALES (ORDINARIAS Y EXTERNAS) Y TRAZADOS
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.hidden {
+  display: none !important;
+}
+
+.module-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--bg-input);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.module-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.module-tab:hover {
+  color: var(--text-primary);
+}
+
+.module-tab.active {
+  background: var(--color-official);
+  color: #FFFFFF;
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+}
+
+.module-tab-badge {
+  background: rgba(255, 255, 255, 0.16);
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.module-header-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.route-chip {
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  font-size: 0.71rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.route-chip:hover {
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+}
+
+.route-chip.active {
+  background: rgba(37, 99, 235, 0.22);
+  color: #60A5FA;
+  border-color: #2563EB;
+}
+
+/* Tarjetas de Rutas en Lista Lateral */
+.route-item {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.18s ease;
+  cursor: pointer;
+}
+
+.route-item:hover {
+  border-color: var(--border-medium);
+  background: rgba(30, 41, 59, 0.65);
+}
+
+.route-item.selected {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.route-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.route-code-box {
+  min-width: 52px;
+  height: 44px;
+  padding: 0 8px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: #FFFFFF;
+  text-align: center;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
+}
+
+.route-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.route-badges-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+
+.badge-ordinary {
+  background: rgba(37, 99, 235, 0.2);
+  color: #60A5FA;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.badge-external {
+  background: rgba(148, 163, 184, 0.14);
+  color: #CBD5E1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.btn-service-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.65rem;
+  font-weight: 800;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.18s ease;
+}
+
+.btn-service-toggle.in-service {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34D399;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.btn-service-toggle.out-of-service {
+  background: rgba(245, 158, 11, 0.15);
+  color: #FBBF24;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.route-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  background: rgba(9, 13, 22, 0.55);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.route-metric-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.route-metric-val {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.route-metric-lbl {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.route-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.route-actions-left, .route-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Píldoras de Rutas en Paraderos con distinción Ordinaria vs Externa */
+.route-pill.is-ordinary-active {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6EE7B7;
+  border-color: rgba(16, 185, 129, 0.38);
+}
+
+.route-pill.is-ordinary-inactive {
+  background: rgba(245, 158, 11, 0.15);
+  color: #FCD34D;
+  border-color: rgba(245, 158, 11, 0.38);
+}
+
+.route-pill.is-external {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94A3B8;
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+/* Modal de Ruta y Checklist de Paraderos */
+.route-dialog-content {
+  max-width: 680px;
+  width: 94vw;
+}
+
+.color-picker-input {
+  width: 100%;
+  height: 38px;
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.route-stops-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.route-eta-preview {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-accent);
+  background: rgba(56, 189, 248, 0.12);
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+}
+
+.field-help-text {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+
+.route-stops-checklist {
+  max-height: 210px;
+  overflow-y: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.stop-check-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-surface);
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.73rem;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.stop-check-item:hover {
+  border-color: var(--border-medium);
+}
+
+.stop-check-item.checked {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+.stop-check-seq {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-official);
+  color: #FFF;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Nodos numerados de Secuencia de Ruta en el Mapa */
+.route-seq-node {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: #FFFFFF;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.55);
+}
+
+.trace-metrics-pill {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(56, 189, 248, 0.2);
+  color: #38BDF8;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+

@@ -240,10 +240,10 @@ struct RoutePlannerView: View {
             .padding(.top, 18)
             .padding(.bottom, 8)
 
-            // Lista de Destinos Recientes (idéntica al Mockup)
+            // Lista de Destinos Recientes y Paraderos Sincronizados
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(TacnaDestinationPlace.catalog) { place in
+                    ForEach(viewModel.dynamicCatalogStops) { place in
                         Button {
                             selectDestinationAndShowRoute(place)
                         } label: {

@@ -26,7 +26,7 @@ struct ExploreMapView: View {
     /// Paraderos visibles sobre el mapa cuando el usuario filtra por "Paraderos" o proyecta una ruta
     private var visibleCatalogStopsOnMap: [TacnaDestinationPlace] {
         if let projectedRoute = viewModel.activeRouteOverlayOnMap {
-            return projectedRoute.resolvedStops
+            return projectedRoute.resolvedStops(using: viewModel.dynamicCatalogStops)
         }
         if viewModel.mapCategory == .stops {
             return viewModel.dynamicCatalogStops
@@ -54,14 +54,19 @@ struct ExploreMapView: View {
                     }
                 }
 
-                // Trazado de Ruta Oficial Proyectada desde la pestaña "Líneas" (Ej: Ruta 14, Ruta 10B, etc.)
+                // Trazado de Ruta Oficial o Externa Proyectada desde la pestaña "Líneas"
                 if let projectedRoute = viewModel.activeRouteOverlayOnMap {
-                    let coords = projectedRoute.resolvedStops.map { $0.coordinate }
+                    let coords = projectedRoute.resolvedPolylineCoordinates(using: viewModel.dynamicCatalogStops)
                     if coords.count >= 2 {
                         MapPolyline(coordinates: coords)
                             .stroke(
                                 Color(hex: projectedRoute.colorHex),
-                                style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round)
+                                style: StrokeStyle(
+                                    lineWidth: projectedRoute.isOrdinaryInService ? 6 : 4.5,
+                                    lineCap: .round,
+                                    lineJoin: .round,
+                                    dash: projectedRoute.isOrdinaryInService ? [] : [8, 6]
+                                )
                             )
                     }
                 }
@@ -308,7 +313,7 @@ struct ExploreMapView: View {
                                     if category != .routes {
                                         viewModel.activeRouteOverlayOnMap = nil
                                     } else if viewModel.activeRouteOverlayOnMap == nil {
-                                        viewModel.activeRouteOverlayOnMap = TacnaOfficialRouteCatalogItem.officialRoutes.first
+                                        viewModel.activeRouteOverlayOnMap = viewModel.dynamicRoutes.first(where: { $0.isOrdinaryInService }) ?? viewModel.dynamicRoutes.first
                                     }
                                 }
                             } label: {
@@ -316,7 +321,11 @@ struct ExploreMapView: View {
                                     Image(systemName: iconForCategory(category))
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundColor(isSelected ? .white : colorForCategory(category))
-                                    Text(category == .stops ? "Paraderos (34)" : category.rawValue)
+                                    Text(
+                                        category == .stops
+                                            ? "Paraderos (\(viewModel.dynamicCatalogStops.count))"
+                                            : (category == .routes ? "Rutas (\(viewModel.dynamicRoutes.count))" : category.rawValue)
+                                    )
                                         .font(.caption.weight(.semibold))
                                         .foregroundColor(isSelected ? .white : .white.opacity(0.9))
                                 }
@@ -366,6 +375,7 @@ struct ExploreMapView: View {
 
                 // Píldora de Ruta Proyectada (Si el usuario seleccionó ver una ruta desde Líneas o desde el filtro Rutas)
                 if let projectedRoute = viewModel.activeRouteOverlayOnMap {
+                    let stopsInRoute = projectedRoute.resolvedStops(using: viewModel.dynamicCatalogStops)
                     HStack(spacing: 8) {
                         Text(projectedRoute.code)
                             .font(.system(size: 10, weight: .black, design: .monospaced))
@@ -375,7 +385,19 @@ struct ExploreMapView: View {
                             .background(Color(hex: projectedRoute.colorHex))
                             .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                        Text("\(projectedRoute.resolvedStops.count) paraderos en mapa · Toca uno para ir")
+                        Text(
+                            projectedRoute.isOrdinary
+                                ? (projectedRoute.isInService ? "🟢 En Servicio" : "⚠️ Fuera de Servicio")
+                                : "🗺️ Externa (Sin GPS)"
+                        )
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundColor(
+                            projectedRoute.isOrdinary
+                                ? (projectedRoute.isInService ? BCTheme.emerald : BCTheme.amber)
+                                : .white.opacity(0.75)
+                        )
+
+                        Text("· \(stopsInRoute.count) paraderos · ~\(projectedRoute.estimatedTotalMinutes)m")
                             .font(.caption2.weight(.semibold))
                             .foregroundColor(.white)
                             .lineLimit(1)
@@ -504,7 +526,7 @@ struct ExploreMapView: View {
         }
         .sheet(item: $selectedCatalogStop) { catalogPlace in
             catalogStopDetailSheet(catalogPlace)
-                .presentationDetents([.height(catalogPlace.statusNote != nil ? 270 : 230)])
+                .presentationDetents([.height(catalogPlace.statusNote != nil ? 310 : 275)])
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedStop) { stop in
@@ -535,16 +557,23 @@ struct ExploreMapView: View {
         }
     }
 
-    // MARK: - Ficha Interactiva al Seleccionar cualquier Paradero o Lugar del Mapa de Tacna
+    // MARK: - Ficha Interactiva al Seleccionar cualquier Paradero o Punto de Encuentro del Mapa de Tacna
     private func catalogStopDetailSheet(_ place: TacnaDestinationPlace) -> some View {
-        ZStack {
+        let notificationAvailability = viewModel.stopNotificationAvailability(for: place)
+        let isCustomMapPoint = (place.category == .mapCustomPlace)
+
+        return ZStack {
             BCTheme.elevatedSurface.ignoresSafeArea()
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(place.category.badgeTitle)
+                        Text(isCustomMapPoint ? "PUNTO DE ENCUENTRO EN EL MAPA" : place.category.badgeTitle)
                             .font(.system(size: 9.5, weight: .heavy))
-                            .foregroundColor(place.category.isProposedModernization ? BCTheme.amber : BCTheme.emerald)
+                            .foregroundColor(
+                                isCustomMapPoint
+                                    ? BCTheme.cyanAccent
+                                    : (place.category.isProposedModernization ? BCTheme.amber : BCTheme.emerald)
+                            )
                             .tracking(0.5)
 
                         Text(place.name)
@@ -567,19 +596,43 @@ struct ExploreMapView: View {
                         .clipShape(Capsule())
                 }
 
-                // Rutas que conectan este paradero
-                HStack(spacing: 6) {
-                    Text("Rutas que abordan aquí:")
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.6))
-                    ForEach(place.routesPassing, id: \.self) { routeCode in
-                        Text(routeCode)
-                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 2.5)
-                            .background(BCTheme.royalBlue)
-                            .clipShape(Capsule())
+                // Rutas que conectan este paradero (Clasificadas por Ordinarias en Servicio, Fuera de Servicio o Externas)
+                if !place.routesPassing.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            Text("Líneas:")
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.6))
+                            ForEach(place.routesPassing, id: \.self) { routeCode in
+                                let matchedRoute = viewModel.routeItem(forCode: routeCode)
+                                let isOrd = matchedRoute?.isOrdinary ?? false
+                                let isOrdActive = matchedRoute?.isOrdinaryInService ?? false
+
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(
+                                            isOrd
+                                                ? (isOrdActive ? BCTheme.emerald : BCTheme.amber)
+                                                : Color.white.opacity(0.45)
+                                        )
+                                        .frame(width: 6, height: 6)
+                                    Text(routeCode)
+                                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                                    Text(isOrd ? (isOrdActive ? "ORD" : "SIN SERV.") : "EXT")
+                                        .font(.system(size: 7.5, weight: .black))
+                                        .opacity(0.85)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    isOrd
+                                        ? (isOrdActive ? BCTheme.royalBlue : BCTheme.amber.opacity(0.28))
+                                        : Color.white.opacity(0.12)
+                                )
+                                .clipShape(Capsule())
+                            }
+                        }
                     }
                 }
 
@@ -599,62 +652,150 @@ struct ExploreMapView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
 
-                // Botón Principal: Trazar Cómo Llegar ("Ir") a este Paradero
-                Button {
-                    let target = place
-                    selectedCatalogStop = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        viewModel.openRoutePlanner(with: target)
+                // Evaluación de Regla de Negocio: Disponibilidad de Ruta Ordinaria y Estado En Servicio
+                switch notificationAvailability {
+                case .available(let activeOrdinaryRoutes):
+                    // Hay ruta(s) ordinaria(s) en servicio que pasan por este paradero: mostrar botón "Ir" + opción de "Notificación"
+                    Button {
+                        let target = place
+                        selectedCatalogStop = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            viewModel.openRoutePlanner(with: target)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                .font(.subheadline.weight(.bold))
+                            Text("Ir / Cómo llegar a este paradero (\(place.totalDurationMinutes) min)")
+                                .font(.subheadline.weight(.bold))
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(BCTheme.cyanAccent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                            .font(.subheadline.weight(.bold))
-                        Text("Ir / Cómo llegar a este paradero (\(place.totalDurationMinutes) min)")
-                            .font(.subheadline.weight(.bold))
-                    }
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(BCTheme.cyanAccent)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
 
-                // Botón Secundario: Activar Alerta de Llegada (2 Timers)
-                Button {
-                    let asStop = BusStopModel(
-                        id: place.id,
-                        routeId: place.primaryRouteName,
-                        name: place.shortName,
-                        subtitle: place.subtitle,
-                        latitude: place.latitude,
-                        longitude: place.longitude,
-                        sequenceOrder: 1,
-                        direction: "UP",
-                        isKeyStop: true
-                    )
-                    viewModel.activateStopArrivalAlert(
-                        stop: asStop,
-                        advanceMinutes: selectedAdvanceMinutes,
-                        imminentEnabled: imminentAlertEnabled
-                    )
-                    selectedCatalogStop = nil
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "bell.badge.fill")
-                            .font(.caption.weight(.bold))
-                        Text("Activar Alerta de Llegada (5 min + Vibración)")
-                            .font(.caption.weight(.bold))
+                    Button {
+                        let primaryOrdCode = activeOrdinaryRoutes.first?.code ?? place.primaryRouteName
+                        let asStop = BusStopModel(
+                            id: place.id,
+                            routeId: primaryOrdCode,
+                            name: place.shortName,
+                            subtitle: place.subtitle,
+                            latitude: place.latitude,
+                            longitude: place.longitude,
+                            sequenceOrder: 1,
+                            direction: "UP",
+                            isKeyStop: true
+                        )
+                        viewModel.activateStopArrivalAlert(
+                            stop: asStop,
+                            advanceMinutes: selectedAdvanceMinutes,
+                            imminentEnabled: imminentAlertEnabled
+                        )
+                        selectedCatalogStop = nil
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "bell.badge.fill")
+                                .font(.caption.weight(.bold))
+                                .foregroundColor(BCTheme.emerald)
+                            Text("Activar Notificación de Llegada (\(activeOrdinaryRoutes.map(\.code).joined(separator: ", ")))")
+                                .font(.caption.weight(.bold))
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(BCTheme.emerald.opacity(0.14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(BCTheme.emerald.opacity(0.45), lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 38)
-                    .background(Color.white.opacity(0.08))
+
+                case .ordinaryOutOfService(let registeredRoutes):
+                    // El paradero tiene ruta ordinaria registrada, pero NO hay ruta ordinaria en servicio actualmente
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(BCTheme.amber)
+                            .padding(.top, 1)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Sin rutas ordinarias en servicio para este paradero")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(BCTheme.amber)
+                            Text("La línea ordinaria registrada (\(registeredRoutes.map(\.code).joined(separator: ", "))) no tiene unidades en servicio en este momento. Notificación deshabilitada.")
+                                .font(.system(size: 9.5))
+                                .foregroundColor(.white.opacity(0.8))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BCTheme.amber.opacity(0.14))
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+                            .stroke(BCTheme.amber.opacity(0.4), lineWidth: 1)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    Button {
+                        let target = place
+                        selectedCatalogStop = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            viewModel.openRoutePlanner(with: target)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                .font(.subheadline.weight(.bold))
+                            Text("Ir / Punto de encuentro (\(place.totalDurationMinutes) min)")
+                                .font(.subheadline.weight(.bold))
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(BCTheme.cyanAccent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+
+                case .noOrdinaryRoutes:
+                    // No figura ninguna ruta ordinaria en este punto (solo rutas externas o punto de encuentro):
+                    // NO se muestra opción de notificación, únicamente la opción de "Ir / Punto de encuentro"
+                    HStack(spacing: 7) {
+                        Image(systemName: "mappin.and.ellipse")
+                            .font(.caption2.weight(.bold))
+                            .foregroundColor(BCTheme.cyanAccent)
+                        Text(
+                            place.routesPassing.isEmpty
+                                ? "Punto de encuentro • Sin rutas ordinarias trackeadas en este punto."
+                                : "Solo rutas externas de referencia (Sin tracking GPS ni notificación)."
+                        )
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.75))
+                    }
+                    .padding(.vertical, 4)
+
+                    Button {
+                        let target = place
+                        selectedCatalogStop = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                            viewModel.openRoutePlanner(with: target)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                .font(.subheadline.weight(.bold))
+                            Text("Ir / Punto de encuentro (\(place.totalDurationMinutes) min)")
+                                .font(.subheadline.weight(.bold))
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(BCTheme.cyanAccent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -671,30 +812,11 @@ struct ExploreMapView: View {
         guard isTacna else { return }
 
         BCFeedbackManager.shared.impactMedium()
-        let title = feature.title ?? "Punto de interés"
-        let fallbackPlace = TacnaDestinationPlace(
-            id: "apple_poi_\(abs(coord.latitude))_\(abs(coord.longitude))",
+        let title = feature.title ?? "Punto de encuentro"
+        let fallbackPlace = TacnaDestinationPlace.fromMapItem(
             name: title,
-            shortName: title,
-            subtitle: "Punto de interés en Tacna • Apple Maps",
-            category: .plazasCentral,
-            routesPassing: ["Ruta 14", "Ruta 10B", "Ruta A"],
-            iconName: "mappin.and.ellipse",
-            iconColorHex: "#38BDF8",
-            latitude: coord.latitude,
-            longitude: coord.longitude,
-            routeCase: .busRoute14,
-            totalDurationMinutes: 7,
-            secondaryDurationMinutes: 12,
-            walkingDirectMinutes: 15,
-            distanceLabel: "Tacna",
-            walkInitialMinutes: 2,
-            busRideMinutes: 5,
-            walkFinalMinutes: 0,
-            boardingStopName: "Paradero cercano",
-            alightingStopName: title,
-            intermediateStopName: nil,
-            statusNote: nil
+            subtitle: "Punto de encuentro en Tacna • Apple Maps",
+            coordinate: coord
         )
         selectedCatalogStop = fallbackPlace
         viewModel.searchedDestinationPin = fallbackPlace
