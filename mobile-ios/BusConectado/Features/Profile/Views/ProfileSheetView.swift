@@ -102,7 +102,7 @@ struct ProfileSheetView: View {
                                 .padding(.horizontal, 4)
 
                             HStack(spacing: 8) {
-                                TextField("IP o Host (ej. 34.61.17.233.sslip.io)", text: $hostInput)
+                                TextField("IP o Host (ej. 34.44.71.179.sslip.io)", text: $hostInput)
                                     .font(.caption.monospaced())
                                     .foregroundColor(.white)
                                     .autocorrectionDisabled()

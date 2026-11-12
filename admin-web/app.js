@@ -50,15 +50,34 @@ const state = {
 
 document.addEventListener('DOMContentLoaded', async () => {
   loadStoredProfile();
-  await Promise.all([loadStopsData(), loadRoutesData()]);
+
+  // 1. Hidratar al instante desde caché local (renderizado inmediato sin esperar red)
+  const hadCachedStops = hydrateStopsFromLocalCache();
+  const hadCachedRoutes = hydrateRoutesFromLocalCache();
+
+  // 2. Iniciar mapa, listeners y WebSocket en paralelo (sin waterfall bloqueante)
   initLeafletMap();
   setupUIEventListeners();
   setupDialogLightDismiss();
+  initCollaborationWebSocket();
+
+  if (hadCachedStops || hadCachedRoutes) {
+    renderMapMarkers();
+    renderMapRoutes();
+    renderStopsList();
+    renderRoutesList();
+    updateStats();
+    updateRouteStats();
+  }
+
+  // 3. Validar con servidor usando ETag (304 Not Modified = 0 bytes si no hubo cambios)
+  await Promise.all([loadStopsData(), loadRoutesData()]);
+  renderMapMarkers();
+  renderMapRoutes();
   renderStopsList();
   renderRoutesList();
   updateStats();
   updateRouteStats();
-  initCollaborationWebSocket();
 });
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -322,13 +341,53 @@ function getBackendBaseUrl() {
   return 'http://localhost:8000';
 }
 
+function hydrateStopsFromLocalCache() {
+  const localSaved = localStorage.getItem('bc_admin_stops');
+  if (!localSaved) return false;
+  try {
+    const localData = JSON.parse(localSaved);
+    if (Array.isArray(localData) && localData.length > 0) {
+      state.stops = localData;
+      return true;
+    }
+  } catch (e) {
+    console.warn('Error al leer caché local de paraderos', e);
+  }
+  return false;
+}
+
+function hydrateRoutesFromLocalCache() {
+  const localSaved = localStorage.getItem('bc_admin_routes');
+  if (!localSaved) return false;
+  try {
+    const localData = JSON.parse(localSaved);
+    if (Array.isArray(localData) && localData.length > 0) {
+      state.routes = localData;
+      return true;
+    }
+  } catch (e) {
+    console.warn('Error al leer caché local de rutas', e);
+  }
+  return false;
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Cargar paraderos desde Backend local/cloud, localStorage o archivo JSON predeterminado
 async function loadStopsData() {
   const backendBase = getBackendBaseUrl();
 
-  // 1. Intentar cargar desde el Backend (Cloud o Local)
+  // 1. Intentar cargar desde el Backend (aprovechando ETag 304 con cache: 'no-cache')
   try {
-    const res = await fetch(`${backendBase}/api/v1/transit/stops`, { cache: 'no-store' });
+    const res = await fetchWithTimeout(`${backendBase}/api/v1/transit/stops`, { cache: 'no-cache' });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
@@ -346,23 +405,14 @@ async function loadStopsData() {
     // Backend no activo o error de red, continuar con caché local
   }
 
-  // 2. Si el backend no tiene datos, leer de localStorage si tiene paraderos válidos
-  const localSaved = localStorage.getItem('bc_admin_stops');
-  if (localSaved) {
-    try {
-      const localData = JSON.parse(localSaved);
-      if (Array.isArray(localData) && localData.length > 0) {
-        state.stops = localData;
-        return;
-      }
-    } catch (e) {
-      console.warn('Error al leer datos locales, cargando JSON base', e);
-    }
+  // 2. Si el backend no respondió, usar caché local si ya existe
+  if (state.stops.length > 0 || hydrateStopsFromLocalCache()) {
+    return;
   }
 
   // 3. Fallback estático a archivo paraderos_tacna.json
   try {
-    const res = await fetch(`paraderos_tacna.json?t=${Date.now()}`);
+    const res = await fetchWithTimeout('paraderos_tacna.json', { cache: 'no-cache' });
     const fallback = await res.json();
     if (Array.isArray(fallback) && fallback.length > 0) {
       state.stops = fallback;
@@ -413,7 +463,7 @@ async function loadRoutesData() {
   const backendBase = getBackendBaseUrl();
 
   try {
-    const res = await fetch(`${backendBase}/api/v1/transit/routes`, { cache: 'no-store' });
+    const res = await fetchWithTimeout(`${backendBase}/api/v1/transit/routes`, { cache: 'no-cache' });
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
@@ -426,19 +476,12 @@ async function loadRoutesData() {
     // Continuar con caché local
   }
 
-  const localSaved = localStorage.getItem('bc_admin_routes');
-  if (localSaved) {
-    try {
-      const localData = JSON.parse(localSaved);
-      if (Array.isArray(localData) && localData.length > 0) {
-        state.routes = localData;
-        return;
-      }
-    } catch (e) {}
+  if (state.routes.length > 0 || hydrateRoutesFromLocalCache()) {
+    return;
   }
 
   try {
-    const res = await fetch(`rutas_tacna.json?t=${Date.now()}`);
+    const res = await fetchWithTimeout('rutas_tacna.json', { cache: 'no-cache' });
     const fallback = await res.json();
     if (Array.isArray(fallback) && fallback.length > 0) {
       state.routes = fallback;

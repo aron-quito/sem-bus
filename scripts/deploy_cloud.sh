@@ -5,7 +5,7 @@
 set -e
 
 SERVER_USER="admin"
-SERVER_IP="34.61.17.233"
+SERVER_IP="34.44.71.179"
 SSH_KEY="${HOME}/.ssh/id_buses"
 REMOTE_DIR="/home/admin/sem-bus"
 
@@ -87,12 +87,19 @@ deny all;
 IPS
 fi
 
-# Configurar Nginx Reverse Proxy (Puerto 80 público hacia Web Admin + Backend + WebSockets)
+# Configurar Nginx Reverse Proxy (Puerto 80/443 público hacia Web Admin + Backend + WebSockets + Gzip)
 sudo tee /etc/nginx/sites-available/busconectado > /dev/null << 'NGINX'
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name _;
+    server_name 34.44.71.179.sslip.io 34.44.71.179 _;
+
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 256;
+    gzip_types text/plain text/css application/json application/javascript text/javascript application/xml image/svg+xml;
 
     root /home/admin/sem-bus/admin-web;
     index index.html;
@@ -104,7 +111,7 @@ server {
         auth_basic_user_file /etc/nginx/.htpasswd;
 
         try_files $uri $uri/ /index.html;
-        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Cache-Control "no-cache";
     }
 
     # Canal WebSocket para Colaboración en Tiempo Real (Estilo Google Docs)

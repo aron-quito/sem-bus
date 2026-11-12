@@ -8,7 +8,7 @@
 set -e
 
 SERVER_USER="admin"
-SERVER_IP="34.61.17.233"
+SERVER_IP="34.44.71.179"
 SSH_KEY="${HOME}/.ssh/id_buses"
 IPS_FILE="/etc/nginx/admin_allowed_ips.conf"
 
