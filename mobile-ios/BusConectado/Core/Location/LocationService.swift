@@ -53,10 +53,10 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
         let coord = cachedCoordinate
         lock.unlock()
 
-        if let coord = coord, isWithinTacna(coord) {
+        if let coord = coord, Self.isCoordinateInTacna(coord) {
             return coord
         }
-        return coord ?? Self.defaultTacnaCoordinate
+        return Self.defaultTacnaCoordinate
     }
 
     var isUserPhysicallyInTacna: Bool {
@@ -64,11 +64,16 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
         let coord = cachedCoordinate
         lock.unlock()
         guard let coord = coord else { return false }
-        return isWithinTacna(coord)
+        return Self.isCoordinateInTacna(coord)
     }
 
-    private func isWithinTacna(_ coord: CLLocationCoordinate2D) -> Bool {
-        return coord.latitude < -17.5 && coord.latitude > -18.5 && coord.longitude < -70.0 && coord.longitude > -70.6
+    static func isCoordinateInTacna(_ coord: CLLocationCoordinate2D) -> Bool {
+        guard CLLocationCoordinate2DIsValid(coord) else { return false }
+        return coord.latitude < -17.3 && coord.latitude > -18.6 && coord.longitude < -69.7 && coord.longitude > -70.9
+    }
+
+    static func sanitizedTacnaCoordinate(_ coord: CLLocationCoordinate2D) -> CLLocationCoordinate2D {
+        isCoordinateInTacna(coord) ? coord : defaultTacnaCoordinate
     }
 
     // MARK: - CLLocationManagerDelegate

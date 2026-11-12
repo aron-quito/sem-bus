@@ -67,6 +67,10 @@
 	<string>Bus Conectado requiere acceso a la cámara para escanear el QR del bus o de validación SUNEDU.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Bus Conectado utiliza tu ubicación para mostrarte los paraderos cercanos y el arribo del bus en tiempo real.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Bus Conectado necesita acceso al micrófono para buscar destinos o paraderos por voz.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Bus Conectado utiliza el reconocimiento de voz para transcribir los lugares que buscas en Tacna.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

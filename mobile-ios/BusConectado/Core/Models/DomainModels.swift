@@ -58,6 +58,87 @@ struct StudentVerificationInfo: Codable, Equatable {
     let academicCycle: String?
     let status: String
     let expiresAt: String
+
+    static func daysRemaining(until dateStr: String) -> Int? {
+        let trimmed = dateStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let formats = ["yyyy-MM-dd", "dd/MM/yyyy", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSZ"]
+        var parsedDate: Date?
+        for format in formats {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = TimeZone.current
+            formatter.dateFormat = format
+            if let date = formatter.date(from: trimmed) {
+                parsedDate = date
+                break
+            }
+        }
+        guard let target = parsedDate else { return nil }
+        let cal = Calendar.current
+        let startToday = cal.startOfDay(for: Date())
+        let startTarget = cal.startOfDay(for: target)
+        return cal.dateComponents([.day], from: startToday, to: startTarget).day
+    }
+
+    static func formattedExpirationDate(_ dateStr: String) -> String {
+        let trimmed = dateStr.trimmingCharacters(in: .whitespacesAndNewlines)
+        let formats = ["yyyy-MM-dd", "dd/MM/yyyy", "yyyy-MM-dd'T'HH:mm:ssZ", "yyyy-MM-dd'T'HH:mm:ss.SSSZ"]
+        for format in formats {
+            let parser = DateFormatter()
+            parser.locale = Locale(identifier: "en_US_POSIX")
+            parser.dateFormat = format
+            if let date = parser.date(from: trimmed) {
+                let out = DateFormatter()
+                out.locale = Locale(identifier: "es_PE")
+                out.dateFormat = "dd/MM/yyyy"
+                return out.string(from: date)
+            }
+        }
+        return trimmed
+    }
+
+    var daysRemaining: Int? {
+        Self.daysRemaining(until: expiresAt)
+    }
+
+    var expirationSummaryText: String {
+        let dateText = Self.formattedExpirationDate(expiresAt)
+        if let days = daysRemaining {
+            if days < 0 {
+                return "Venció el \(dateText) (hace \(abs(days)) días)"
+            } else if days == 0 {
+                return "Vence hoy (\(dateText))"
+            } else {
+                return "Vence el \(dateText) · \(days) días restantes"
+            }
+        }
+        return "Válido hasta el \(dateText)"
+    }
+}
+
+struct CarnetReviewRequest: Codable, Identifiable, Equatable {
+    let id: String
+    let carnetType: String // "STUDENT" o "CONADIS"
+    let dni: String
+    let institution: String
+    let documentCode: String
+    let submittedAt: Date
+    let status: String // "PENDING_REVIEW", "APPROVED", "REJECTED"
+    let expiresAt: String
+
+    var carnetTypeDisplay: String {
+        carnetType == "CONADIS" ? "Pase Libre CONADIS" : "Carné Universitario SUNEDU"
+    }
+
+    var statusDisplay: String {
+        switch status {
+        case "APPROVED": return "Aprobado"
+        case "REJECTED": return "Observado"
+        default: return "En revisión"
+        }
+    }
 }
 
 // MARK: - Perfil de Usuario Autenticado
@@ -342,7 +423,7 @@ struct AdminStopDTO: Codable, Identifiable {
 }
 
 // MARK: - Modelo de Paradero / Lugar Real de Tacna
-struct TacnaDestinationPlace: Identifiable, Equatable {
+struct TacnaDestinationPlace: Identifiable, Equatable, Codable {
     let id: String
     let name: String
     let shortName: String

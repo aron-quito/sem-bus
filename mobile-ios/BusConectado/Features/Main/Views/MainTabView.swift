@@ -4,6 +4,7 @@ struct MainTabView: View {
     @ObservedObject var viewModel: AuthViewModel
     @State private var showProfileSheet: Bool = false
     @FocusState private var isSearchFieldFocused: Bool
+    @ObservedObject private var speechEngine = SpeechSearchEngine.shared
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -57,6 +58,46 @@ struct MainTabView: View {
                         .padding(.horizontal, 14)
                         .padding(.top, 6)
 
+                    if speechEngine.isListening || speechEngine.errorMessage != nil {
+                        HStack(spacing: 8) {
+                            if speechEngine.isListening {
+                                Circle()
+                                    .fill(BCTheme.destructiveRed)
+                                    .frame(width: 8, height: 8)
+                                Text("Escuchando... habla tu destino en Tacna")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Button {
+                                    speechEngine.stopListening()
+                                } label: {
+                                    Text("Detener")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(BCTheme.destructiveRed)
+                                        .clipShape(Capsule())
+                                }
+                            } else if let err = speechEngine.errorMessage {
+                                Image(systemName: "mic.slash.fill")
+                                    .font(.caption)
+                                    .foregroundColor(BCTheme.amber)
+                                Text(err)
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundColor(BCTheme.amber)
+                                Spacer()
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(BCTheme.elevatedSurface.opacity(0.96))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(.horizontal, 14)
+                        .padding(.top, 6)
+                        .shadow(color: .black.opacity(0.35), radius: 8, y: 3)
+                    }
+
                     // Menú Desplegable Predictivo Sólido (#0F172A) con los 34 Paraderos de Tacna + Lugares del Mapa (MapKit)
                     if isSearchFieldFocused || viewModel.isSearchDropdownVisible {
                         predictiveSearchDropdownOverlay
@@ -78,6 +119,11 @@ struct MainTabView: View {
                 if focused {
                     viewModel.isSearchDropdownVisible = true
                 }
+            }
+        }
+        .onChange(of: viewModel.selectedTab) { _, tab in
+            if tab != 0 {
+                speechEngine.stopListening()
             }
         }
         .sheet(isPresented: $showProfileSheet) {
@@ -134,9 +180,36 @@ struct MainTabView: View {
                     }
                 }
 
-            // Botón [✕] (Cancelar / Limpiar) visible al tocar el buscador o escribir
+            // Botón de Voz (Micrófono activo en todo momento) + [✕] Limpiar cuando hay búsqueda
+            Button {
+                BCFeedbackManager.shared.impactLight()
+                isSearchFieldFocused = false
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    viewModel.isSearchDropdownVisible = true
+                }
+                speechEngine.toggleListening { transcript in
+                    viewModel.searchQuery = transcript
+                    if !viewModel.isSearchDropdownVisible {
+                        viewModel.isSearchDropdownVisible = true
+                    }
+                }
+            } label: {
+                ZStack {
+                    if speechEngine.isListening {
+                        Circle()
+                            .fill(BCTheme.destructiveRed.opacity(0.24))
+                            .frame(width: 28, height: 28)
+                    }
+                    Image(systemName: speechEngine.isListening ? "stop.circle.fill" : "mic.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(speechEngine.isListening ? BCTheme.destructiveRed : .white.opacity(0.8))
+                }
+            }
+            .accessibilityLabel("Buscar destino por voz")
+
             if isSearchFieldFocused || viewModel.isSearchDropdownVisible || !viewModel.searchQuery.isEmpty || viewModel.searchedDestinationPin != nil {
                 Button {
+                    speechEngine.stopListening()
                     withAnimation(.easeInOut(duration: 0.18)) {
                         isSearchFieldFocused = false
                         viewModel.clearSearchAndDismiss()
@@ -152,11 +225,6 @@ struct MainTabView: View {
                     }
                 }
                 .accessibilityLabel("Cancelar búsqueda")
-            } else {
-                Image(systemName: "mic.fill")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(.white.opacity(0.75))
-                    .padding(.trailing, 2)
             }
 
             // Avatar Circular de Perfil Integrado dentro de la Píldora (Idéntico a Google Maps)

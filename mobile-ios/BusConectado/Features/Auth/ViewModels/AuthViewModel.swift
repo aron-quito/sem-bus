@@ -68,6 +68,8 @@ final class AuthViewModel: ObservableObject {
     @Published var showRoutePlannerFullScreen: Bool = false
     @Published var routePlannerInitialOrigin: TacnaDestinationPlace? = nil
     @Published var routePlannerInitialDestination: TacnaDestinationPlace? = nil
+    @Published var recentSearchedPlaces: [TacnaDestinationPlace] = []
+    @Published var carnetReviewRequest: CarnetReviewRequest? = nil
     @Published var activeRouteGuidance: ActiveRouteGuidanceState? = nil
     @Published var showCancelRouteGuidanceAlert: Bool = false
     @Published var showFiveMinuteBoardingBanner: Bool = false
@@ -109,12 +111,15 @@ final class AuthViewModel: ObservableObject {
             self.dynamicRoutes = cachedRouteDTOs.map { $0.toRouteCatalogItem() }
         }
 
+        self.loadRecentSearchedPlaces()
+
         if let token = KeychainService.shared.get(key: "access_token"), !token.isEmpty {
             if let userData = UserDefaults.standard.data(forKey: "bc_active_user"),
                let profile = try? JSONDecoder().decode(UserAuth.self, from: userData) {
                 self.currentUser = profile
                 self.isLoggedIn = true
                 self.loadLocalTransactions(for: profile.phone)
+                self.loadCarnetReviewRequest(for: profile.phone)
             }
         }
 
@@ -594,16 +599,46 @@ final class AuthViewModel: ObservableObject {
     func selectPlaceFromSearch(_ place: TacnaDestinationPlace, startRouteImmediately: Bool) {
         BCFeedbackManager.shared.impactLight()
         isSearchDropdownVisible = false
+        recordRecentSearchedPlace(place)
 
         if startRouteImmediately {
-            // Botón circular azul [Ir]: Abre directamente el escenario Pantalla Completa "Cómo Llegar" con destino fijado
+            // Botón circular azul [Ir]: Abre directamente el escenario Pantalla Completa "Cómo Llegar" con origen GPS y destino fijado
+            routePlannerInitialOrigin = TacnaDestinationPlace.currentLocationPlace()
             routePlannerInitialDestination = place
             showRoutePlannerFullScreen = true
         } else {
             // Pulsar en la fila: Centra el mapa en el lugar y suelta un pin rojo de ubicación
             searchQuery = place.shortName
             searchedDestinationPin = place
-            focusMap(on: place.coordinate, spanDelta: 0.010)
+            focusMap(on: LocationService.sanitizedTacnaCoordinate(place.coordinate), spanDelta: 0.010)
+        }
+    }
+
+    func recordRecentSearchedPlace(_ place: TacnaDestinationPlace) {
+        guard place.id != "current_gps" else { return }
+        var updated = recentSearchedPlaces.filter {
+            $0.id != place.id && $0.shortName.lowercased() != place.shortName.lowercased()
+        }
+        updated.insert(place, at: 0)
+        if updated.count > 12 {
+            updated = Array(updated.prefix(12))
+        }
+        recentSearchedPlaces = updated
+        if let data = try? JSONEncoder().encode(updated) {
+            UserDefaults.standard.set(data, forKey: "bc_recent_places")
+        }
+    }
+
+    func clearRecentSearchedPlaces() {
+        recentSearchedPlaces = []
+        UserDefaults.standard.removeObject(forKey: "bc_recent_places")
+        BCFeedbackManager.shared.impactLight()
+    }
+
+    private func loadRecentSearchedPlaces() {
+        if let data = UserDefaults.standard.data(forKey: "bc_recent_places"),
+           let decoded = try? JSONDecoder().decode([TacnaDestinationPlace].self, from: data) {
+            self.recentSearchedPlaces = decoded
         }
     }
 
@@ -620,8 +655,8 @@ final class AuthViewModel: ObservableObject {
     }
 
     func focusMap(on coordinate: CLLocationCoordinate2D, spanDelta: Double = 0.015) {
-        mapFocusTargetCoordinate = coordinate
-        mapFocusSpanDelta = spanDelta
+        mapFocusTargetCoordinate = LocationService.sanitizedTacnaCoordinate(coordinate)
+        mapFocusSpanDelta = min(max(spanDelta, 0.005), 0.16)
         mapFocusTrigger = UUID()
     }
 
@@ -630,7 +665,7 @@ final class AuthViewModel: ObservableObject {
         isSearchDropdownVisible = false
         if let origin = origin {
             routePlannerInitialOrigin = origin
-        } else if routePlannerInitialOrigin == nil {
+        } else if routePlannerInitialOrigin == nil || routePlannerInitialOrigin?.id == "current_gps" {
             routePlannerInitialOrigin = TacnaDestinationPlace.currentLocationPlace()
         }
         routePlannerInitialDestination = destination ?? searchedDestinationPin
@@ -697,11 +732,13 @@ final class AuthViewModel: ObservableObject {
 
         activeRouteGuidance = guidanceState
 
-        // Encuadrar cámara entre origen y destino en el mapa principal
-        let midLat = (origin.latitude + destination.latitude) / 2.0
-        let midLon = (origin.longitude + destination.longitude) / 2.0
-        let latDelta = max(abs(origin.latitude - destination.latitude) * 1.9, 0.012)
-        let lonDelta = max(abs(origin.longitude - destination.longitude) * 1.9, 0.012)
+        // Encuadrar cámara entre origen y destino dentro de los límites de Tacna
+        let safeOrigin = LocationService.sanitizedTacnaCoordinate(origin.coordinate)
+        let safeDest = LocationService.sanitizedTacnaCoordinate(destination.coordinate)
+        let midLat = (safeOrigin.latitude + safeDest.latitude) / 2.0
+        let midLon = (safeOrigin.longitude + safeDest.longitude) / 2.0
+        let latDelta = min(max(abs(safeOrigin.latitude - safeDest.latitude) * 1.9, 0.012), 0.16)
+        let lonDelta = min(max(abs(safeOrigin.longitude - safeDest.longitude) * 1.9, 0.012), 0.16)
         focusMap(
             on: CLLocationCoordinate2D(latitude: midLat, longitude: midLon),
             spanDelta: max(latDelta, lonDelta)
@@ -868,6 +905,7 @@ final class AuthViewModel: ObservableObject {
                 self.currentUser = res.user
                 self.saveActiveUserLocally(res.user)
                 self.loadLocalTransactions(for: res.user.phone)
+                self.loadCarnetReviewRequest(for: res.user.phone)
                 self.isConnectedToBackend = true
                 self.isLoading = false
                 BCFeedbackManager.shared.notificationSuccess()
@@ -900,6 +938,7 @@ final class AuthViewModel: ObservableObject {
         self.currentUser = user
         self.saveActiveUserLocally(user)
         self.loadLocalTransactions(for: phoneKey)
+        self.loadCarnetReviewRequest(for: phoneKey)
 
         // Al ser cuenta de prueba o cuenta nueva, no existen paraderos ni buses falsos precargados
         self.routes = []
@@ -924,6 +963,7 @@ final class AuthViewModel: ObservableObject {
         self.isLoggedIn = false
         self.currentUser = nil
         self.transactions = []
+        self.carnetReviewRequest = nil
         self.routes = []
         self.stops = []
         self.activeBuses = []
@@ -1031,8 +1071,9 @@ final class AuthViewModel: ObservableObject {
     }
 
     // MARK: - Operaciones del Monedero (CU-05 Recarga / CU-03 SUNEDU / CU-01 Pago QR)
-    func rechargePoints(points: Int, gateway: String) async {
-        guard var user = currentUser else { return }
+    @discardableResult
+    func rechargePoints(points: Int, gateway: String, reference: String? = nil) async -> LedgerTransactionItem? {
+        guard var user = currentUser else { return nil }
 
         struct RechargeReq: Encodable {
             let amountPoints: Int
@@ -1068,12 +1109,13 @@ final class AuthViewModel: ObservableObject {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         let timeStr = "Hoy, \(formatter.string(from: Date()))"
+        let opCode = reference ?? "BC-\(Int.random(in: 100000...999999))"
 
         let newTx = LedgerTransactionItem(
             id: UUID().uuidString,
             type: "RECHARGE_CREDIT",
             title: "Recarga \(gateway)",
-            subtitle: "Abono instantáneo en Monedero BC",
+            subtitle: "Op. \(opCode) · Abono instantáneo",
             plateBadge: nil,
             timestampLabel: timeStr,
             amountPoints: points,
@@ -1085,6 +1127,7 @@ final class AuthViewModel: ObservableObject {
         self.transactions.insert(newTx, at: 0)
         self.saveLocalTransactions(for: user.phone)
         BCFeedbackManager.shared.playRechargeChime()
+        return newTx
     }
 
     func accreditSuneduCard(dni: String, university: String, career: String) async {
@@ -1105,6 +1148,40 @@ final class AuthViewModel: ObservableObject {
         self.saveActiveUserLocally(user)
         self.persistAccountState(user)
         BCFeedbackManager.shared.notificationSuccess()
+    }
+
+    func submitCarnetReviewRequest(
+        type: String,
+        dni: String,
+        institution: String,
+        documentCode: String,
+        expiresAt: String
+    ) {
+        guard let user = currentUser else { return }
+        let req = CarnetReviewRequest(
+            id: "CAR-\(Int.random(in: 10000...99999))",
+            carnetType: type,
+            dni: dni,
+            institution: institution,
+            documentCode: documentCode,
+            submittedAt: Date(),
+            status: "PENDING_REVIEW",
+            expiresAt: expiresAt
+        )
+        self.carnetReviewRequest = req
+        if let data = try? JSONEncoder().encode(req) {
+            UserDefaults.standard.set(data, forKey: "bc_carnet_req_\(user.phone)")
+        }
+        BCFeedbackManager.shared.notificationSuccess()
+    }
+
+    private func loadCarnetReviewRequest(for phone: String) {
+        if let data = UserDefaults.standard.data(forKey: "bc_carnet_req_\(phone)"),
+           let decoded = try? JSONDecoder().decode(CarnetReviewRequest.self, from: data) {
+            self.carnetReviewRequest = decoded
+        } else {
+            self.carnetReviewRequest = nil
+        }
     }
 
     /// Ejecuta el pago de pasaje con QR en puerta + acompañantes (CU-01 / RN-07)
@@ -1216,6 +1293,8 @@ final class AuthViewModel: ObservableObject {
         self.transactions = []
         self.activeTrip = nil
         self.activeArrivalAlert = nil
+        self.carnetReviewRequest = nil
+        UserDefaults.standard.removeObject(forKey: "bc_carnet_req_\(user.phone)")
         self.saveActiveUserLocally(user)
         self.persistAccountState(user)
         self.saveLocalTransactions(for: user.phone)
@@ -1239,6 +1318,7 @@ final class AuthViewModel: ObservableObject {
 
         self.currentUser = nil
         self.transactions = []
+        self.carnetReviewRequest = nil
         self.routes = []
         self.stops = []
         self.activeBuses = []

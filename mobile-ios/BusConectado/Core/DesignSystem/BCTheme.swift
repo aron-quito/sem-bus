@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import AVFoundation
+import Speech
 
 // MARK: - Apple HIG Minimalist Dark Theme Tokens
 enum BCTheme {
@@ -132,6 +133,155 @@ struct TopMapStatusBarFade: View {
             )
             .ignoresSafeArea(edges: .top)
             .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Motor Nativo de Búsqueda por Voz (Micrófono + Speech Framework)
+@MainActor
+final class SpeechSearchEngine: ObservableObject {
+    static let shared = SpeechSearchEngine()
+
+    @Published var isListening: Bool = false
+    @Published var liveTranscript: String = ""
+    @Published var errorMessage: String? = nil
+
+    private var audioEngine: AVAudioEngine?
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var speechRecognizer: SFSpeechRecognizer?
+    private var onTranscriptUpdate: ((String) -> Void)?
+    private var silenceTimer: Timer?
+
+    private init() {
+        speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-PE"))
+            ?? SFSpeechRecognizer(locale: Locale(identifier: "es-419"))
+            ?? SFSpeechRecognizer(locale: .current)
+    }
+
+    func toggleListening(onTranscript: @escaping (String) -> Void) {
+        if isListening {
+            stopListening()
+        } else {
+            startListening(onTranscript: onTranscript)
+        }
+    }
+
+    func startListening(onTranscript: @escaping (String) -> Void) {
+        stopListening()
+        errorMessage = nil
+        liveTranscript = ""
+        onTranscriptUpdate = onTranscript
+
+        SFSpeechRecognizer.requestAuthorization { [weak self] authStatus in
+            Task { @MainActor in
+                guard let self = self else { return }
+                guard authStatus == .authorized else {
+                    self.errorMessage = "Activa el permiso de Reconocimiento de Voz en Ajustes."
+                    return
+                }
+                let micGranted = await AVAudioApplication.requestRecordPermission()
+                guard micGranted else {
+                    self.errorMessage = "Activa el permiso del Micrófono en Ajustes."
+                    return
+                }
+                self.beginAudioCapture()
+            }
+        }
+    }
+
+    private func beginAudioCapture() {
+        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+            errorMessage = "Reconocimiento de voz no disponible en este momento."
+            return
+        }
+
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            errorMessage = "No se pudo iniciar el micrófono."
+            return
+        }
+
+        let engine = AVAudioEngine()
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        if recognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = false
+        }
+
+        let inputNode = engine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+            request.append(buffer)
+        }
+
+        engine.prepare()
+        do {
+            try engine.start()
+        } catch {
+            errorMessage = "No se pudo capturar audio."
+            return
+        }
+
+        self.audioEngine = engine
+        self.recognitionRequest = request
+        self.isListening = true
+        BCFeedbackManager.shared.impactMedium()
+        scheduleAutoStop(after: 6.5)
+
+        self.recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            Task { @MainActor in
+                guard let self = self else { return }
+                if let result = result {
+                    let text = result.bestTranscription.formattedString.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty {
+                        self.liveTranscript = text
+                        self.onTranscriptUpdate?(text)
+                        self.scheduleAutoStop(after: 1.9)
+                    }
+                    if result.isFinal {
+                        self.stopListening()
+                    }
+                } else if error != nil {
+                    self.stopListening()
+                }
+            }
+        }
+    }
+
+    private func scheduleAutoStop(after seconds: TimeInterval) {
+        silenceTimer?.invalidate()
+        silenceTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.stopListening()
+            }
+        }
+    }
+
+    func stopListening() {
+        silenceTimer?.invalidate()
+        silenceTimer = nil
+
+        if let engine = audioEngine {
+            if engine.isRunning {
+                engine.stop()
+            }
+            engine.inputNode.removeTap(onBus: 0)
+        }
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+
+        audioEngine = nil
+        recognitionRequest = nil
+        recognitionTask = nil
+
+        if isListening {
+            isListening = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 }
 
