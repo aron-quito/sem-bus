@@ -51,22 +51,7 @@ struct ExploreMapView: View {
             interactiveMapLayer
 
             // 2. Blur Progresivo Estilo Google Maps en la Parte Superior (Hora / Señal / Batería / Dynamic Island)
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .frame(height: 112)
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black.opacity(0.95), location: 0.0),
-                            .init(color: .black.opacity(0.68), location: 0.48),
-                            .init(color: .clear, location: 1.0)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .ignoresSafeArea(edges: .top)
-                .allowsHitTesting(false)
+            TopMapStatusBarFade()
 
             // 3. Capas Flotantes sobre el Mapa (Debajo de la Píldora Flotante de Búsqueda)
             VStack(spacing: 10) {
@@ -1317,36 +1302,14 @@ struct ExploreMapView: View {
                     )
                 )
 
-            // Punto de abordaje (Paradero Oficial para Ordinaria vs Vía Libre para Externa)
+            // Punto de abordaje (solo punto con signo de paradero, sin texto)
             Annotation("", coordinate: cand.boardingCoordinate) {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(isOrd ? BCTheme.emerald : BCTheme.amber)
-                        .frame(width: 14, height: 14)
-                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                    Text(isOrd ? "Subir en Paradero \(cand.boardingPointName)" : "Subir en vía (\(cand.routeCode))")
-                        .font(.system(size: 8.5, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2.5)
-                        .background(BCTheme.elevatedSurface.opacity(0.95))
-                        .clipShape(Capsule())
-                }
+                TransitStopDotMarker(accentColor: isOrd ? BCTheme.emerald : BCTheme.amber)
             }
 
-            // Punto visual de bajada sin texto invasivo
-            if cand.walkFinalMeters >= 35 {
-                Annotation("", coordinate: cand.alightingCoordinate) {
-                    ZStack {
-                        Circle()
-                            .fill(BCTheme.cyanAccent.opacity(0.28))
-                            .frame(width: 22, height: 22)
-                        Circle()
-                            .fill(BCTheme.cyanAccent)
-                            .frame(width: 12, height: 12)
-                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                    }
-                }
+            // Punto de bajada (solo punto con signo de paradero, sin texto)
+            Annotation("", coordinate: cand.alightingCoordinate) {
+                TransitStopDotMarker(accentColor: BCTheme.cyanAccent)
             }
         } else if cand == nil && dest.routeCase != .walkOnlyNearby && guidance.selectedOptionIndex != 3 {
             MapPolyline(coordinates: busCoords)

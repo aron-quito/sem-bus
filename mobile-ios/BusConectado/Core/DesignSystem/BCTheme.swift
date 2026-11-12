@@ -87,3 +87,51 @@ final class BCFeedbackManager {
     }
 }
 
+// MARK: - Marcador Puntual de Paradero (Solo punto + ícono de paradero, sin texto sobre el mapa)
+struct TransitStopDotMarker: View {
+    let accentColor: Color
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(accentColor.opacity(0.28))
+                .frame(width: 34, height: 34)
+            Circle()
+                .fill(accentColor)
+                .frame(width: 24, height: 24)
+                .overlay(
+                    Circle()
+                        .stroke(Color.white, lineWidth: 2)
+                )
+                .shadow(color: .black.opacity(0.42), radius: 3, y: 1)
+            Image(systemName: "bus.fill")
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundColor(.white)
+        }
+    }
+}
+
+// MARK: - Degradado Translúcido Superior para Barra de Estado (Dynamic Island / Hora / Señal)
+struct TopMapStatusBarFade: View {
+    var height: CGFloat = 112
+
+    var body: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .frame(height: height)
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.95), location: 0.0),
+                        .init(color: .black.opacity(0.68), location: 0.48),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+    }
+}
+

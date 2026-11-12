@@ -891,43 +891,14 @@ struct RoutePlannerView: View {
                                 )
                             )
 
-                        // Marcador de Abordaje
+                        // Marcador de Abordaje (solo punto con signo de paradero, sin texto)
                         Annotation("", coordinate: cand.boardingCoordinate) {
-                            HStack(spacing: 4) {
-                                Circle()
-                                    .fill(isOrd ? BCTheme.emerald : BCTheme.amber)
-                                    .frame(width: 16, height: 16)
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
-
-                                Text(
-                                    isOrd
-                                        ? "Subir en Paradero: \(cand.boardingPointName) (\(cand.routeCode))"
-                                        : "Subir en vía: \(cand.routeCode) (Externa)"
-                                )
-                                .font(.system(size: 8.5, weight: .bold))
-                                .foregroundColor(isOrd ? BCTheme.emerald : BCTheme.amber)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color(hex: "#0F172A").opacity(0.95))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke((isOrd ? BCTheme.emerald : BCTheme.amber).opacity(0.7), lineWidth: 1)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 6))
-                            }
+                            TransitStopDotMarker(accentColor: isOrd ? BCTheme.emerald : BCTheme.amber)
                         }
 
-                        // Punto visual de descenso (bajada) sin recuadro de texto que interrumpa la vista
+                        // Marcador de Descenso (solo punto con signo de paradero, sin texto)
                         Annotation("", coordinate: cand.alightingCoordinate) {
-                            ZStack {
-                                Circle()
-                                    .fill(BCTheme.cyanAccent.opacity(0.28))
-                                    .frame(width: 24, height: 24)
-                                Circle()
-                                    .fill(BCTheme.cyanAccent)
-                                    .frame(width: 13, height: 13)
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                            }
+                            TransitStopDotMarker(accentColor: BCTheme.cyanAccent)
                         }
                     }
 
@@ -971,7 +942,10 @@ struct RoutePlannerView: View {
                 .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .all))
                 .ignoresSafeArea()
 
-                // 2. Cabecera Flotante Opaca de Ruteo (Con edición de Origen y Destino + Aviso de Ruta Externa)
+                // 2. Degradado translúcido en la parte superior del mapa (idéntico a la pantalla principal)
+                TopMapStatusBarFade()
+
+                // 3. Cabecera Flotante Translúcida de Ruteo (Con edición de Origen y Destino + Píldora Multimodal)
                 floatingRouteHeader
 
                 // 3. Botón Flotante para Re-encuadrar la Ruta en el Mapa
@@ -1136,12 +1110,16 @@ struct RoutePlannerView: View {
                 }
             }
             .padding(12)
-            .background(BCTheme.elevatedSurface.opacity(0.98))
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color(hex: "#1F262E").opacity(0.84))
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            )
             .overlay(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 4)
 
             // Resumen Multimodal Flotante de la Opción Activa
             if let cand = cand {
@@ -1212,21 +1190,21 @@ struct RoutePlannerView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(BCTheme.elevatedSurface.opacity(0.96))
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(hex: "#1F262E").opacity(0.84))
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
             }
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
-        .padding(.bottom, 8)
-        .background(
-            BCTheme.background.opacity(0.95)
-                .ignoresSafeArea(edges: .top)
-        )
+        .padding(.bottom, 4)
     }
 
     // MARK: - Hoja Inferior Interactiva de 3 Niveles
