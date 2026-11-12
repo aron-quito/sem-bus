@@ -70,3 +70,4 @@ location /chofer {
 ```
 Acceso resultante:
 `http://34.61.17.233/chofer` (o tu IP / dominio actual).
+
