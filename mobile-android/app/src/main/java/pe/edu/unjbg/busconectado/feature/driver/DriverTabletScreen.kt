@@ -1,9 +1,7 @@
 package pe.edu.unjbg.busconectado.feature.driver
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,12 +19,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.Locale
 
 // PALETA DE COLORES DE CABINA (Material 3 Dark Slate)
 val Slate950 = Color(0xFF020617)
 val Slate900 = Color(0xFF0F172A)
 val Slate800 = Color(0xFF1E293B)
-val Slate700 = Color(0xFF334155)
 val Slate400 = Color(0xFF94A3B8)
 val Slate200 = Color(0xFFE2E8F0)
 
@@ -43,7 +41,6 @@ val RoseDark = Color(0xFF881337)
 val RoseLight = Color(0xFFFECDD3)
 
 val BluePrimary = Color(0xFF2563EB)
-val PurplePrimary = Color(0xFFA855F7)
 
 @Composable
 fun DriverTabletScreen(
@@ -104,8 +101,7 @@ fun DriverTabletScreen(
                             showBreakdownSubmodule = !showBreakdownSubmodule
                         }
                     },
-                    onTogglePauseMap = { viewModel.togglePausePublicMap() },
-                    onCloseSubmodule = { showBreakdownSubmodule = false }
+                    onTogglePauseMap = { viewModel.togglePausePublicMap() }
                 )
             }
 
@@ -360,13 +356,13 @@ fun FareDetailsFeed(
                 Text("IMPORTE", color = Slate400, fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.End, modifier = Modifier.weight(0.15f))
             }
 
-            Divider(color = Slate800)
+            HorizontalDivider(color = Slate800)
 
             // Filas scrolleables
             LazyColumn(modifier = Modifier.fillMaxSize()) {
                 items(fares) { fare ->
                     FareRow(fare = fare)
-                    Divider(color = Slate800.copy(alpha = 0.5f))
+                    HorizontalDivider(color = Slate800.copy(alpha = 0.5f))
                 }
             }
         }
@@ -410,8 +406,7 @@ fun VehicleSensorsAndActions(
     onToggleFault: () -> Unit,
     onRecordConadis: () -> Unit,
     onClickBreakdown: () -> Unit,
-    onTogglePauseMap: () -> Unit,
-    onCloseSubmodule: () -> Unit
+    onTogglePauseMap: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // Barra de Sensores OBD-II
@@ -601,7 +596,7 @@ fun BusOccupancyCard(
 
             // Barra de progreso de aforo
             LinearProgressIndicator(
-                progress = percentage,
+                progress = { percentage },
                 color = if (percentage > 0.85f) RosePrimary else EmeraldPrimary,
                 trackColor = Slate800,
                 modifier = Modifier
@@ -654,7 +649,7 @@ fun ShiftLiquidationCard(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("LIQUIDACIÓN DE TURNO", color = Slate400, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                Divider(color = Slate800)
+                HorizontalDivider(color = Slate800)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -672,7 +667,7 @@ fun ShiftLiquidationCard(
                     Text("${state.conadisCount} personas", color = AmberPrimary, fontWeight = FontWeight.Bold)
                 }
 
-                Divider(color = Slate800)
+                HorizontalDivider(color = Slate800)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -681,7 +676,7 @@ fun ShiftLiquidationCard(
                 ) {
                     Text("Total Recaudado:", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     Text(
-                        text = "S/. ${String.format("%.2f", state.totalRevenuePen)}",
+                        text = "S/. ${String.format(Locale.US, "%.2f", state.totalRevenuePen)}",
                         color = EmeraldPrimary,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Black,
@@ -722,4 +717,3 @@ fun MiniTestButton(
 }
 
 fun borderStroke() = BorderStroke(1.dp, Slate800)
-
