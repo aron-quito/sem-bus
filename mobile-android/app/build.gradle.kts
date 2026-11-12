@@ -59,7 +59,7 @@ dependencies {
     // Google Maps Compose & ML Kit
     implementation("com.google.maps.android:maps-compose:4.3.3")
     implementation("com.google.android.gms:play-services-maps:18.2.0")
-    implementation("com.google.mlkit:barcode-scanning:17.2.0")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
     // Networking
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

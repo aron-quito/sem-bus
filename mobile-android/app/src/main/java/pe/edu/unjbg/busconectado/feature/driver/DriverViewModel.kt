@@ -12,7 +12,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
-class DriverViewModel(
+class DriverViewModel @JvmOverloads constructor(
     private val audioBuzzer: DriverAudioBuzzer = DriverAudioBuzzer()
 ) : ViewModel() {
 
