@@ -584,8 +584,8 @@
     let driverConadisCount = 3;
     let driverRevenue = 58.40;
 
-    // PARADEROS LÍNEA 10 (TACNA)
-    const linea10DriverStops = [
+    // PARADEROS LÍNEA 10 (TACNA) - Conexión dinámica al Backend
+    let linea10DriverStops = [
       "P. Cono Norte",
       "P. Plaza Zela",
       "P. Mercado Central",
@@ -595,6 +595,37 @@
       "P. Alto de la Alianza"
     ];
     let driverCurrentStopIndex = 0;
+
+    // Sincronización en vivo con el catálogo de paraderos del Backend
+    async function syncStopsWithBackend() {
+      try {
+        const response = await fetch('/api/v1/transit/stops');
+        if (response.ok) {
+          const stopsData = await response.json();
+          if (Array.isArray(stopsData) && stopsData.length > 0) {
+            // Extraer nombres de paraderos (filtrando Línea 10 o todos los paraderos registrados)
+            const backendStops = stopsData
+              .filter(s => !s.routesPassing || s.routesPassing.some(r => r.toLowerCase().includes('10')))
+              .map(s => {
+                const name = s.shortName || s.name;
+                return name.startsWith('P. ') ? name : `P. ${name}`;
+              });
+
+            if (backendStops.length > 0) {
+              linea10DriverStops = backendStops;
+              driverCurrentStopIndex = Math.min(driverCurrentStopIndex, linea10DriverStops.length - 1);
+              updateDriverStopsDisplay();
+              console.log(`✅ [TABLET] Sincronizados ${backendStops.length} paraderos desde el backend.`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Backend de paraderos no disponible. Usando catálogo local de contingencia:', err);
+      }
+    }
+    syncStopsWithBackend();
+    // Re-sincronizar periódicamente cada 60 segundos por si el admin añade o mueve paraderos
+    setInterval(syncStopsWithBackend, 60000);
 
     function updateDriverStopsDisplay() {
       const currentEl = document.getElementById('drv-current-stop');
