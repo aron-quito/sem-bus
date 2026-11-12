@@ -14,18 +14,19 @@ enum RoutePlannerScreenState: Equatable {
 }
 
 enum RouteSheetSnapLevel: CaseIterable {
-    case compact    // Nivel 1: Compacto (Peek ~215pt)
-    case medium     // Nivel 2: Detalle Intermedio (Medium ~420pt)
-    case full       // Nivel 3: Todas las Opciones (Full ~84%)
+    case compact    // Nivel 1: Compacto (Peek)
+    case medium     // Nivel 2: Detalle Visual Intermedio (Medium)
+    case full       // Nivel 3: Comparativa Detallada (Full)
 
-    func height(in totalHeight: CGFloat) -> CGFloat {
+    func height(in totalHeight: CGFloat, bottomInset: CGFloat) -> CGFloat {
+        let safeBottom = max(bottomInset, 18)
         switch self {
         case .compact:
-            return 225
+            return 192 + safeBottom
         case .medium:
-            return min(max(totalHeight * 0.52, 390), 460)
+            return min(max(totalHeight * 0.50, 380 + safeBottom), 485)
         case .full:
-            return totalHeight * 0.84
+            return max(440, totalHeight - 192)
         }
     }
 
@@ -974,14 +975,17 @@ struct RoutePlannerView: View {
                             .shadow(color: .black.opacity(0.45), radius: 6)
                         }
                         .padding(.trailing, 14)
-                        .padding(.bottom, currentSheetHeight(in: geo.size.height) + 14)
+                        .padding(.bottom, currentSheetHeight(in: geo.size.height, bottomInset: geo.safeAreaInsets.bottom) + 14)
                     }
+                    .opacity(sheetSnap == .full ? 0 : 1)
+                    .allowsHitTesting(sheetSnap != .full)
+                    .animation(.easeInOut(duration: 0.2), value: sheetSnap)
                 }
 
                 // 4. Hoja Inferior Interactiva de 3 Niveles (Compacto / Medio / Completo)
                 VStack {
                     Spacer()
-                    interactiveBottomSheet(totalHeight: geo.size.height)
+                    interactiveBottomSheet(totalHeight: geo.size.height, bottomInset: geo.safeAreaInsets.bottom)
                 }
                 .ignoresSafeArea(edges: .bottom)
             }
@@ -1207,131 +1211,147 @@ struct RoutePlannerView: View {
         .padding(.bottom, 4)
     }
 
-    // MARK: - Hoja Inferior Interactiva de 3 Niveles
-    private func interactiveBottomSheet(totalHeight: CGFloat) -> some View {
-        let targetHeight = currentSheetHeight(in: totalHeight)
+    // MARK: - Hoja Inferior Interactiva de 3 Niveles (Transición Fluida Estilo Apple)
+    private func interactiveBottomSheet(totalHeight: CGFloat, bottomInset: CGFloat) -> some View {
+        let safeBottom = max(bottomInset, 18)
+        let targetHeight = currentSheetHeight(in: totalHeight, bottomInset: safeBottom)
 
         return VStack(spacing: 0) {
-            Button {
+            // Barra de agarre minimalista estilo Apple + gesto fluido de arrastre
+            VStack(spacing: 6) {
+                Capsule()
+                    .fill(Color.white.opacity(0.28))
+                    .frame(width: 40, height: 5)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture {
                 BCFeedbackManager.shared.impactLight()
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.86, blendDuration: 0.12)) {
                     sheetSnap = sheetSnap.nextLevel
                 }
-            } label: {
-                VStack(spacing: 4) {
-                    Capsule()
-                        .fill(Color(hex: "#48484A"))
-                        .frame(width: 42, height: 5)
-                        .padding(.top, 10)
+            }
+            .gesture(sheetDragGesture(totalHeight: totalHeight, bottomInset: safeBottom))
 
-                    Text(sheetSnapLabel)
-                        .font(.system(size: 9.5, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.45))
-                        .padding(.bottom, 4)
+            ZStack(alignment: .top) {
+                switch sheetSnap {
+                case .compact:
+                    compactSheetContent(bottomPadding: safeBottom)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                case .medium:
+                    mediumSheetContent(bottomPadding: safeBottom)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                case .full:
+                    fullSheetContent(bottomPadding: safeBottom)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
-                .frame(maxWidth: .infinity)
             }
-
-            switch sheetSnap {
-            case .compact:
-                compactSheetContent
-            case .medium:
-                mediumSheetContent
-            case .full:
-                fullSheetContent
-            }
+            .animation(.spring(response: 0.40, dampingFraction: 0.86), value: sheetSnap)
 
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
         .frame(height: targetHeight)
-        .background(Color(hex: "#1C1C1E"))
+        .background(
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color(hex: "#18191D").opacity(0.95))
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .stroke(Color(hex: "#2C2C2E"), lineWidth: 1)
+                .stroke(Color.white.opacity(0.11), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .shadow(color: .black.opacity(0.55), radius: 18, y: -4)
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    sheetDragTranslation = value.translation.height
-                }
-                .onEnded { value in
-                    let dy = value.translation.height
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                        if dy < -45 {
-                            if sheetSnap == .compact {
-                                sheetSnap = .medium
-                            } else if sheetSnap == .medium {
-                                sheetSnap = .full
-                            }
-                        } else if dy > 45 {
-                            if sheetSnap == .full {
-                                sheetSnap = .medium
-                            } else if sheetSnap == .medium {
-                                sheetSnap = .compact
-                            }
-                        }
-                        sheetDragTranslation = 0
-                    }
-                    BCFeedbackManager.shared.impactLight()
-                }
+        .shadow(color: .black.opacity(0.55), radius: 22, y: -6)
+        .simultaneousGesture(
+            sheetSnap == .compact ? sheetDragGesture(totalHeight: totalHeight, bottomInset: safeBottom) : nil
         )
     }
 
-    // ——— NIVEL 1: COMPACTO (Peek) ———
-    private var compactSheetContent: some View {
+    private func sheetDragGesture(totalHeight: CGFloat, bottomInset: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+            .onChanged { value in
+                guard abs(value.translation.height) > abs(value.translation.width) || sheetDragTranslation != 0 else {
+                    return
+                }
+                var dy = value.translation.height
+                let minH = RouteSheetSnapLevel.compact.height(in: totalHeight, bottomInset: bottomInset)
+                let maxH = RouteSheetSnapLevel.full.height(in: totalHeight, bottomInset: bottomInset)
+                let baseH = sheetSnap.height(in: totalHeight, bottomInset: bottomInset)
+                let rawH = baseH - dy
+                // Efecto goma (rubber-band) nativo cuando pasa los límites superior o inferior
+                if rawH < minH {
+                    dy = baseH - (minH - (minH - rawH) * 0.28)
+                } else if rawH > maxH {
+                    dy = baseH - (maxH + (rawH - maxH) * 0.28)
+                }
+                withAnimation(.interactiveSpring(response: 0.16, dampingFraction: 0.9)) {
+                    sheetDragTranslation = dy
+                }
+            }
+            .onEnded { value in
+                guard abs(value.translation.height) > abs(value.translation.width) || sheetDragTranslation != 0 else {
+                    sheetDragTranslation = 0
+                    return
+                }
+                let baseH = sheetSnap.height(in: totalHeight, bottomInset: bottomInset)
+                let predictedH = baseH - value.predictedEndTranslation.height
+                let levels = RouteSheetSnapLevel.allCases
+                let closest = levels.min(by: {
+                    abs($0.height(in: totalHeight, bottomInset: bottomInset) - predictedH)
+                    < abs($1.height(in: totalHeight, bottomInset: bottomInset) - predictedH)
+                }) ?? sheetSnap
+
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.85, blendDuration: 0.1)) {
+                    sheetSnap = closest
+                    sheetDragTranslation = 0
+                }
+                BCFeedbackManager.shared.impactLight()
+            }
+    }
+
+    // ——— NIVEL 1: COMPACTO (Gráfico y minimalista) ———
+    private func compactSheetContent(bottomPadding: CGFloat) -> some View {
         let cand = activeCandidate
 
-        return VStack(alignment: .leading, spacing: 10) {
-            // Pestañas rápidas de las primeras opciones evaluadas
+        return VStack(alignment: .leading, spacing: 11) {
+            // Pestañas rápidas de rutas evaluadas
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 14) {
-                    ForEach(Array(displayedCandidates.prefix(4).enumerated()), id: \.element.id) { idx, item in
+                HStack(spacing: 12) {
+                    ForEach(Array(displayedCandidates.prefix(5).enumerated()), id: \.element.id) { idx, item in
                         durationTabPill(candidate: item, index: idx)
                     }
                 }
             }
 
-            // Aviso prominente si la opción sugerida/activa es una Ruta Externa o si es Ruta Ordinaria con aviso automático a 5 min
             if let cand = cand {
-                if cand.kind == .externalFreeBoarding {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption2.weight(.bold))
-                            .foregroundColor(BCTheme.amber)
-                            .padding(.top, 1)
-                        Text(
-                            evaluationResult?.primaryBannerWarning
-                                ?? "⚠️ Ruta Externa (\(cand.routeCode)): Abordaje en cualquier parte de la ruta • Sin tracking GPS ni aviso de paradero."
-                        )
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(BCTheme.amber)
-                        .lineLimit(2)
+                // Resumen visual: Tiempo + Cadena gráfica de tramos + Badge de servicio
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .center, spacing: 8) {
+                        Text("~\(cand.totalDurationMinutes) min")
+                            .font(.title3.weight(.black).monospacedDigit())
+                            .foregroundColor(.white)
+
+                        Text("· \(cand.totalDistanceLabel)")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.white.opacity(0.6))
+
+                        Spacer()
+
+                        modeBadgePill(for: cand)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(BCTheme.amber.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else if cand.kind == .ordinaryInService {
-                    HStack(spacing: 6) {
-                        Image(systemName: "bell.badge.fill")
-                            .font(.caption2.weight(.bold))
-                            .foregroundColor(BCTheme.emerald)
-                        Text("Subir en Paradero \(cand.boardingPointName) • Al iniciar recibirás aviso automático a 5 min del bus")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(BCTheme.emerald)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(BCTheme.emerald.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    journeyGraphicStrip(candidate: cand)
                 }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(Color.white.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
 
-            // Botones de Acción: [Ir / Iniciar] + [Ver Opciones (Ordinarias y Externas)]
+            // Botones de Acción con espacio cómodo respecto al borde inferior
             HStack(spacing: 10) {
                 Button {
                     guard let chosen = cand else { return }
@@ -1343,223 +1363,198 @@ struct RoutePlannerView: View {
                     )
                     dismiss()
                 } label: {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 7) {
                         Image(systemName: "location.north.fill")
                             .font(.subheadline.weight(.bold))
-                        Text(
-                            cand?.kind == .ordinaryInService
-                                ? "Ir (Activa aviso a 5 min)"
-                                : "Ir con esta ruta"
-                        )
-                        .font(.subheadline.weight(.bold))
+                        Text("Ir")
+                            .font(.subheadline.weight(.bold))
+                        if cand?.kind == .ordinaryInService {
+                            Image(systemName: "bell.badge.fill")
+                                .font(.caption.weight(.bold))
+                                .opacity(0.9)
+                        }
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 44)
+                    .frame(height: 46)
                     .background(Color(hex: "#34C759"))
                     .clipShape(Capsule())
                 }
 
                 Button {
                     BCFeedbackManager.shared.impactLight()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) {
                         sheetSnap = .full
                     }
                 } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.up.and.down.text.horizontal")
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet")
                             .font(.caption.weight(.bold))
-                        Text("Ver todas (\(displayedCandidates.count))")
+                        Text("Opciones (\(displayedCandidates.count))")
                             .font(.caption.weight(.bold))
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .frame(height: 44)
+                    .padding(.horizontal, 16)
+                    .frame(height: 46)
                     .background(Color(hex: "#2C2C2E"))
                     .clipShape(Capsule())
                 }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.bottom, 14)
+        .padding(.bottom, bottomPadding + 8)
     }
 
-    // ——— NIVEL 2: DETALLE INTERMEDIO (Medium) ———
-    private var mediumSheetContent: some View {
+    // ——— NIVEL 2: DETALLE VISUAL INTERMEDIO (Timeline estilo Apple Maps) ———
+    private func mediumSheetContent(bottomPadding: CGFloat) -> some View {
         let cand = activeCandidate
 
-        return ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 12) {
-                if let cand = cand {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("~\(cand.totalDurationMinutes) min")
-                            .font(.title2.weight(.black))
-                            .foregroundColor(.white)
+        return VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let cand = cand {
+                        HStack(alignment: .center, spacing: 8) {
+                            Text("~\(cand.totalDurationMinutes) min")
+                                .font(.title2.weight(.black).monospacedDigit())
+                                .foregroundColor(.white)
 
-                        Text("· \(cand.totalDistanceLabel)")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.white.opacity(0.65))
+                            Text("· \(cand.totalDistanceLabel)")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white.opacity(0.6))
 
-                        Spacer()
+                            Spacer()
 
-                        Button {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                sheetSnap = .full
-                            }
-                        } label: {
-                            Text("Comparar ordinarias y externas ›")
+                            Button {
+                                withAnimation(.spring(response: 0.42, dampingFraction: 0.85)) {
+                                    sheetSnap = .full
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Text("Ver todas")
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 10, weight: .bold))
+                                }
                                 .font(.caption.weight(.bold))
-                                .foregroundColor(Color(hex: "#0A84FF"))
-                        }
-                    }
-
-                    // Aviso o Estado Operativo según Tipo de Ruta
-                    if cand.kind == .externalFreeBoarding {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(BCTheme.amber)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Ruta Externa de Tacna (\(cand.routeCode)) • Sin Tracking GPS")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundColor(BCTheme.amber)
-                                Text(
-                                    evaluationResult?.primaryBannerWarning
-                                        ?? "En las rutas externas no necesitas caminar a un paradero fijo: puedes subir y bajar en cualquier punto de la calle por donde pasa la ruta. No incluye pago QR ni notificaciones de llegada."
-                                )
-                                .font(.caption2)
-                                .foregroundColor(.white.opacity(0.85))
+                                .foregroundColor(Color(hex: "#60A5FA"))
                             }
                         }
-                        .padding(10)
-                        .background(BCTheme.amber.opacity(0.14))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(BCTheme.amber.opacity(0.45), lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    } else if cand.kind == .ordinaryInService {
-                        HStack(alignment: .top, spacing: 8) {
-                            Image(systemName: "bell.badge.fill")
-                                .foregroundColor(BCTheme.emerald)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Ruta Ordinaria en Servicio (\(cand.routeCode)) • Tracking & Pago QR")
-                                    .font(.caption.weight(.bold))
+
+                        // Estado operativo minimalista con íconos en 1 sola línea
+                        HStack(spacing: 8) {
+                            modeBadgePill(for: cand)
+                            if cand.kind == .ordinaryInService {
+                                Label("Aviso 5m", systemImage: "bell.badge.fill")
+                                    .font(.system(size: 10.5, weight: .semibold))
                                     .foregroundColor(BCTheme.emerald)
-                                Text("Abordaje en Paradero Oficial \(cand.boardingPointName). Al presionar 'Ir', recibirás automáticamente una notificación cuando el bus se encuentre a 5 minutos del paradero establecido.")
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.85))
+                                Spacer()
+                                Text(formattedUserFare)
+                                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                                    .foregroundColor(.white.opacity(0.9))
+                            } else if cand.kind == .externalFreeBoarding {
+                                Label("Sube/baja en vía", systemImage: "hand.raised.fill")
+                                    .font(.system(size: 10.5, weight: .semibold))
+                                    .foregroundColor(BCTheme.amber)
+                                Spacer()
+                                Text("Sin QR")
+                                    .font(.system(size: 10.5, weight: .bold))
+                                    .foregroundColor(BCTheme.amber)
+                            } else {
+                                Spacer()
+                                Text("Gratis")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundColor(BCTheme.cyanAccent)
                             }
                         }
-                        .padding(10)
-                        .background(BCTheme.emerald.opacity(0.14))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(BCTheme.emerald.opacity(0.45), lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                    }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                    // Desglose Paso a Paso Calculado por el Motor
-                    VStack(alignment: .leading, spacing: 8) {
-                        if cand.kind == .walkingDirect {
-                            stepRow(
-                                icon: "figure.walk",
-                                bgHex: "#1E3A8A",
-                                iconColor: Color(hex: "#93C5FD"),
-                                text: "Camina \(cand.walkInitialMinutes) min (\(cand.walkInitialMeters) m) desde \(selectedOrigin.shortName) hasta \(selectedDestination.shortName)"
-                            )
-                        } else {
-                            let isOrd = cand.kind == .ordinaryInService
-                            stepRow(
-                                icon: "figure.walk",
-                                bgHex: "#1E3A8A",
-                                iconColor: Color(hex: "#93C5FD"),
-                                text: isOrd
-                                    ? "1. Camina \(cand.walkInitialMinutes) min (\(cand.walkInitialMeters) m) hasta el Paradero \(cand.boardingPointName)"
-                                    : "1. Camina \(cand.walkInitialMinutes) min (\(cand.walkInitialMeters) m) hasta la vía de \(cand.routeCode) (\(cand.boardingPointName))"
-                            )
-
-                            stepRow(
-                                icon: "bus.fill",
-                                bgHex: isOrd ? "#14532D" : "#78350F",
-                                iconColor: isOrd ? Color(hex: "#86EFAC") : Color(hex: "#FCD34D"),
-                                text: isOrd
-                                    ? "2. Sube a \(cand.routeCode) (Ordinaria • \(formattedUserFare)) · Viaja ~\(cand.busRideMinutes) min (\(cand.intermediateStopsCount) paradas intermedias)"
-                                    : "2. Toma \(cand.routeCode) en cualquier punto de la calle (Externa • Sin QR) · Viaja ~\(cand.busRideMinutes) min"
-                            )
-
-                            stepRow(
-                                icon: "mappin.and.ellipse",
-                                bgHex: "#1E3A8A",
-                                iconColor: Color(hex: "#93C5FD"),
-                                text: cand.walkFinalMinutes > 0
-                                    ? "3. Baja en \(cand.alightingPointName) y camina \(cand.walkFinalMinutes) min (\(cand.walkFinalMeters) m) hasta \(selectedDestination.shortName)"
-                                    : "3. Baja en \(cand.alightingPointName) (frente a \(selectedDestination.shortName))"
-                            )
-                        }
-                    }
-                    .padding(12)
-                    .background(Color(hex: "#2C2C2E"))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                    HStack(spacing: 10) {
-                        Button {
-                            viewModel.startGuidedRoute(
-                                from: selectedOrigin,
-                                to: selectedDestination,
-                                candidate: cand,
-                                optionIndex: selectedCandidateIndex
-                            )
-                            dismiss()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "location.north.fill")
-                                    .font(.subheadline.weight(.bold))
-                                Text(
-                                    cand.kind == .ordinaryInService
-                                        ? "Ir (Notificar a 5 min del paradero)"
-                                        : "Ir con esta ruta"
+                        // Timeline visual paso a paso (sin párrafos largos)
+                        VStack(alignment: .leading, spacing: 0) {
+                            if cand.kind == .walkingDirect {
+                                visualTimelineRow(
+                                    icon: "figure.walk",
+                                    color: BCTheme.cyanAccent,
+                                    title: "Caminar a \(selectedDestination.shortName)",
+                                    subtitle: "\(cand.walkInitialMeters) m por calles",
+                                    trailingValue: "\(cand.walkInitialMinutes)m",
+                                    isLast: true
                                 )
-                                .font(.subheadline.weight(.bold))
+                            } else {
+                                let isOrd = cand.kind == .ordinaryInService
+                                visualTimelineRow(
+                                    icon: "figure.walk",
+                                    color: BCTheme.cyanAccent,
+                                    title: isOrd ? "Paradero \(cand.boardingPointName)" : "Vía de \(cand.routeCode)",
+                                    subtitle: "\(cand.walkInitialMeters) m a pie",
+                                    trailingValue: "\(cand.walkInitialMinutes)m",
+                                    isLast: false
+                                )
+
+                                visualTimelineRow(
+                                    icon: "bus.fill",
+                                    color: Color(hex: cand.colorHex),
+                                    title: cand.routeCode,
+                                    subtitle: isOrd
+                                        ? "\(cand.intermediateStopsCount) paradas · Pago QR"
+                                        : "Ruta Externa · Abordaje libre",
+                                    trailingValue: "\(cand.busRideMinutes)m",
+                                    isLast: false
+                                )
+
+                                visualTimelineRow(
+                                    icon: "mappin.and.ellipse",
+                                    color: BCTheme.destructiveRed,
+                                    title: selectedDestination.shortName,
+                                    subtitle: cand.walkFinalMinutes > 0
+                                        ? "Baja en \(cand.alightingPointName) · \(cand.walkFinalMeters) m"
+                                        : "Baja en \(cand.alightingPointName)",
+                                    trailingValue: cand.walkFinalMinutes > 0 ? "\(cand.walkFinalMinutes)m" : "Llegada",
+                                    isLast: true
+                                )
                             }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 44)
-                            .background(Color(hex: "#34C759"))
-                            .clipShape(Capsule())
                         }
+                        .padding(12)
+                        .background(Color(hex: "#23252B"))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 2)
+                .padding(.bottom, 10)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 20)
+
+            if let cand = cand {
+                sheetBottomCTABar(candidate: cand, bottomPadding: bottomPadding)
+            }
         }
     }
 
-    // ——— NIVEL 3: TODAS LAS OPCIONES (Rutas Ordinarias + Rutas Externas + Caminata) ———
-    private var fullSheetContent: some View {
+    // ——— NIVEL 3: TODAS LAS OPCIONES (Detalle completo pero limpio y minimalista) ———
+    private func fullSheetContent(bottomPadding: CGFloat) -> some View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    // Banner de advertencia general si se está sugiriendo una Ruta Externa por falta de Ordinarias o por exceso de tiempo/caminata
+                VStack(alignment: .leading, spacing: 11) {
+                    // Aviso compacto único superior si aplica ruta externa por falta de ordinarias
                     if let warning = evaluationResult?.primaryBannerWarning {
-                        HStack(alignment: .top, spacing: 8) {
+                        HStack(spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.caption.weight(.bold))
                                 .foregroundColor(BCTheme.amber)
-                                .padding(.top, 2)
                             Text(warning)
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.white.opacity(0.9))
-                                .fixedSize(horizontal: false, vertical: true)
+                                .lineLimit(2)
                         }
-                        .padding(12)
-                        .background(BCTheme.amber.opacity(0.15))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(BCTheme.amber.opacity(0.14))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(BCTheme.amber.opacity(0.5), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(BCTheme.amber.opacity(0.4), lineWidth: 1)
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
 
                     // Chips de Filtro Rápido
@@ -1591,7 +1586,7 @@ struct RoutePlannerView: View {
                         }
                     }
 
-                    Text("OPCIONES EVALUADAS ENTRE RUTAS ORDINARIAS, EXTERNAS Y CAMINATA (\(displayedCandidates.count))")
+                    Text("OPCIONES DISPONIBLES (\(displayedCandidates.count))")
                         .font(.system(size: 10, weight: .heavy))
                         .foregroundColor(.white.opacity(0.5))
                         .padding(.top, 2)
@@ -1601,48 +1596,65 @@ struct RoutePlannerView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 4)
                 .padding(.bottom, 14)
             }
 
-            // Botón Inferior Fijo [Ir / Iniciar Guía en el Mapa]
             if let cand = activeCandidate {
-                VStack(spacing: 0) {
-                    Divider().background(Color(hex: "#2C2C2E"))
-                    Button {
-                        viewModel.startGuidedRoute(
-                            from: selectedOrigin,
-                            to: selectedDestination,
-                            candidate: cand,
-                            optionIndex: selectedCandidateIndex
-                        )
-                        dismiss()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "location.north.fill")
-                                .font(.subheadline.weight(.bold))
-                            Text(
-                                cand.kind == .ordinaryInService
-                                    ? "Ir con \(cand.routeCode) (Aviso auto. a 5 min del paradero)"
-                                    : "Ir con \(cand.routeCode)"
-                            )
-                            .font(.subheadline.weight(.bold))
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(Color(hex: "#34C759"))
-                        .clipShape(Capsule())
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                }
-                .background(Color(hex: "#1C1C1E"))
+                sheetBottomCTABar(candidate: cand, bottomPadding: bottomPadding)
             }
         }
     }
 
-    // MARK: - Tarjeta de Candidato Evaluado (Ordinaria vs Externa vs A Pie)
+    private func sheetBottomCTABar(candidate: EvaluatedRouteCandidate, bottomPadding: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            Divider().background(Color.white.opacity(0.08))
+            Button {
+                viewModel.startGuidedRoute(
+                    from: selectedOrigin,
+                    to: selectedDestination,
+                    candidate: candidate,
+                    optionIndex: selectedCandidateIndex
+                )
+                dismiss()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "location.north.fill")
+                        .font(.subheadline.weight(.bold))
+                    Text(
+                        candidate.kind == .walkingDirect
+                            ? "Iniciar caminata"
+                            : "Ir con \(candidate.routeCode)"
+                    )
+                    .font(.subheadline.weight(.bold))
+
+                    if candidate.kind == .ordinaryInService {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bell.badge.fill")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("5m")
+                                .font(.system(size: 10.5, weight: .heavy))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.22))
+                        .clipShape(Capsule())
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(Color(hex: "#34C759"))
+                .clipShape(Capsule())
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, bottomPadding + 10)
+        }
+        .background(Color(hex: "#18191D").opacity(0.98))
+    }
+
+    // MARK: - Tarjeta de Candidato Evaluado en Nivel Grande (Detalle Completo Minimalista)
     private func evaluatedCandidateCard(candidate: EvaluatedRouteCandidate, index: Int) -> some View {
         let isSelected = selectedCandidateIndex == index
         let isOrd = candidate.kind == .ordinaryInService
@@ -1653,110 +1665,227 @@ struct RoutePlannerView: View {
             selectedCandidateIndex = index
             updatePolylinesAndCamera(for: candidate)
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top) {
-                    HStack(spacing: 10) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(Color(hex: candidate.colorHex).opacity(0.22))
-                                .frame(width: 36, height: 36)
-                            Image(systemName: candidate.kind == .walkingDirect ? "figure.walk" : "bus.fill")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundColor(Color(hex: candidate.colorHex))
+            VStack(alignment: .leading, spacing: 9) {
+                // Cabecera: Código + Tipo + Sugerida + Tiempo/Distancia
+                HStack(alignment: .center, spacing: 8) {
+                    Text(candidate.routeCode)
+                        .font(.system(size: 11.5, weight: .black).monospaced())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(hex: candidate.colorHex))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                    modeBadgePill(for: candidate)
+
+                    if candidate.isRecommendedPrimary {
+                        HStack(spacing: 2) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 8))
+                            Text("Sugerida")
+                                .font(.system(size: 9.5, weight: .bold))
                         }
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 6) {
-                                Text(candidate.routeCode)
-                                    .font(.system(size: 11, weight: .black).monospaced())
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 7)
-                                    .padding(.vertical, 2)
-                                    .background(Color(hex: candidate.colorHex))
-                                    .clipShape(RoundedRectangle(cornerRadius: 5))
-
-                                Text(
-                                    isOrd
-                                        ? "ORDINARIA • TRACKING & QR"
-                                        : (isExt ? "EXTERNA • ABORDAJE EN VÍA" : "PEATONAL")
-                                )
-                                .font(.system(size: 8.5, weight: .heavy))
-                                .foregroundColor(isOrd ? BCTheme.emerald : (isExt ? BCTheme.amber : BCTheme.cyanAccent))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background((isOrd ? BCTheme.emerald : (isExt ? BCTheme.amber : BCTheme.cyanAccent)).opacity(0.15))
-                                .clipShape(Capsule())
-
-                                if candidate.isRecommendedPrimary {
-                                    Text("★ Sugerida")
-                                        .font(.system(size: 9, weight: .bold))
-                                        .foregroundColor(Color(hex: "#4ADE80"))
-                                }
-                            }
-
-                            if candidate.kind == .walkingDirect {
-                                Text("Caminata directa (\(candidate.totalDistanceLabel)) de \(selectedOrigin.shortName) a \(selectedDestination.shortName)")
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.75))
-                                    .multilineTextAlignment(.leading)
-                            } else if isOrd {
-                                Text("Subir en Paradero \(candidate.boardingPointName) (\(candidate.walkInitialMinutes)m a pie) → Bajar en Paradero \(candidate.alightingPointName) (\(candidate.walkFinalMinutes)m a pie)")
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.8))
-                                    .multilineTextAlignment(.leading)
-                            } else {
-                                Text("Subir en cualquier punto de la vía (\(candidate.boardingPointName), a \(candidate.walkInitialMinutes)m) → Bajar en vía (\(candidate.walkFinalMinutes)m a pie)")
-                                    .font(.caption2)
-                                    .foregroundColor(.white.opacity(0.8))
-                                    .multilineTextAlignment(.leading)
-                            }
-                        }
+                        .foregroundColor(Color(hex: "#4ADE80"))
                     }
 
                     Spacer()
 
-                    VStack(alignment: .trailing, spacing: 2) {
+                    VStack(alignment: .trailing, spacing: 1) {
                         Text("~\(candidate.totalDurationMinutes) min")
                             .font(.subheadline.weight(.black).monospacedDigit())
                             .foregroundColor(candidate.isRecommendedPrimary ? Color(hex: "#4ADE80") : .white)
                         Text(candidate.totalDistanceLabel)
-                            .font(.system(size: 9.5, weight: .semibold))
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.white.opacity(0.55))
                     }
                 }
 
-                Divider().background(Color(hex: "#2C2C2E"))
+                // Cadena gráfica de tramos (Caminata -> Bus -> Caminata)
+                journeyGraphicStrip(candidate: candidate)
 
-                HStack {
-                    if isOrd {
-                        Image(systemName: "bell.badge.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(BCTheme.emerald)
-                        Text("Tarifa QR: \(formattedUserFare) • Notificación automática a 5 min del paradero")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(BCTheme.emerald)
-                    } else if isExt {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(BCTheme.amber)
-                        Text("Ruta Externa referencial: Sin tracking GPS, sin pago QR ni avisos de paradero")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(BCTheme.amber)
+                // Detalle concreto de paraderos/vía y servicio en 2 líneas limpias
+                VStack(alignment: .leading, spacing: 4) {
+                    if candidate.kind == .walkingDirect {
+                        Label(
+                            "\(selectedOrigin.shortName) → \(selectedDestination.shortName) (\(candidate.walkInitialMeters) m)",
+                            systemImage: "figure.walk"
+                        )
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.78))
+                        .lineLimit(1)
                     } else {
-                        Text("Sin costo (Gratis) · Ruta peatonal por las calles de Tacna")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.65))
+                        HStack(spacing: 6) {
+                            Image(systemName: isOrd ? "mappin.circle.fill" : "road.lanes")
+                                .font(.system(size: 10.5))
+                                .foregroundColor(isOrd ? BCTheme.emerald : BCTheme.amber)
+                            Text(
+                                isOrd
+                                    ? "Sube: \(candidate.boardingPointName) · Baja: \(candidate.alightingPointName)"
+                                    : "Vía: \(candidate.boardingPointName) · Baja en vía"
+                            )
+                            .font(.caption2.weight(.medium))
+                            .foregroundColor(.white.opacity(0.84))
+                            .lineLimit(1)
+                        }
                     }
-                    Spacer()
+
+                    HStack(spacing: 12) {
+                        if isOrd {
+                            Label("QR \(formattedUserFare)", systemImage: "qrcode")
+                                .foregroundColor(BCTheme.emerald)
+                            Label("Aviso 5m", systemImage: "bell.badge.fill")
+                                .foregroundColor(BCTheme.emerald)
+                            Label("\(candidate.intermediateStopsCount) paradas", systemImage: "bus.fill")
+                                .foregroundColor(.white.opacity(0.65))
+                        } else if isExt {
+                            Label("Sin GPS", systemImage: "location.slash.fill")
+                                .foregroundColor(BCTheme.amber)
+                            Label("Sin QR", systemImage: "xmark.circle")
+                                .foregroundColor(BCTheme.amber)
+                            Label("Abordaje en vía", systemImage: "hand.raised.fill")
+                                .foregroundColor(.white.opacity(0.7))
+                        } else {
+                            Label("Sin costo · Ruta peatonal", systemImage: "leaf.fill")
+                                .foregroundColor(BCTheme.cyanAccent)
+                        }
+                        Spacer()
+                    }
+                    .font(.system(size: 10, weight: .semibold))
                 }
             }
             .padding(12)
-            .background(Color(hex: "#1C1C1E"))
+            .background(Color(hex: "#212329"))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isSelected ? Color(hex: "#0A84FF") : Color(hex: "#2C2C2E"), lineWidth: isSelected ? 2 : 1)
+                    .stroke(isSelected ? Color(hex: "#0A84FF") : Color.white.opacity(0.08), lineWidth: isSelected ? 2 : 1)
             )
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    // MARK: - Subvistas Auxiliares Minimalistas
+    private func modeBadgePill(for candidate: EvaluatedRouteCandidate) -> some View {
+        let isOrd = candidate.kind == .ordinaryInService
+        let isExt = candidate.kind == .externalFreeBoarding
+        let tint: Color = isOrd ? BCTheme.emerald : (isExt ? BCTheme.amber : BCTheme.cyanAccent)
+        let label = isOrd ? "Ordinaria" : (isExt ? "Externa" : "A pie")
+        let icon = isOrd ? "dot.radiowaves.left.and.right" : (isExt ? "exclamationmark.triangle.fill" : "figure.walk")
+
+        return HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 8.5, weight: .bold))
+            Text(label)
+                .font(.system(size: 9.5, weight: .heavy))
+        }
+        .foregroundColor(tint)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(tint.opacity(0.15))
+        .clipShape(Capsule())
+    }
+
+    private func journeyGraphicStrip(candidate: EvaluatedRouteCandidate) -> some View {
+        HStack(spacing: 6) {
+            if candidate.kind == .walkingDirect {
+                HStack(spacing: 4) {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(BCTheme.cyanAccent)
+                    Text("\(candidate.walkInitialMinutes)m · \(candidate.totalDistanceLabel)")
+                        .font(.system(size: 11, weight: .bold).monospacedDigit())
+                        .foregroundColor(.white.opacity(0.9))
+                }
+            } else {
+                HStack(spacing: 3) {
+                    Image(systemName: "figure.walk")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundColor(BCTheme.cyanAccent)
+                    Text("\(candidate.walkInitialMinutes)m")
+                        .font(.system(size: 10.5, weight: .bold).monospacedDigit())
+                        .foregroundColor(.white.opacity(0.85))
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 8.5, weight: .bold))
+                    .foregroundColor(.white.opacity(0.35))
+
+                HStack(spacing: 4) {
+                    Image(systemName: "bus.fill")
+                        .font(.system(size: 9.5, weight: .bold))
+                    Text("\(candidate.routeCode) · \(candidate.busRideMinutes)m")
+                        .font(.system(size: 10.5, weight: .bold).monospaced())
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(Color(hex: candidate.colorHex).opacity(0.32))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color(hex: candidate.colorHex).opacity(0.8), lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                if candidate.walkFinalMinutes > 0 {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundColor(.white.opacity(0.35))
+
+                    HStack(spacing: 3) {
+                        Image(systemName: "figure.walk")
+                            .font(.system(size: 10.5, weight: .bold))
+                            .foregroundColor(BCTheme.cyanAccent)
+                        Text("\(candidate.walkFinalMinutes)m")
+                            .font(.system(size: 10.5, weight: .bold).monospacedDigit())
+                            .foregroundColor(.white.opacity(0.85))
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func visualTimelineRow(
+        icon: String,
+        color: Color,
+        title: String,
+        subtitle: String,
+        trailingValue: String,
+        isLast: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            VStack(spacing: 2) {
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.22))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(color)
+                }
+                if !isLast {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.16))
+                        .frame(width: 2, height: 18)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Text(trailingValue)
+                .font(.caption.weight(.bold).monospacedDigit())
+                .foregroundColor(color)
+                .padding(.top, 4)
         }
     }
 
@@ -1810,23 +1939,6 @@ struct RoutePlannerView: View {
                     .frame(width: 58, height: 2.5)
                     .clipShape(Capsule())
             }
-        }
-    }
-
-    private func stepRow(icon: String, bgHex: String, iconColor: Color, text: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            ZStack {
-                Circle()
-                    .fill(Color(hex: bgHex))
-                    .frame(width: 26, height: 26)
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(iconColor)
-            }
-            Text(text)
-                .font(.caption)
-                .foregroundColor(.white.opacity(0.9))
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -1979,17 +2091,11 @@ struct RoutePlannerView: View {
         return "S/. 0.70"
     }
 
-    private var sheetSnapLabel: String {
-        switch sheetSnap {
-        case .compact: return "Desliza hacia arriba para ver pasos y todas las rutas (Ordinarias y Externas)"
-        case .medium: return "Desliza hacia arriba para comparar todas las rutas disponibles"
-        case .full: return "Toca para contraer hoja de rutas"
-        }
-    }
-
-    private func currentSheetHeight(in totalHeight: CGFloat) -> CGFloat {
-        let base = sheetSnap.height(in: totalHeight)
-        let adjusted = base - sheetDragTranslation
-        return min(max(adjusted, 195), totalHeight * 0.88)
+    private func currentSheetHeight(in totalHeight: CGFloat, bottomInset: CGFloat) -> CGFloat {
+        let safeBottom = max(bottomInset, 18)
+        let base = sheetSnap.height(in: totalHeight, bottomInset: safeBottom)
+        let minH = RouteSheetSnapLevel.compact.height(in: totalHeight, bottomInset: safeBottom) - 24
+        let maxH = RouteSheetSnapLevel.full.height(in: totalHeight, bottomInset: safeBottom) + 28
+        return min(max(base - sheetDragTranslation, minH), maxH)
     }
 }
