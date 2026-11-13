@@ -113,6 +113,13 @@ fun PayQrScreen(
         QrGuestGate(onGoToLogin = viewModel::leaveGuestForOnboarding)
         return
     }
+    if (!state.currentUser.hasVerifiedPhone) {
+        QrPhoneRequiredGate(
+            userName = state.currentUser.displayFullName,
+            onLinkPhone = viewModel::openPhoneLinkingFromApp
+        )
+        return
+    }
 
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -782,6 +789,56 @@ private fun QrGuestGate(onGoToLogin: () -> Unit) {
             colors = ButtonDefaults.buttonColors(containerColor = BCColors.Emerald)
         ) {
             Text("Iniciar Sesión o Crear Cuenta", color = Color.Black, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun QrPhoneRequiredGate(userName: String, onLinkPhone: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BCColors.DarkBackground)
+            .padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(76.dp)
+                .clip(CircleShape)
+                .background(BCColors.Emerald.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(38.dp))
+        }
+        Spacer(Modifier.height(14.dp))
+        Text("Hola, $userName", color = BCColors.CyanAccent, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Accede con tu número celular para poder hacer pagos QR",
+            color = Color.White,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Si desea hacer pagos dentro de la app o acceder a los beneficios como descuentos o promociones, registre su celular.",
+            color = BCColors.TextSecondary,
+            textAlign = TextAlign.Center,
+            fontSize = 14.sp
+        )
+        Spacer(Modifier.height(22.dp))
+        Button(
+            onClick = onLinkPhone,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = BCColors.Emerald)
+        ) {
+            Text("Vincular número celular", color = Color.Black, fontWeight = FontWeight.Bold)
         }
     }
 }

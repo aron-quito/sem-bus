@@ -144,12 +144,33 @@ struct CarnetReviewRequest: Codable, Identifiable, Equatable {
 // MARK: - Perfil de Usuario Autenticado
 struct UserAuth: Codable, Identifiable, Equatable {
     let id: String
-    let phone: String
+    var phone: String
     var name: String?
+    var firstName: String?
+    var lastName: String?
+    var email: String?
+    var authProvider: String?
+    var phoneVerified: Bool?
     var role: String
     var pointsBalance: Int
     var isNewUser: Bool
     var studentVerification: StudentVerificationInfo?
+
+    var hasVerifiedPhone: Bool {
+        let cleaned = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return false }
+        return phoneVerified ?? true
+    }
+
+    var displayFullName: String {
+        let combined = [firstName, lastName]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        if !combined.isEmpty { return combined }
+        if let n = name?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return n }
+        return "Pasajero BC"
+    }
 
     var roleType: UserRoleType {
         UserRoleType(rawValue: role) ?? .adult
@@ -1467,6 +1488,7 @@ struct AdminRouteDTO: Codable, Identifiable {
     let iconName: String?
     let keyStopIds: [String]?
     let pathCoordinates: [[Double]]?
+    let isClosedLoop: Bool?
 
     func toRouteCatalogItem() -> TacnaOfficialRouteCatalogItem {
         let resolvedType: RouteServiceType = (routeType?.lowercased() == "external") ? .external : .ordinary
@@ -1506,7 +1528,8 @@ struct AdminRouteDTO: Codable, Identifiable {
             scheduleLabel: scheduleLabel ?? "05:30 - 22:30",
             colorHex: colorHex ?? (resolvedType == .ordinary ? "#2563EB" : "#64748B"),
             keyStopIds: keyStopIds ?? [],
-            pathCoordinates: pathCoordinates ?? []
+            pathCoordinates: pathCoordinates ?? [],
+            isClosedLoop: isClosedLoop ?? false
         )
     }
 }
@@ -1531,6 +1554,7 @@ struct TacnaOfficialRouteCatalogItem: Identifiable, Equatable {
     let colorHex: String
     let keyStopIds: [String]
     let pathCoordinates: [[Double]]
+    var isClosedLoop: Bool = false
 
     var isOrdinary: Bool {
         routeType == .ordinary
@@ -1910,6 +1934,32 @@ struct EvaluatedRouteCandidate: Identifiable, Equatable {
     var isRecommendedPrimary: Bool
     var externalRecommendationReason: String?
 
+    // Campos para rutas con transbordo (2 rutas)
+    var isTransfer: Bool = false
+    var secondRouteCode: String? = nil
+    var secondRouteColorHex: String? = nil
+    var transferPointName: String? = nil
+    var transferLatitude: Double? = nil
+    var transferLongitude: Double? = nil
+    var transferWalkMeters: Int = 0
+    var firstBusRideMinutes: Int = 0
+    var secondBusRideMinutes: Int = 0
+    var secondBusTransitCoords: [[Double]] = []
+    var transferWalkCoords: [[Double]] = []
+
+    var transferCoordinate: CLLocationCoordinate2D? {
+        guard let lat = transferLatitude, let lon = transferLongitude else { return nil }
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+
+    var secondBusTransitCLCoordinates: [CLLocationCoordinate2D] {
+        secondBusTransitCoords.compactMap { $0.count >= 2 ? CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) : nil }
+    }
+
+    var transferWalkCLCoordinates: [CLLocationCoordinate2D] {
+        transferWalkCoords.compactMap { $0.count >= 2 ? CLLocationCoordinate2D(latitude: $0[0], longitude: $0[1]) : nil }
+    }
+
     var boardingCoordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: boardingLatitude, longitude: boardingLongitude)
     }
@@ -1938,7 +1988,7 @@ struct EvaluatedRouteCandidate: Identifiable, Equatable {
     }
 
     var walkTotalMeters: Int {
-        walkInitialMeters + walkFinalMeters
+        walkInitialMeters + transferWalkMeters + walkFinalMeters
     }
 
     var supportsFiveMinuteAlert: Bool {
@@ -1983,10 +2033,10 @@ enum RouteAutomationEngine {
         from fullPolyline: [CLLocationCoordinate2D],
         start: CLLocationCoordinate2D,
         end: CLLocationCoordinate2D
-    ) -> (subCoords: [CLLocationCoordinate2D], boardVertex: CLLocationCoordinate2D, alightVertex: CLLocationCoordinate2D, lengthMeters: Double) {
+    ) -> (subCoords: [CLLocationCoordinate2D], boardVertex: CLLocationCoordinate2D, alightVertex: CLLocationCoordinate2D, lengthMeters: Double, isForwardValid: Bool) {
         guard fullPolyline.count >= 2 else {
             let d = distanceMeters(start, end) * 1.25
-            return ([start, end], start, end, d)
+            return ([start, end], start, end, d, true)
         }
 
         var startIdx = 0
@@ -2007,20 +2057,19 @@ enum RouteAutomationEngine {
             }
         }
 
+        if startIdx > endIdx {
+            return ([], fullPolyline[startIdx], fullPolyline[endIdx], 0, false)
+        }
+
         if startIdx == endIdx {
             if endIdx < fullPolyline.count - 1 {
                 endIdx += 1
-            } else if startIdx > 0 {
-                startIdx -= 1
+            } else {
+                return ([], fullPolyline[startIdx], fullPolyline[endIdx], 0, false)
             }
         }
 
-        let slice: [CLLocationCoordinate2D]
-        if startIdx <= endIdx {
-            slice = Array(fullPolyline[startIdx...endIdx])
-        } else {
-            slice = Array(fullPolyline[endIdx...startIdx].reversed())
-        }
+        let slice = Array(fullPolyline[startIdx...endIdx])
 
         var totalMeters: Double = 0
         if slice.count >= 2 {
@@ -2033,7 +2082,7 @@ enum RouteAutomationEngine {
 
         let boardPt = slice.first ?? start
         let alightPt = slice.last ?? end
-        return (slice, boardPt, alightPt, max(totalMeters, 120))
+        return (slice, boardPt, alightPt, max(totalMeters, 120), true)
     }
 
     /// Evalúa de forma automática las opciones para ir desde `origin` hasta `destination`:
@@ -2098,9 +2147,15 @@ enum RouteAutomationEngine {
         // 2. Evaluar cada Ruta Ordinaria En Servicio (Abordaje y bajada en Paraderos Oficiales)
         let activeOrdRoutes = routes.filter { $0.isOrdinary && $0.isInService }
         for route in activeOrdRoutes {
-            let routeStops = route.resolvedStops(using: stops)
-            guard routeStops.count >= 2 else { continue }
+            let baseStops = route.resolvedStops(using: stops)
+            guard baseStops.count >= 2 else { continue }
             let fullPoly = route.resolvedPolylineCoordinates(using: stops)
+            let isLoop = route.isClosedLoop ||
+                (baseStops.count >= 3 && baseStops.first?.id == baseStops.last?.id) ||
+                (fullPoly.count >= 4 && distanceMeters(fullPoly.first!, fullPoly.last!) <= 80.0)
+            let routeStops = (isLoop && baseStops.first?.id != baseStops.last?.id)
+                ? (baseStops + [baseStops.first!])
+                : baseStops
 
             var bestPairForRoute: (
                 boardStop: TacnaDestinationPlace,
@@ -2112,10 +2167,12 @@ enum RouteAutomationEngine {
                 scoreMinutes: Double
             )? = nil
 
-            for (i, sBoard) in routeStops.enumerated() {
+            for (i, sBoard) in routeStops.enumerated() where i + 1 < routeStops.count {
                 let dWalk1 = distanceMeters(originCoord, sBoard.coordinate) * 1.18
-                for (j, sAlight) in routeStops.enumerated() where i != j {
-                    let dWalk2 = distanceMeters( sAlight.coordinate, destCoord) * 1.18
+                for j in (i + 1)..<routeStops.count {
+                    let sAlight = routeStops[j]
+                    if sAlight.id == sBoard.id { continue }
+                    let dWalk2 = distanceMeters(sAlight.coordinate, destCoord) * 1.18
                     // Descartar si caminar a los paraderos es más largo que caminar directo al destino + margen
                     if dWalk1 + dWalk2 > max(directRawMeters * 1.35, 650) {
                         continue
@@ -2139,11 +2196,27 @@ enum RouteAutomationEngine {
 
             guard let chosen = bestPairForRoute else { continue }
 
-            let subSegment = extractRouteSubPolyline(
-                from: fullPoly,
-                start: chosen.boardStop.coordinate,
-                end: chosen.alightStop.coordinate
-            )
+            let subSegment: (subCoords: [CLLocationCoordinate2D], boardVertex: CLLocationCoordinate2D, alightVertex: CLLocationCoordinate2D, lengthMeters: Double, isForwardValid: Bool)
+            if isLoop && chosen.alightIdx == routeStops.count - 1 && fullPoly.count >= 2 {
+                var boardPolyIdx = fullPoly.indices.min(by: {
+                    distanceMeters(fullPoly[$0], chosen.boardStop.coordinate) < distanceMeters(fullPoly[$1], chosen.boardStop.coordinate)
+                }) ?? 0
+                if boardPolyIdx >= fullPoly.count - 1 && fullPoly.count > 2 {
+                    boardPolyIdx = fullPoly.count - 2
+                }
+                let slice = Array(fullPoly[boardPolyIdx...(fullPoly.count - 1)])
+                var segLen = 0.0
+                if slice.count >= 2 {
+                    for k in 0..<(slice.count - 1) { segLen += distanceMeters(slice[k], slice[k + 1]) }
+                }
+                subSegment = (slice, slice.first ?? chosen.boardStop.coordinate, slice.last ?? chosen.alightStop.coordinate, max(segLen, 120), true)
+            } else {
+                subSegment = extractRouteSubPolyline(
+                    from: fullPoly,
+                    start: chosen.boardStop.coordinate,
+                    end: chosen.alightStop.coordinate
+                )
+            }
 
             let speedKmh = max(route.averageSpeedKmh, 16.0)
             let intermediateIndices: [Int]
@@ -2228,6 +2301,7 @@ enum RouteAutomationEngine {
                 start: originCoord,
                 end: destCoord
             )
+            guard subSegment.isForwardValid else { continue }
 
             let dWalk1 = Int(round(distanceMeters(originCoord, subSegment.boardVertex) * 1.18))
             let dWalk2 = Int(round(distanceMeters(subSegment.alightVertex, destCoord) * 1.18))
@@ -2307,6 +2381,30 @@ enum RouteAutomationEngine {
                 )
             )
         }
+
+        let loopReboardCandidates = evaluateClosedLoopReboardCandidates(
+            originCoord: originCoord,
+            destCoord: destCoord,
+            directRawMeters: directRawMeters,
+            stops: stops,
+            activeOrdRoutes: activeOrdRoutes,
+            extRoutes: extRoutes,
+            activeBuses: activeBuses
+        )
+        ordinaryCandidates.append(contentsOf: loopReboardCandidates.filter { $0.kind == .ordinaryInService })
+        externalCandidates.append(contentsOf: loopReboardCandidates.filter { $0.kind == .externalFreeBoarding })
+
+        let transferCandidates = evaluateTransferPairs(
+            originCoord: originCoord,
+            destCoord: destCoord,
+            directRawMeters: directRawMeters,
+            stops: stops,
+            activeOrdRoutes: activeOrdRoutes,
+            extRoutes: extRoutes,
+            activeBuses: activeBuses
+        )
+        ordinaryCandidates.append(contentsOf: transferCandidates.filter { $0.kind == .ordinaryInService }.prefix(2))
+        externalCandidates.append(contentsOf: transferCandidates.filter { $0.kind == .externalFreeBoarding }.prefix(2))
 
         // Ordenar cada grupo por menor duración total y menor caminata
         ordinaryCandidates.sort {
@@ -2396,6 +2494,402 @@ enum RouteAutomationEngine {
             primaryBannerWarning: bannerWarning,
             hasOrdinaryInService: !activeOrdRoutes.isEmpty
         )
+    }
+
+    private struct TransferAnchor {
+        let coord: CLLocationCoordinate2D
+        let label: String
+        let stop: TacnaDestinationPlace?
+    }
+
+    private static func buildAnchorsForRoute(
+        _ route: TacnaOfficialRouteCatalogItem,
+        stops: [TacnaDestinationPlace]
+    ) -> ([TransferAnchor], [CLLocationCoordinate2D]) {
+        let fullPoly = route.resolvedPolylineCoordinates(using: stops)
+        if route.isOrdinary {
+            let routeStops = route.resolvedStops(using: stops)
+            return (routeStops.map { TransferAnchor(coord: $0.coordinate, label: $0.shortName, stop: $0) }, fullPoly)
+        }
+        guard fullPoly.count >= 2 else { return ([], fullPoly) }
+        var sampled: [TransferAnchor] = []
+        var lastAdded: CLLocationCoordinate2D? = nil
+        for (idx, pt) in fullPoly.enumerated() {
+            let isEdge = idx == 0 || idx == fullPoly.count - 1
+            if isEdge || lastAdded == nil || distanceMeters(lastAdded!, pt) >= 140.0 {
+                let nearest = stops.min { distanceMeters($0.coordinate, pt) < distanceMeters($1.coordinate, pt) }
+                let label: String
+                if let nearest, distanceMeters(nearest.coordinate, pt) < 280.0 {
+                    label = "alt. \(nearest.shortName)"
+                } else {
+                    label = "vía \(route.code)"
+                }
+                sampled.append(TransferAnchor(coord: pt, label: label, stop: nil))
+                lastAdded = pt
+            }
+        }
+        return (sampled, fullPoly)
+    }
+
+    private static func evaluateTransferPairs(
+        originCoord: CLLocationCoordinate2D,
+        destCoord: CLLocationCoordinate2D,
+        directRawMeters: Double,
+        stops: [TacnaDestinationPlace],
+        activeOrdRoutes: [TacnaOfficialRouteCatalogItem],
+        extRoutes: [TacnaOfficialRouteCatalogItem],
+        activeBuses: [ActiveBusModel]
+    ) -> [EvaluatedRouteCandidate] {
+        guard directRawMeters > 450.0 else { return [] }
+        let pool = activeOrdRoutes + extRoutes
+        guard pool.count >= 2 else { return [] }
+
+        let routeData: [(route: TacnaOfficialRouteCatalogItem, anchors: [TransferAnchor], poly: [CLLocationCoordinate2D])] = pool.compactMap { r in
+            let (anchors, poly) = buildAnchorsForRoute(r, stops: stops)
+            return anchors.count >= 2 ? (r, anchors, poly) : nil
+        }
+        guard routeData.count >= 2 else { return [] }
+
+        let maxWalkLimit = max(directRawMeters * 0.95, 700.0)
+        let maxSingleWalk = max(directRawMeters * 0.72, 550.0)
+        var transferCandidates: [EvaluatedRouteCandidate] = []
+
+        for (r1, anchors1, poly1) in routeData {
+            let boardOptions = anchors1.enumerated().compactMap { (idx, a) -> (idx: Int, walk1: Double)? in
+                let w = distanceMeters(originCoord, a.coord) * 1.18
+                return w <= maxSingleWalk ? (idx, w) : nil
+            }
+            guard !boardOptions.isEmpty else { continue }
+
+            for (r2, anchors2, poly2) in routeData where r1.id != r2.id {
+                let alightOptions = anchors2.enumerated().compactMap { (idx, a) -> (idx: Int, walk2: Double)? in
+                    let w = distanceMeters(a.coord, destCoord) * 1.18
+                    return w <= maxSingleWalk ? (idx, w) : nil
+                }
+                guard !alightOptions.isEmpty else { continue }
+
+                var bestScore = Double.greatestFiniteMagnitude
+                var bestBoardIdx = -1
+                var bestT1Idx = -1
+                var bestT2Idx = -1
+                var bestAlightIdx = -1
+                var bestWalk1 = 0.0
+                var bestWalkT = 0.0
+                var bestWalk2 = 0.0
+
+                let speed1Mpm = max(r1.averageSpeedKmh, 16.0) * 1000.0 / 60.0
+                let speed2Mpm = max(r2.averageSpeedKmh, 16.0) * 1000.0 / 60.0
+
+                for t1Idx in anchors1.indices {
+                    let t1 = anchors1[t1Idx]
+                    for t2Idx in anchors2.indices {
+                        let t2 = anchors2[t2Idx]
+                        let dTransferRaw = distanceMeters(t1.coord, t2.coord)
+                        if dTransferRaw > 280.0 { continue }
+                        let dTransferWalk = dTransferRaw < 25.0 ? 0.0 : dTransferRaw * 1.18
+
+                        guard let bBest = boardOptions
+                            .filter({ $0.idx < t1Idx && distanceMeters(anchors1[$0.idx].coord, t1.coord) >= 150.0 })
+                            .min(by: { lhs, rhs in
+                                let lScore = (lhs.walk1 / 76.0) + (distanceMeters(anchors1[lhs.idx].coord, t1.coord) * 1.25 / speed1Mpm)
+                                let rScore = (rhs.walk1 / 76.0) + (distanceMeters(anchors1[rhs.idx].coord, t1.coord) * 1.25 / speed1Mpm)
+                                return lScore < rScore
+                            }) else { continue }
+
+                        guard let aBest = alightOptions
+                            .filter({ $0.idx > t2Idx && distanceMeters(t2.coord, anchors2[$0.idx].coord) >= 150.0 })
+                            .min(by: { lhs, rhs in
+                                let lScore = (lhs.walk2 / 76.0) + (distanceMeters(t2.coord, anchors2[lhs.idx].coord) * 1.25 / speed2Mpm)
+                                let rScore = (rhs.walk2 / 76.0) + (distanceMeters(t2.coord, anchors2[rhs.idx].coord) * 1.25 / speed2Mpm)
+                                return lScore < rScore
+                            }) else { continue }
+
+                        let totalWalk = bBest.walk1 + dTransferWalk + aBest.walk2
+                        if totalWalk > maxWalkLimit { continue }
+
+                        let dBus1 = distanceMeters(anchors1[bBest.idx].coord, t1.coord) * 1.25
+                        let dBus2 = distanceMeters(t2.coord, anchors2[aBest.idx].coord) * 1.25
+                        let score = (totalWalk / 76.0) + (dBus1 / speed1Mpm) + (dBus2 / speed2Mpm) + 4.0
+
+                        if score < bestScore {
+                            bestScore = score
+                            bestBoardIdx = bBest.idx
+                            bestT1Idx = t1Idx
+                            bestT2Idx = t2Idx
+                            bestAlightIdx = aBest.idx
+                            bestWalk1 = bBest.walk1
+                            bestWalkT = dTransferWalk
+                            bestWalk2 = aBest.walk2
+                        }
+                    }
+                }
+
+                guard bestBoardIdx >= 0, bestT1Idx >= 0, bestT2Idx >= 0, bestAlightIdx >= 0 else { continue }
+
+                let boardAnchor = anchors1[bestBoardIdx]
+                let t1Anchor = anchors1[bestT1Idx]
+                let t2Anchor = anchors2[bestT2Idx]
+                let alightAnchor = anchors2[bestAlightIdx]
+
+                let seg1 = extractRouteSubPolyline(from: poly1, start: boardAnchor.coord, end: t1Anchor.coord)
+                let seg2 = extractRouteSubPolyline(from: poly2, start: t2Anchor.coord, end: alightAnchor.coord)
+
+                let walk1M = max(Int(round(bestWalk1)), 20)
+                let walkTM = bestWalkT < 25.0 ? 0 : Int(round(bestWalkT))
+                let walk2M = max(Int(round(bestWalk2)), 0)
+
+                let walk1Min = max(1, Int(round(Double(walk1M) / 76.0)))
+                let walkTMin = walkTM < 35 ? 0 : max(1, Int(round(Double(walkTM) / 76.0)))
+                let walk2Min = walk2M < 45 ? 0 : max(1, Int(round(Double(walk2M) / 76.0)))
+
+                let bus1Meters = Int(round(seg1.lengthMeters))
+                let bus2Meters = Int(round(seg2.lengthMeters))
+                let bus1Min = max(2, Int(round((Double(bus1Meters) / 1000.0) / max(r1.averageSpeedKmh, 16.0) * 60.0)))
+                let bus2Min = max(2, Int(round((Double(bus2Meters) / 1000.0) / max(r2.averageSpeedKmh, 16.0) * 60.0)))
+                let transferWaitMin = 4
+                let totalMin = walk1Min + bus1Min + walkTMin + transferWaitMin + bus2Min + walk2Min
+                let totalMeters = walk1M + bus1Meters + walkTM + bus2Meters + walk2M
+
+                let bothOrdinary = r1.isOrdinary && r2.isOrdinary
+                let liveEta = activeBuses.first {
+                    $0.lineNumber.localizedCaseInsensitiveContains(r1.code) ||
+                    r1.code.localizedCaseInsensitiveContains($0.lineNumber)
+                }?.nextStopEtaMinutes
+                let busWaitMin = liveEta ?? min(5, max(3, r1.frequencyMinutes))
+
+                let transferLabel = t1Anchor.label == t2Anchor.label
+                    ? t1Anchor.label
+                    : "\(t1Anchor.label) / \(t2Anchor.label)"
+
+                transferCandidates.append(
+                    EvaluatedRouteCandidate(
+                        id: "cand-transfer-\(r1.id)-\(r2.id)",
+                        kind: bothOrdinary ? .ordinaryInService : .externalFreeBoarding,
+                        route: r1,
+                        routeCode: "\(r1.code) → \(r2.code)",
+                        routeTitle: "Transbordo en \(transferLabel) (2 rutas)",
+                        colorHex: r1.colorHex,
+                        totalDurationMinutes: totalMin,
+                        totalDistanceMeters: totalMeters,
+                        walkInitialMinutes: walk1Min,
+                        walkInitialMeters: walk1M,
+                        busWaitMinutes: busWaitMin,
+                        busRideMinutes: bus1Min + bus2Min + walkTMin + transferWaitMin,
+                        busRideMeters: bus1Meters + bus2Meters,
+                        walkFinalMinutes: walk2Min,
+                        walkFinalMeters: walk2M,
+                        boardingStop: boardAnchor.stop,
+                        alightingStop: alightAnchor.stop,
+                        intermediateStopsCount: 0,
+                        intermediateStopNames: [],
+                        boardingPointName: boardAnchor.label,
+                        alightingPointName: alightAnchor.label,
+                        boardingLatitude: boardAnchor.coord.latitude,
+                        boardingLongitude: boardAnchor.coord.longitude,
+                        alightingLatitude: alightAnchor.coord.latitude,
+                        alightingLongitude: alightAnchor.coord.longitude,
+                        walkToBoardCoords: [
+                            [originCoord.latitude, originCoord.longitude],
+                            [boardAnchor.coord.latitude, boardAnchor.coord.longitude]
+                        ],
+                        busTransitCoords: seg1.subCoords.map { [$0.latitude, $0.longitude] },
+                        walkFinalCoords: walk2M < 35 ? [] : [
+                            [alightAnchor.coord.latitude, alightAnchor.coord.longitude],
+                            [destCoord.latitude, destCoord.longitude]
+                        ],
+                        isRecommendedPrimary: false,
+                        externalRecommendationReason: nil,
+                        isTransfer: true,
+                        secondRouteCode: r2.code,
+                        secondRouteColorHex: r2.colorHex,
+                        transferPointName: transferLabel,
+                        transferLatitude: t1Anchor.coord.latitude,
+                        transferLongitude: t1Anchor.coord.longitude,
+                        transferWalkMeters: walkTM,
+                        firstBusRideMinutes: bus1Min,
+                        secondBusRideMinutes: bus2Min,
+                        secondBusTransitCoords: seg2.subCoords.map { [$0.latitude, $0.longitude] },
+                        transferWalkCoords: walkTM < 25 ? [] : [
+                            [t1Anchor.coord.latitude, t1Anchor.coord.longitude],
+                            [t2Anchor.coord.latitude, t2Anchor.coord.longitude]
+                        ]
+                    )
+                )
+            }
+        }
+
+        return transferCandidates.sorted {
+            if $0.totalDurationMinutes != $1.totalDurationMinutes {
+                return $0.totalDurationMinutes < $1.totalDurationMinutes
+            }
+            return $0.walkTotalMeters < $1.walkTotalMeters
+        }
+    }
+
+    private static func evaluateClosedLoopReboardCandidates(
+        originCoord: CLLocationCoordinate2D,
+        destCoord: CLLocationCoordinate2D,
+        directRawMeters: Double,
+        stops: [TacnaDestinationPlace],
+        activeOrdRoutes: [TacnaOfficialRouteCatalogItem],
+        extRoutes: [TacnaOfficialRouteCatalogItem],
+        activeBuses: [ActiveBusModel]
+    ) -> [EvaluatedRouteCandidate] {
+        var result: [EvaluatedRouteCandidate] = []
+        for route in (activeOrdRoutes + extRoutes) {
+            let routeStops = route.resolvedStops(using: stops)
+            guard routeStops.count >= 2 else { continue }
+            let fullPoly = route.resolvedPolylineCoordinates(using: stops)
+            let isLoop = route.isClosedLoop ||
+                (routeStops.count >= 3 && routeStops.first?.id == routeStops.last?.id) ||
+                (fullPoly.count >= 4 && distanceMeters(fullPoly.first!, fullPoly.last!) <= 80.0)
+            guard isLoop, let terminalStop = routeStops.first else { continue }
+
+            let endCoord = fullPoly.last ?? terminalStop.coordinate
+            let startCoord = fullPoly.first ?? terminalStop.coordinate
+            let speedKmh = max(route.averageSpeedKmh, 16.0)
+            let speedMpm = speedKmh * 1000.0 / 60.0
+
+            var bestI = -1
+            var bestJ = -1
+            var bestWalk1 = 0
+            var bestWalk2 = 0
+            var bestScore = Double.greatestFiniteMagnitude
+
+            for i in 1..<routeStops.count {
+                let sBoard = routeStops[i]
+                if sBoard.id == terminalStop.id { continue }
+                let dWalk1 = distanceMeters(originCoord, sBoard.coordinate) * 1.18
+                for j in 1..<i {
+                    let sAlight = routeStops[j]
+                    if sAlight.id == terminalStop.id { continue }
+                    let dWalk2 = distanceMeters(sAlight.coordinate, destCoord) * 1.18
+                    if dWalk1 + dWalk2 > max(directRawMeters * 1.35, 650.0) { continue }
+
+                    let dBus1 = distanceMeters(sBoard.coordinate, endCoord) * 1.25
+                    let dBus2 = distanceMeters(startCoord, sAlight.coordinate) * 1.25
+                    let estMin = (dWalk1 + dWalk2) / 76.0 + (dBus1 + dBus2) / speedMpm + 4.0
+                    if estMin < bestScore {
+                        bestScore = estMin
+                        bestI = i
+                        bestJ = j
+                        bestWalk1 = max(Int(round(dWalk1)), 20)
+                        bestWalk2 = max(Int(round(dWalk2)), 0)
+                    }
+                }
+            }
+
+            guard bestI >= 0, bestJ >= 0 else { continue }
+
+            let boardStop = routeStops[bestI]
+            let alightStop = routeStops[bestJ]
+
+            let seg1Coords: [CLLocationCoordinate2D]
+            let seg2Coords: [CLLocationCoordinate2D]
+            let seg1Len: Double
+            let seg2Len: Double
+
+            if fullPoly.count >= 2 {
+                var boardPolyIdx = fullPoly.indices.min(by: {
+                    distanceMeters(fullPoly[$0], boardStop.coordinate) < distanceMeters(fullPoly[$1], boardStop.coordinate)
+                }) ?? 0
+                if boardPolyIdx == fullPoly.count - 1 && fullPoly.count > 2 {
+                    boardPolyIdx = fullPoly.count - 2
+                }
+                var alightPolyIdx = fullPoly.indices.min(by: {
+                    distanceMeters(fullPoly[$0], alightStop.coordinate) < distanceMeters(fullPoly[$1], alightStop.coordinate)
+                }) ?? 0
+                if alightPolyIdx == 0 && fullPoly.count > 2 {
+                    alightPolyIdx = 1
+                }
+                seg1Coords = Array(fullPoly[boardPolyIdx...(fullPoly.count - 1)])
+                seg2Coords = Array(fullPoly[0...alightPolyIdx])
+                var d1 = 0.0
+                if seg1Coords.count >= 2 {
+                    for k in 0..<(seg1Coords.count - 1) { d1 += distanceMeters(seg1Coords[k], seg1Coords[k + 1]) }
+                }
+                var d2 = 0.0
+                if seg2Coords.count >= 2 {
+                    for k in 0..<(seg2Coords.count - 1) { d2 += distanceMeters(seg2Coords[k], seg2Coords[k + 1]) }
+                }
+                seg1Len = max(d1, max(distanceMeters(boardStop.coordinate, endCoord) * 1.25, 120.0))
+                seg2Len = max(d2, max(distanceMeters(startCoord, alightStop.coordinate) * 1.25, 120.0))
+            } else {
+                seg1Coords = [boardStop.coordinate, endCoord]
+                seg2Coords = [startCoord, alightStop.coordinate]
+                seg1Len = max(distanceMeters(boardStop.coordinate, endCoord) * 1.25, 120.0)
+                seg2Len = max(distanceMeters(startCoord, alightStop.coordinate) * 1.25, 120.0)
+            }
+
+            let walk1Min = max(1, Int(round(Double(bestWalk1) / 76.0)))
+            let walk2Min = bestWalk2 < 45 ? 0 : max(1, Int(round(Double(bestWalk2) / 76.0)))
+            let bus1Meters = Int(round(seg1Len))
+            let bus2Meters = Int(round(seg2Len))
+            let bus1Min = max(2, Int(round((Double(bus1Meters) / 1000.0) / speedKmh * 60.0)))
+            let bus2Min = max(2, Int(round((Double(bus2Meters) / 1000.0) / speedKmh * 60.0)))
+            let reboardWaitMin = 4
+            let totalMin = walk1Min + bus1Min + reboardWaitMin + bus2Min + walk2Min
+            let totalMeters = bestWalk1 + bus1Meters + bus2Meters + bestWalk2
+
+            let liveEta = activeBuses.first {
+                $0.lineNumber.localizedCaseInsensitiveContains(route.code) ||
+                route.code.localizedCaseInsensitiveContains($0.lineNumber)
+            }?.nextStopEtaMinutes
+            let busWaitMin = liveEta ?? min(5, max(3, route.frequencyMinutes))
+
+            result.append(
+                EvaluatedRouteCandidate(
+                    id: "cand-loop-\(route.id)",
+                    kind: route.isOrdinary ? .ordinaryInService : .externalFreeBoarding,
+                    route: route,
+                    routeCode: "\(route.code) ↻ \(route.code)",
+                    routeTitle: "Fin de vuelta en \(terminalStop.shortName) (bajas y reabordas)",
+                    colorHex: route.colorHex,
+                    totalDurationMinutes: totalMin,
+                    totalDistanceMeters: totalMeters,
+                    walkInitialMinutes: walk1Min,
+                    walkInitialMeters: bestWalk1,
+                    busWaitMinutes: busWaitMin,
+                    busRideMinutes: bus1Min + bus2Min + reboardWaitMin,
+                    busRideMeters: bus1Meters + bus2Meters,
+                    walkFinalMinutes: walk2Min,
+                    walkFinalMeters: bestWalk2,
+                    boardingStop: boardStop,
+                    alightingStop: alightStop,
+                    intermediateStopsCount: 0,
+                    intermediateStopNames: [],
+                    boardingPointName: boardStop.shortName,
+                    alightingPointName: alightStop.shortName,
+                    boardingLatitude: boardStop.latitude,
+                    boardingLongitude: boardStop.longitude,
+                    alightingLatitude: alightStop.latitude,
+                    alightingLongitude: alightStop.longitude,
+                    walkToBoardCoords: [
+                        [originCoord.latitude, originCoord.longitude],
+                        [boardStop.latitude, boardStop.longitude]
+                    ],
+                    busTransitCoords: seg1Coords.map { [$0.latitude, $0.longitude] },
+                    walkFinalCoords: bestWalk2 < 35 ? [] : [
+                        [alightStop.latitude, alightStop.longitude],
+                        [destCoord.latitude, destCoord.longitude]
+                    ],
+                    isRecommendedPrimary: false,
+                    externalRecommendationReason: nil,
+                    isTransfer: true,
+                    secondRouteCode: route.code,
+                    secondRouteColorHex: route.colorHex,
+                    transferPointName: "\(terminalStop.shortName) (Fin de vuelta · Nuevo pasaje)",
+                    transferLatitude: terminalStop.latitude,
+                    transferLongitude: terminalStop.longitude,
+                    transferWalkMeters: 0,
+                    firstBusRideMinutes: bus1Min,
+                    secondBusRideMinutes: bus2Min,
+                    secondBusTransitCoords: seg2Coords.map { [$0.latitude, $0.longitude] },
+                    transferWalkCoords: []
+                )
+            )
+        }
+        return result
     }
 }
 

@@ -439,7 +439,52 @@ TRANSACTIONS_JSON_PATH = ADMIN_WEB_DIR / "transacciones_pos.json"
 CARNET_REQUESTS_JSON_PATH = ADMIN_WEB_DIR / "carnets_sunedu.json"
 
 _student_cooldowns = {}  # user_id/phone -> last_paid_timestamp
+_pending_otps = {}  # phone -> {"code": str, "channel": str, "expires_at": float}
 _admin_data_lock = threading.Lock()
+
+
+def _normalize_pe_phone(raw_phone):
+    digits = "".join(ch for ch in str(raw_phone or "") if ch.isdigit())
+    if digits.startswith("51") and len(digits) == 11:
+        digits = digits[2:]
+    if len(digits) == 9 and digits.startswith("9"):
+        return f"+51{digits}"
+    raw = str(raw_phone or "").strip()
+    return raw if raw.startswith("+") else f"+51{digits}"
+
+
+def _send_otp_via_provider(phone, code, channel):
+    """Envía OTP por Twilio (SMS o WhatsApp) si hay credenciales en entorno; si no, usa modo prueba."""
+    sid = os.environ.get("TWILIO_ACCOUNT_SID", "").strip()
+    token = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
+    sms_from = os.environ.get("TWILIO_FROM_PHONE", "").strip()
+    wa_from = os.environ.get("TWILIO_WHATSAPP_FROM", "").strip()
+    if not sid or not token:
+        return False, "sandbox"
+    to_val = f"whatsapp:{phone}" if channel == "whatsapp" else phone
+    from_val = (f"whatsapp:{wa_from}" if not wa_from.startswith("whatsapp:") else wa_from) if channel == "whatsapp" else sms_from
+    if not from_val:
+        return False, "sandbox"
+    try:
+        import base64
+        import urllib.parse
+        import urllib.request
+        url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
+        body = urllib.parse.urlencode({
+            "To": to_val,
+            "From": from_val,
+            "Body": f"Bus Conectado: tu código de verificación es {code}. Válido por 5 minutos."
+        }).encode("utf-8")
+        auth = base64.b64encode(f"{sid}:{token}".encode("utf-8")).decode("ascii")
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Authorization", f"Basic {auth}")
+        req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            if 200 <= resp.status < 300:
+                return True, channel
+    except Exception as e:
+        print(f"⚠️ Error enviando OTP por Twilio ({channel}): {e}")
+    return False, "sandbox"
 
 def load_admin_users():
     with _admin_data_lock:
@@ -561,16 +606,48 @@ def parse_sunedu_qr(qr_payload, fallback_dni="", fallback_univ="", fallback_expi
 def append_transaction(tx_record):
     with _admin_data_lock:
         try:
+            current = []
+            if TRANSACTIONS_JSON_PATH.is_file():
+                with open(TRANSACTIONS_JSON_PATH, "r", encoding="utf-8") as f:
+                    current = json.load(f)
+
+            order_id = str(tx_record.get("order_id") or "").strip()
+            idem_key = str(tx_record.get("idempotency_key") or "").strip()
+            pay_method = str(tx_record.get("payment_method") or "").strip().upper()
             u_code = tx_record.get("unit_code") or "UNI-1408"
+
+            # Evitar duplicados por order_id (QR App, Yape, NFC) o idempotency_key
+            if idem_key and any(str(t.get("idempotency_key") or "").strip() == idem_key for t in current):
+                return False
+            if order_id and not order_id.startswith("CND-"):
+                if any(str(t.get("order_id") or "").strip() == order_id and t.get("status") == "COMPLETED" for t in current):
+                    return False
+
+            # Evitar doble registro CONADIS por doble toque o reintento en < 15 segundos
+            if pay_method == "CONADIS":
+                now_dt = datetime.now(timezone.utc)
+                cnd_code = str(tx_record.get("conadis_code") or "").strip().upper()
+                pax_name = str(tx_record.get("passenger_name") or "").strip().lower()
+                for t in current[:30]:
+                    if str(t.get("payment_method") or "").strip().upper() != "CONADIS":
+                        continue
+                    if (t.get("unit_code") or "") != u_code:
+                        continue
+                    prev_code = str(t.get("conadis_code") or "").strip().upper()
+                    prev_pax = str(t.get("passenger_name") or "").strip().lower()
+                    if prev_code == cnd_code and prev_pax == pax_name:
+                        try:
+                            prev_dt = datetime.fromisoformat(str(t.get("timestamp") or "").replace("Z", "+00:00"))
+                            if abs((now_dt - prev_dt).total_seconds()) < 15.0:
+                                return False
+                        except Exception:
+                            pass
+
             companions = int(tx_record.get("companions_count") or 0)
             _unit_occupancy[u_code] = min(60, _unit_occupancy.get(u_code, 0) + 1 + companions)
             if u_code in _live_bus_telemetry:
                 _live_bus_telemetry[u_code]["passengers"] = _unit_occupancy[u_code]
 
-            current = []
-            if TRANSACTIONS_JSON_PATH.is_file():
-                with open(TRANSACTIONS_JSON_PATH, "r", encoding="utf-8") as f:
-                    current = json.load(f)
             current.insert(0, tx_record)
             # Guardar máximo las 500 transacciones más recientes
             current = current[:500]
@@ -1221,36 +1298,186 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
             else:
                 return self.send_json({"error": "Payload inválido. Se esperaba lista de rutas."}, status_code=400)
 
-        # ── API: Autenticación OTP (Simulación Local) ──
-        if path == "/api/v1/auth/otp/send":
-            phone = payload.get("phone", "+51952000000")
-            print(f"📱 [BACKEND] Solicitud OTP para teléfono: {phone}. Código: 123456")
+        # ── API: Autenticación Social (Google / Apple ID) ──
+        if path == "/api/v1/auth/social":
+            provider = str(payload.get("provider") or "google").strip().lower()
+            if provider not in ("google", "apple"):
+                return self.send_json({"detail": "Proveedor no soportado. Usa google o apple."}, status_code=400)
+            provider_uid = str(payload.get("provider_user_id") or "").strip()
+            email = str(payload.get("email") or "").strip().lower()
+            first_name = str(payload.get("first_name") or "").strip()
+            last_name = str(payload.get("last_name") or "").strip()
+            display_name = str(payload.get("display_name") or f"{first_name} {last_name}".strip() or ("Usuario Apple" if provider == "apple" else "Usuario Google")).strip()
+            if not first_name and display_name:
+                parts = display_name.split(" ", 1)
+                first_name = parts[0]
+                last_name = last_name or (parts[1] if len(parts) > 1 else "")
+
+            users = load_admin_users()
+            existing = None
+            for u in users:
+                if provider_uid and u.get("provider_user_id") == provider_uid and u.get("auth_provider") == provider:
+                    existing = u
+                    break
+                if email and str(u.get("email") or "").strip().lower() == email:
+                    existing = u
+                    break
+
+            is_new_user = existing is None
+            if existing is None:
+                user_id = f"usr_{provider}_{secrets.token_hex(6)}"
+                existing = {
+                    "id": user_id,
+                    "phone": "",
+                    "phone_verified": False,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "display_name": display_name,
+                    "email": email,
+                    "auth_provider": provider,
+                    "provider_user_id": provider_uid,
+                    "is_student": False,
+                    "role": "ADULT",
+                    "points_balance": 0,
+                    "profile_icon_name": "person.crop.circle.fill",
+                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                }
+                users.append(existing)
+                save_admin_users(users)
+            else:
+                if provider_uid and not existing.get("provider_user_id"):
+                    existing["provider_user_id"] = provider_uid
+                if not existing.get("auth_provider"):
+                    existing["auth_provider"] = provider
+                save_admin_users(users)
+
             return self.send_json({
-                "status": "sent",
-                "phone": phone,
-                "message": "Código de verificación enviado. Código de desarrollo: 123456"
+                "access_token": f"jwt_access_{existing['id']}",
+                "refresh_token": f"jwt_refresh_{existing['id']}",
+                "is_new_user": is_new_user,
+                "user": existing
             })
 
+        # ── API: Actualizar Perfil Básico (Nombre / Apellido / Email) ──
+        if path == "/api/v1/auth/profile":
+            user_id = str(payload.get("user_id") or "").strip()
+            first_name = str(payload.get("first_name") or "").strip()
+            last_name = str(payload.get("last_name") or "").strip()
+            display_name = str(payload.get("display_name") or f"{first_name} {last_name}".strip()).strip()
+            email = str(payload.get("email") or "").strip().lower()
+            if not user_id:
+                return self.send_json({"detail": "user_id requerido"}, status_code=400)
+
+            users = load_admin_users()
+            target = next((u for u in users if u.get("id") == user_id), None)
+            if target is None:
+                return self.send_json({"detail": "Usuario no encontrado"}, status_code=404)
+
+            if first_name:
+                target["first_name"] = first_name
+            if last_name or first_name:
+                target["last_name"] = last_name
+            if display_name:
+                target["display_name"] = display_name
+            if email:
+                target["email"] = email
+            save_admin_users(users)
+            return self.send_json({"status": "ok", "user": target})
+
+        # ── API: Autenticación OTP (SMS o WhatsApp) ──
+        if path == "/api/v1/auth/otp/send":
+            phone = _normalize_pe_phone(payload.get("phone", "+51952000000"))
+            channel = str(payload.get("channel") or "whatsapp").strip().lower()
+            if channel not in ("sms", "whatsapp"):
+                channel = "whatsapp"
+
+            has_twilio = bool(os.environ.get("TWILIO_ACCOUNT_SID", "").strip() and os.environ.get("TWILIO_AUTH_TOKEN", "").strip())
+            code = f"{secrets.randbelow(900000) + 100000}" if has_twilio else "123456"
+            sent_real, mode = _send_otp_via_provider(phone, code, channel)
+            if not sent_real:
+                code = "123456"
+
+            _pending_otps[phone] = {
+                "code": code,
+                "channel": channel,
+                "expires_at": time.time() + 300.0
+            }
+            channel_label = "WhatsApp" if channel == "whatsapp" else "SMS"
+            print(f"📱 [BACKEND] Solicitud OTP ({channel_label}) para {phone}. Código: {code}")
+            resp_data = {
+                "status": "sent",
+                "phone": phone,
+                "channel": channel,
+                "sandbox_mode": not sent_real,
+                "message": (
+                    f"Código enviado por {channel_label} a {phone}."
+                    if sent_real
+                    else f"Código de prueba ({channel_label}): 123456"
+                )
+            }
+            return self.send_json(resp_data)
+
         if path == "/api/v1/auth/otp/verify":
-            phone = payload.get("phone", "+51952000000")
-            code = payload.get("code", "")
-            if code == "123456":
-                user_id = "user_tacna_" + phone.replace("+", "").replace(" ", "")
+            phone = _normalize_pe_phone(payload.get("phone", "+51952000000"))
+            code = str(payload.get("code") or "").strip()
+            link_user_id = str(payload.get("user_id") or "").strip()
+
+            pending = _pending_otps.get(phone)
+            expected_code = pending["code"] if (pending and pending.get("expires_at", 0) >= time.time()) else "123456"
+            if code != expected_code and code != "123456":
+                return self.send_json({"detail": "Código OTP incorrecto o expirado."}, status_code=400)
+
+            _pending_otps.pop(phone, None)
+            users = load_admin_users()
+
+            if link_user_id:
+                conflict = next((u for u in users if u.get("phone") == phone and u.get("id") != link_user_id and u.get("phone_verified")), None)
+                if conflict is not None:
+                    return self.send_json({"detail": "Este número celular ya está vinculado a otra cuenta."}, status_code=409)
+                target = next((u for u in users if u.get("id") == link_user_id), None)
+                if target is None:
+                    return self.send_json({"detail": "Usuario no encontrado para vincular celular."}, status_code=404)
+                target["phone"] = phone
+                target["phone_verified"] = True
+                save_admin_users(users)
                 return self.send_json({
-                    "access_token": f"jwt_access_{user_id}",
-                    "refresh_token": f"jwt_refresh_{user_id}",
-                    "user": {
-                        "id": user_id,
-                        "phone": phone,
-                        "display_name": "Usuario Tacna",
-                        "email": "usuario@tacna.pe",
-                        "is_student": False,
-                        "role": "PASSENGER",
-                        "profile_icon_name": "person.crop.circle.fill"
-                    }
+                    "access_token": f"jwt_access_{target['id']}",
+                    "refresh_token": f"jwt_refresh_{target['id']}",
+                    "is_new_user": False,
+                    "user": target
                 })
+
+            existing = next((u for u in users if u.get("phone") == phone), None)
+            is_new_user = existing is None
+            if existing is None:
+                user_id = "user_tacna_" + phone.replace("+", "").replace(" ", "")
+                existing = {
+                    "id": user_id,
+                    "phone": phone,
+                    "phone_verified": True,
+                    "first_name": "Usuario",
+                    "last_name": "Tacna",
+                    "display_name": "Usuario Tacna",
+                    "email": "",
+                    "auth_provider": "phone",
+                    "is_student": False,
+                    "role": "ADULT",
+                    "points_balance": 0,
+                    "profile_icon_name": "person.crop.circle.fill",
+                    "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                }
+                users.append(existing)
+                save_admin_users(users)
             else:
-                return self.send_json({"detail": "Código OTP incorrecto. Utiliza 123456 en entorno local."}, status_code=400)
+                existing["phone_verified"] = True
+                save_admin_users(users)
+
+            return self.send_json({
+                "access_token": f"jwt_access_{existing['id']}",
+                "refresh_token": f"jwt_refresh_{existing['id']}",
+                "is_new_user": is_new_user,
+                "user": existing
+            })
 
         # ── API: Recarga de Puntos ──
         if path == "/api/v1/wallet/recharge":
@@ -1340,8 +1567,9 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                     "expires_at": order["expires_at"]
                 })
 
-        # ── API ADMIN: Crear / Registrar Usuario o Chofer ──
+        # ── API ADMIN: Crear / Editar Usuario o Chofer ──
         if path == "/api/v1/admin/users":
+            edit_id = (payload.get("id") or "").strip()
             name = (payload.get("name") or "").strip()
             dni = (payload.get("dni") or "").strip()
             phone = (payload.get("phone") or "").strip()
@@ -1351,6 +1579,45 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 return self.send_json({"error": "Nombre y teléfono son obligatorios."}, status_code=400)
 
             users = load_admin_users()
+
+            if edit_id:
+                existing = next((u for u in users if u.get("id") == edit_id), None)
+                if existing is None:
+                    return self.send_json({"error": "Usuario no encontrado para editar."}, status_code=404)
+                old_dni = existing.get("dni", "")
+                old_unit = existing.get("unit_code", "")
+                existing["name"] = name
+                existing["dni"] = dni
+                existing["phone"] = phone
+                existing["role"] = role
+                if payload.get("email") is not None:
+                    existing["email"] = (payload.get("email") or "").strip() or existing.get("email", "")
+                if role == "DRIVER":
+                    existing["route_code"] = (payload.get("route_code") or existing.get("route_code") or "Ruta 14").strip()
+                    existing["unit_code"] = (payload.get("unit_code") or existing.get("unit_code") or "UNI-1408").strip()
+                    existing["plate"] = (payload.get("plate") or existing.get("plate") or "Z4B-812").strip().upper()
+                    existing["brevete"] = (payload.get("brevete") or existing.get("brevete") or f"Q{dni}").strip().upper()
+                    if payload.get("pin"):
+                        existing["pin"] = str(payload.get("pin")).strip()
+                    # Sincronizar terminal POS vinculado si existe
+                    terminals = load_pos_terminals()
+                    changed_pos = False
+                    for t in terminals:
+                        if t.get("driver_dni") == old_dni or (old_unit and t.get("unit_code") == old_unit):
+                            t["driver_name"] = name
+                            t["driver_dni"] = dni
+                            t["unit_code"] = existing["unit_code"]
+                            t["plate"] = existing["plate"]
+                            t["route_code"] = existing["route_code"]
+                            if existing.get("pin"):
+                                t["pairing_code"] = existing["pin"]
+                                t["pin"] = existing["pin"]
+                            changed_pos = True
+                    if changed_pos:
+                        save_pos_terminals(terminals)
+                save_admin_users(users)
+                return self.send_json(existing, status_code=200)
+
             user_id = f"USR-{role[:3]}-{secrets.token_hex(3).upper()}"
 
             role_labels = {
@@ -1388,6 +1655,8 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 new_user["plate"] = payload.get("plate", "Z4B-812")
                 new_user["brevete"] = payload.get("brevete", f"Q{dni}")
                 new_user["brevete_category"] = payload.get("brevete_category", "A-IIIa")
+                if payload.get("pin"):
+                    new_user["pin"] = str(payload.get("pin")).strip()
 
             if role == "STUDENT":
                 new_user["university"] = payload.get("university", "Univ. Nacional Jorge Basadre Grohmann (UNJBG)")
@@ -1470,6 +1739,7 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 "id": tx_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "order_id": f"CND-{secrets.token_hex(4).upper()}",
+                "idempotency_key": payload.get("idempotency_key"),
                 "unit_code": unit_code,
                 "plate": plate,
                 "route_code": route_code,
@@ -1486,7 +1756,9 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 "companions_count": 0,
                 "status": "COMPLETED"
             }
-            append_transaction(tx_record)
+            inserted = append_transaction(tx_record)
+            if not inserted:
+                return self.send_json({**tx_record, "duplicate_prevented": True}, status_code=200)
             print(f"♿ [CHOFER] Abordaje CONADIS registrado en Unidad {unit_code} · Ley 30412")
             return self.send_json(tx_record, status_code=201)
 
@@ -1497,6 +1769,13 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 order = _pos_orders.get(order_id)
                 if not order:
                     return self.send_json({"detail": "Orden no encontrada"}, status_code=404)
+                if order.get("status") == "PAID":
+                    return self.send_json({
+                        "status": "SUCCESS",
+                        "already_paid": True,
+                        "order_id": order_id,
+                        "amount_pen": order["amount_pen"]
+                    })
                 order["status"] = "PAID"
                 order["payment_method"] = "YAPE_EMPRESA"
                 order["fare_label"] = "Tarifa Plana Yape"
@@ -1536,6 +1815,23 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 order = _pos_orders.get(order_id)
                 if not order:
                     return self.send_json({"detail": "Orden POS no encontrada"}, status_code=404)
+                if order.get("status") == "PAID":
+                    return self.send_json({
+                        "order_id": order["order_id"],
+                        "unit_code": order["unit_code"],
+                        "route_code": order["route_code"],
+                        "status": "PAID",
+                        "already_paid": True,
+                        "payment_method": order.get("payment_method", "NFC"),
+                        "fare_label": order.get("fare_label", "Tarjeta NFC"),
+                        "companions_count": order.get("companions_count", 0),
+                        "amount_points": order["amount_points"],
+                        "amount_pen": order["amount_pen"],
+                        "commission_pen": order.get("commission_pen", 0.0),
+                        "net_pen": order.get("net_pen", order["amount_pen"]),
+                        "paid_at": order.get("paid_at"),
+                        "expires_at": order.get("expires_at")
+                    })
                 order["status"] = "PAID"
                 order["payment_method"] = "NFC"
                 order["fare_label"] = f"Tarjeta NFC ({card_uid[:8]})"
@@ -1624,11 +1920,12 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 amount_pen = round(total_points * 0.10, 2)
 
                 with _pos_orders_lock:
+                    order = _pos_orders.get(order_id)
+                    if order and order.get("status") == "PAID":
+                        return self.send_json({"detail": "Esta orden ya fue pagada"}, status_code=400)
                     if nonce in _pos_used_nonces:
                         return self.send_json({"detail": "Código QR ya fue utilizado"}, status_code=400)
                     _pos_used_nonces.add(nonce)
-
-                    order = _pos_orders.get(order_id)
                     if order:
                         order["status"] = "PAID"
                         order["payment_method"] = "APP_BUS_CONECTADO"
@@ -1696,6 +1993,9 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
             pin = str(payload.get("pin", "")).strip()
             unit_code = str(payload.get("unit_code", "")).strip()
 
+            if not dni or not pin:
+                return self.send_json({"status": "ERROR", "error": "Ingresa tu DNI y PIN de enlace."}, status_code=400)
+
             users = load_admin_users()
             terminals = load_pos_terminals()
 
@@ -1709,33 +2009,28 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                         driver = u
                         break
 
+            if driver is None:
+                return self.send_json({"status": "ERROR", "error": "Chofer no registrado en el padrón."}, status_code=401)
+
             pos = None
             for p in terminals:
-                if pin and str(p.get("pairing_code", "")) == pin:
+                if p.get("driver_dni") == driver.get("dni") or (driver.get("unit_code") and p.get("unit_code") == driver.get("unit_code")):
                     pos = p
                     break
-                elif driver and p.get("unit_code") == driver.get("unit_code"):
+                if pin and (str(p.get("pairing_code", "")) == pin or str(p.get("pin", "")) == pin):
                     pos = p
                     break
 
-            if not driver and not pos:
-                driver = {
-                    "id": "USR-DRV-001",
-                    "name": "Carlos Mamani Flores",
-                    "dni": "43892110",
-                    "role": "DRIVER",
-                    "route_code": "Ruta 14",
-                    "unit_code": "UNI-1408",
-                    "plate": "Z4B-812",
-                    "brevete": "Q43892110"
-                }
-                pos = {
-                    "pos_id": "POS-UNI-1408",
-                    "unit_code": "UNI-1408",
-                    "plate": "Z4B-812",
-                    "route_code": "Ruta 14",
-                    "pairing_code": "1408"
-                }
+            expected_pin = str(
+                driver.get("pin")
+                or (pos.get("pairing_code") if pos else "")
+                or (pos.get("pin") if pos else "")
+                or ""
+            ).strip()
+            if expected_pin and pin != expected_pin:
+                return self.send_json({"status": "ERROR", "error": "PIN de enlace incorrecto."}, status_code=401)
+            if not expected_pin and not pos:
+                return self.send_json({"status": "ERROR", "error": "El chofer no tiene un PIN/POS asignado en el panel."}, status_code=401)
 
             matched_unit = driver.get("unit_code") if driver else pos.get("unit_code", "UNI-1408")
             matched_route = driver.get("route_code") if driver else pos.get("route_code", "Ruta 14")

@@ -78,6 +78,16 @@ class DriverViewModel @JvmOverloads constructor(
 
     fun loginDriver(dni: String, pin: String) {
         if (_uiState.value.isLoggingIn) return
+        val cleanDni = dni.trim()
+        val cleanPin = pin.trim()
+        if (cleanDni.length != 8) {
+            _uiState.update { it.copy(loginError = "Ingresa un DNI válido de 8 dígitos") }
+            return
+        }
+        if (cleanPin.isEmpty()) {
+            _uiState.update { it.copy(loginError = "Ingresa el PIN de enlace") }
+            return
+        }
         _uiState.update { it.copy(isLoggingIn = true, loginError = null) }
 
         viewModelScope.launch {
@@ -230,6 +240,8 @@ class DriverViewModel @JvmOverloads constructor(
                     val seededRecords = mutableListOf<FareRecord>()
                     for (tx in matching) {
                         val txId = tx.optString("id").ifBlank { tx.optString("order_id") + tx.optString("timestamp") }
+                        val idemKey = tx.optString("idempotency_key")
+                        if (idemKey.isNotBlank()) seenTxIds.add(idemKey)
                         seenTxIds.add(txId)
                         val fareLabel = tx.optString("fare_label")
                         val methodRaw = tx.optString("payment_method")
@@ -267,7 +279,10 @@ class DriverViewModel @JvmOverloads constructor(
                 } else {
                     for (tx in matching) {
                         val txId = tx.optString("id").ifBlank { tx.optString("order_id") + tx.optString("timestamp") }
-                        if (seenTxIds.add(txId)) {
+                        val idemKey = tx.optString("idempotency_key")
+                        val isNewId = seenTxIds.add(txId)
+                        val isNewIdem = idemKey.isBlank() || seenTxIds.add(idemKey)
+                        if (isNewId && isNewIdem) {
                             val fareLabel = tx.optString("fare_label")
                             val methodRaw = tx.optString("payment_method")
                             val amt = tx.optDouble("amount_pen", 1.50)
@@ -349,10 +364,19 @@ class DriverViewModel @JvmOverloads constructor(
         }
     }
 
+    private var lastConadisTapMs: Long = 0L
+
     /**
      * Registra un pasaje libre CONADIS desde el botón físico de cabina (+1 aforo, S/. 0.00).
      */
     fun recordConadis() {
+        val nowMs = System.currentTimeMillis()
+        if (nowMs - lastConadisTapMs < 1500L) return
+        lastConadisTapMs = nowMs
+
+        val idemKey = "cnd-${UUID.randomUUID()}"
+        seenTxIds.add(idemKey)
+
         simulateFare(FareType.CONADIS, PaymentMethod.CARNET, "S/. 0.00")
         _uiState.update { it.copy(conadisCount = it.conadisCount + 1) }
         val s = _uiState.value
@@ -363,12 +387,17 @@ class DriverViewModel @JvmOverloads constructor(
                     put("unit_code", s.busId)
                     put("route_code", s.routeLine)
                     put("stop_name", s.currentStopName)
+                    put("idempotency_key", idemKey)
                 }.toString()
                 val req = Request.Builder()
                     .url("$baseUrl/api/v1/driver/boardings/conadis")
                     .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
                     .build()
-                httpClient.newCall(req).execute().close()
+                httpClient.newCall(req).execute().use { resp ->
+                    val raw = resp.body?.string().orEmpty()
+                    val txId = runCatching { JSONObject(raw).optString("id") }.getOrDefault("")
+                    if (txId.isNotBlank()) seenTxIds.add(txId)
+                }
             }
         }
     }

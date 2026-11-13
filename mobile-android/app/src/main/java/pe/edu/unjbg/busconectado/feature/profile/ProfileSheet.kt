@@ -134,8 +134,21 @@ fun ProfileSheet(
                         Text(user.initials, color = Color.White, fontWeight = FontWeight.Black, fontSize = 18.sp)
                     }
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(user.displayName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text(user.phone, color = BCColors.TextSecondary, fontSize = 12.sp)
+                        Text(user.displayFullName, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        if (user.hasVerifiedPhone) {
+                            Text(user.phone, color = BCColors.TextSecondary, fontSize = 12.sp)
+                        } else {
+                            Text(
+                                text = "Vincular número celular",
+                                color = BCColors.Amber,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.clickable {
+                                    onDismiss()
+                                    viewModel.openPhoneLinkingFromApp()
+                                }
+                            )
+                        }
                         Spacer(Modifier.height(4.dp))
                         Text(user.roleType.badgeLabel, color = BCColors.CyanAccent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     }

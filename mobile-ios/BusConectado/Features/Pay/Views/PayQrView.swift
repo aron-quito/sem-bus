@@ -42,9 +42,9 @@ struct PayQrView: View {
         Double(totalPointsToPay) / 10.0
     }
 
-    /// La cámara solo puede estar activa si: hay sesión, la pestaña Pagar QR está visible y la app está en primer plano
+    /// La cámara solo puede estar activa si: hay sesión con celular verificado, la pestaña Pagar QR está visible y la app está en primer plano
     private var cameraShouldRun: Bool {
-        !viewModel.isGuestMode && viewModel.selectedTab == 2 && scenePhase == .active
+        !viewModel.isGuestMode && (viewModel.currentUser?.hasVerifiedPhone ?? false) && viewModel.selectedTab == 2 && scenePhase == .active
     }
 
     var body: some View {
@@ -53,6 +53,8 @@ struct PayQrView: View {
 
             if viewModel.isGuestMode {
                 guestGateView
+            } else if !(viewModel.currentUser?.hasVerifiedPhone ?? false) {
+                phoneRequiredGateView
             } else {
                 scannerContentView
             }
@@ -486,6 +488,52 @@ struct PayQrView: View {
                 }
             } label: {
                 Text("Iniciar Sesión / Registrarse")
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(BCTheme.emerald)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .padding(.horizontal, 32)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(BCTheme.background.ignoresSafeArea())
+    }
+
+    private var phoneRequiredGateView: some View {
+        VStack(spacing: 20) {
+            ZStack {
+                Circle()
+                    .fill(BCTheme.emerald.opacity(0.14))
+                    .frame(width: 92, height: 92)
+                Image(systemName: "phone.badge.checkmark")
+                    .font(.system(size: 38))
+                    .foregroundColor(BCTheme.emerald)
+            }
+
+            VStack(spacing: 8) {
+                if let user = viewModel.currentUser {
+                    Text("Hola, \(user.displayFullName)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(BCTheme.cyanAccent)
+                }
+                Text("Accede con tu número celular para poder hacer pagos QR")
+                    .font(.title3.weight(.bold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                Text("Si desea hacer pagos dentro de la app o acceder a los beneficios como descuentos o promociones, registre su celular.")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+
+            Button {
+                viewModel.openPhoneLinkingFromApp()
+            } label: {
+                Text("Vincular número celular")
                     .font(.body.weight(.semibold))
                     .foregroundColor(.black)
                     .frame(maxWidth: .infinity)

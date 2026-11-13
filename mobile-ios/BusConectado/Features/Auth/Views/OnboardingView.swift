@@ -1,10 +1,15 @@
 import SwiftUI
+import AuthenticationServices
 
 struct OnboardingView: View {
     @ObservedObject var viewModel: AuthViewModel
     @FocusState private var isPhoneFocused: Bool
     @FocusState private var isOtpFocused: Bool
-    @State private var showTestAccountsSheet: Bool = false
+    @State private var showGoogleInputSheet: Bool = false
+    @State private var googleNameInput: String = ""
+    @State private var googleLastNameInput: String = ""
+    @State private var googleEmailInput: String = ""
+    @State private var googleIsRegistration: Bool = true
 
     var body: some View {
         ZStack {
@@ -12,14 +17,23 @@ struct OnboardingView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Barra superior minimalista
+                // Barra superior minimalista (sin botón Modo Invitado)
                 HStack {
                     if viewModel.currentStep != .splash && viewModel.currentStep != .success {
                         Button {
                             BCFeedbackManager.shared.impactLight()
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                                 viewModel.errorMessage = nil
-                                viewModel.currentStep = viewModel.currentStep == .otpVerification ? .phoneInput : .splash
+                                switch viewModel.currentStep {
+                                case .otpVerification:
+                                    viewModel.currentStep = .phoneInput
+                                case .phoneInput:
+                                    viewModel.currentStep = viewModel.isLinkingPhoneFlow ? .profileSetup : .splash
+                                case .profileSetup:
+                                    viewModel.currentStep = .registerSocial
+                                default:
+                                    viewModel.currentStep = .splash
+                                }
                             }
                         } label: {
                             HStack(spacing: 4) {
@@ -33,39 +47,20 @@ struct OnboardingView: View {
                     }
 
                     Spacer()
-
-                    if viewModel.currentStep != .success {
-                        Button {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                                viewModel.continueAsGuest()
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("Modo Invitado")
-                                    .font(.footnote.weight(.medium))
-                                Image(systemName: "arrow.right")
-                                    .font(.caption2.weight(.semibold))
-                            }
-                            .foregroundColor(BCTheme.royalBlue)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(BCTheme.royalBlue.opacity(0.14))
-                            .overlay(
-                                Capsule()
-                                    .stroke(BCTheme.royalBlue.opacity(0.35), lineWidth: 1)
-                            )
-                            .clipShape(Capsule())
-                        }
-                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.top, 12)
+                .frame(minHeight: 38)
 
                 Spacer()
 
                 switch viewModel.currentStep {
                 case .splash:
                     splashStepView
+                case .registerSocial:
+                    registerSocialStepView
+                case .profileSetup:
+                    profileSetupStepView
                 case .phoneInput:
                     phoneInputStepView
                 case .otpVerification:
@@ -75,45 +70,16 @@ struct OnboardingView: View {
                 }
 
                 Spacer()
-
-                // Acceso discreto a Cuentas de Prueba (Modo Dev)
-                if viewModel.currentStep == .splash || viewModel.currentStep == .phoneInput {
-                    Button {
-                        BCFeedbackManager.shared.impactLight()
-                        showTestAccountsSheet = true
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "person.badge.key.fill")
-                                .font(.caption)
-                                .foregroundColor(BCTheme.emerald)
-                            Text("Cuentas de Prueba (Modo Dev)")
-                                .font(.caption.weight(.medium))
-                                .foregroundColor(.white.opacity(0.75))
-                            Image(systemName: "chevron.up")
-                                .font(.caption2)
-                                .foregroundColor(.gray)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .background(Color.white.opacity(0.05))
-                        .overlay(
-                            Capsule()
-                                .stroke(BCTheme.hairlineBorder, lineWidth: 1)
-                        )
-                        .clipShape(Capsule())
-                    }
-                    .padding(.bottom, 16)
-                }
             }
         }
-        .sheet(isPresented: $showTestAccountsSheet) {
-            testAccountsPickerSheet
+        .sheet(isPresented: $showGoogleInputSheet) {
+            googleSignInSheet
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
     }
 
-    // MARK: - Paso 1: Splash (Fiel al Mockup y Apple HIG)
+    // MARK: - Paso 1: Splash (Iniciar Sesión, Registrarse o Iniciar como Invitado)
     private var splashStepView: some View {
         VStack(spacing: 30) {
             ZStack {
@@ -179,42 +145,59 @@ struct OnboardingView: View {
             VStack(spacing: 12) {
                 Button {
                     BCFeedbackManager.shared.impactLight()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        viewModel.currentStep = .phoneInput
-                    }
+                    viewModel.errorMessage = nil
+                    googleIsRegistration = false
+                    showGoogleInputSheet = true
                 } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "phone.fill")
-                            .font(.subheadline)
-                        Text("Iniciar Sesión / Registrarse")
+                    HStack(spacing: 10) {
+                        Image(systemName: "g.circle.fill")
+                            .font(.title3)
+                            .foregroundColor(.black)
+                        Text("Continuar con Google")
                             .font(.body.weight(.semibold))
+                            .foregroundColor(.black)
                     }
-                    .foregroundColor(Color(red: 4/255, green: 18/255, blue: 12/255))
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
-                    .background(BCTheme.emerald)
+                    .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
+
+                SignInWithAppleButton(.continue) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    handleAppleAuthResult(result, isRegistration: false)
+                }
+                .signInWithAppleButtonStyle(.whiteOutline)
+                .frame(height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                 Button {
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                         viewModel.continueAsGuest()
                     }
                 } label: {
-                    Text("Explorar sin registrarse")
-                        .font(.body.weight(.medium))
-                        .foregroundColor(.white.opacity(0.9))
+                    Text("Iniciar como Invitado")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white.opacity(0.78))
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(Color.white.opacity(0.05))
+                        .frame(height: 46)
+                        .background(Color.white.opacity(0.04))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
                                 .stroke(BCTheme.hairlineBorder, lineWidth: 1)
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
 
-                Text("Al continuar aceptas los Términos y Privacidad de BC")
+                if let error = viewModel.errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(BCTheme.destructiveRed)
+                        .multilineTextAlignment(.center)
+                }
+
+                Text("Al continuar aceptas los Términos y Privacidad de Bus Conectado")
                     .font(.caption2)
                     .foregroundColor(.white.opacity(0.4))
                     .multilineTextAlignment(.center)
@@ -224,20 +207,193 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Paso 2: Ingreso de Celular (+51)
-    private var phoneInputStepView: some View {
-        VStack(spacing: 22) {
+    // MARK: - Registro: Solo Google y Apple ID
+    private var registerSocialStepView: some View {
+        VStack(spacing: 24) {
             VStack(spacing: 8) {
-                Text("Ingresa tu celular")
+                Image(systemName: "person.badge.shield.checkmark.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(BCTheme.cyanAccent)
+                    .padding(.bottom, 4)
+
+                Text("Crear cuenta")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
-                Text("Recibirás un código de 6 dígitos para validar tu sesión única en este iPhone.")
+                Text("Regístrate de forma rápida y segura con tu cuenta de Google o Apple ID.")
                     .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.55))
+                    .foregroundColor(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 32)
+
+            VStack(spacing: 14) {
+                Button {
+                    BCFeedbackManager.shared.impactLight()
+                    googleIsRegistration = true
+                    showGoogleInputSheet = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "g.circle.fill")
+                            .font(.title3)
+                            .foregroundColor(.black)
+                        Text("Continuar con Google")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(.black)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(Color.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+
+                SignInWithAppleButton(.signUp) { request in
+                    request.requestedScopes = [.fullName, .email]
+                } onCompletion: { result in
+                    handleAppleAuthResult(result, isRegistration: true)
+                }
+                .signInWithAppleButtonStyle(.whiteOutline)
+                .frame(height: 54)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .padding(.horizontal, 28)
+
+            if let error = viewModel.errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(BCTheme.destructiveRed)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+            }
+        }
+    }
+
+    // MARK: - Edición de Datos Básicos (Nombre, Apellido, Correo)
+    private var profileSetupStepView: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 8) {
+                Text("Confirma tus datos")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+
+                Text("Verifica o edita tu nombre y apellido tal como aparecerán en tu perfil.")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.58))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 32)
+
+            VStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Nombre")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.65))
+                    TextField("Ej: Aron", text: $viewModel.draftFirstName)
+                        .textContentType(.givenName)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .frame(height: 50)
+                        .background(Color.white.opacity(0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Apellido")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.65))
+                    TextField("Ej: Quispe", text: $viewModel.draftLastName)
+                        .textContentType(.familyName)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .frame(height: 50)
+                        .background(Color.white.opacity(0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Correo")
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.65))
+                    TextField("correo@ejemplo.com", text: $viewModel.draftEmail)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(.horizontal, 14)
+                        .frame(height: 50)
+                        .background(Color.white.opacity(0.04))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(BCTheme.hairlineBorder, lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+            }
+            .padding(.horizontal, 28)
+
+            if let error = viewModel.errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(BCTheme.destructiveRed)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+            }
+
+            Button {
+                Task { await viewModel.saveProfileSetupAndContinue() }
+            } label: {
+                if viewModel.isLoading {
+                    ProgressView()
+                        .tint(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                } else {
+                    Text("Continuar")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                }
+            }
+            .background(BCTheme.emerald)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .disabled(viewModel.isLoading)
+            .padding(.horizontal, 28)
+        }
+    }
+
+    // MARK: - Paso Celular (Inicio de Sesión o Vinculación Post-Registro)
+    private var phoneInputStepView: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 8) {
+                Text(viewModel.isLinkingPhoneFlow ? "Vincula tu celular" : "Iniciar Sesión")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+
+                Text(
+                    viewModel.isLinkingPhoneFlow
+                    ? "Si desea hacer pagos dentro de la app o acceder a los beneficios como descuentos o promociones, registre su celular."
+                    : "Ingresa tu número celular para recibir un código de verificación por WhatsApp o SMS."
+                )
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+            }
+            .padding(.horizontal, 28)
+
+            // Selector de canal: WhatsApp o SMS
+            HStack(spacing: 10) {
+                channelChip(id: "whatsapp", title: "WhatsApp", icon: "message.fill")
+                channelChip(id: "sms", title: "SMS normal", icon: "bubble.left.fill")
+            }
+            .padding(.horizontal, 28)
 
             HStack(spacing: 10) {
                 HStack(spacing: 6) {
@@ -255,7 +411,7 @@ struct OnboardingView: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
-                TextField("952 000 002", text: $viewModel.phoneNumber)
+                TextField("9XX XXX XXX", text: $viewModel.phoneNumber)
                     .keyboardType(.numberPad)
                     .focused($isPhoneFocused)
                     .font(.system(size: 20, weight: .semibold, design: .rounded))
@@ -288,9 +444,7 @@ struct OnboardingView: View {
             }
 
             Button {
-                Task {
-                    await viewModel.sendOtp()
-                }
+                Task { await viewModel.sendOtp() }
             } label: {
                 if viewModel.isLoading {
                     ProgressView()
@@ -298,7 +452,7 @@ struct OnboardingView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 54)
                 } else {
-                    Text("Enviar código SMS")
+                    Text(viewModel.otpChannel == "whatsapp" ? "Enviar código por WhatsApp" : "Enviar código por SMS")
                         .font(.body.weight(.semibold))
                         .foregroundColor(viewModel.isValidPhone ? .black : .white.opacity(0.35))
                         .frame(maxWidth: .infinity)
@@ -309,6 +463,52 @@ struct OnboardingView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .disabled(!viewModel.isValidPhone || viewModel.isLoading)
             .padding(.horizontal, 28)
+
+            if viewModel.isLinkingPhoneFlow {
+                Button {
+                    viewModel.skipPhoneLinking()
+                } label: {
+                    Text("Omitir por ahora")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white.opacity(0.75))
+                        .padding(.vertical, 8)
+                }
+            } else {
+                VStack(spacing: 10) {
+                    Text("o continúa con tu cuenta")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.45))
+
+                    HStack(spacing: 12) {
+                        Button {
+                            googleIsRegistration = false
+                            showGoogleInputSheet = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "g.circle.fill")
+                                Text("Google")
+                                    .font(.subheadline.weight(.semibold))
+                            }
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+
+                        SignInWithAppleButton(.signIn) { request in
+                            request.requestedScopes = [.fullName, .email]
+                        } onCompletion: { result in
+                            handleAppleAuthResult(result, isRegistration: false)
+                        }
+                        .signInWithAppleButtonStyle(.whiteOutline)
+                        .frame(height: 46)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .padding(.horizontal, 28)
+                }
+                .padding(.top, 4)
+            }
         }
         .onAppear {
             isPhoneFocused = true
@@ -323,10 +523,13 @@ struct OnboardingView: View {
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
-                Text("Enviado a +51 \(viewModel.phoneNumber) · (Demo: 123456)")
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.55))
-                    .multilineTextAlignment(.center)
+                Text(
+                    viewModel.otpInfoMessage
+                    ?? "Enviado por \(viewModel.otpChannel == "whatsapp" ? "WhatsApp" : "SMS") a +51 \(viewModel.phoneNumber)"
+                )
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 32)
 
@@ -387,14 +590,6 @@ struct OnboardingView: View {
                     .padding(.horizontal, 28)
             }
 
-            Button {
-                viewModel.otpCode = "123456"
-            } label: {
-                Text("Autocompletar código demo (123456)")
-                    .font(.caption.weight(.medium))
-                    .foregroundColor(BCTheme.cyanAccent)
-            }
-
             if viewModel.countdownSeconds > 0 {
                 Text("Reenviar código en \(viewModel.countdownSeconds)s")
                     .font(.caption)
@@ -403,7 +598,7 @@ struct OnboardingView: View {
                 Button {
                     Task { await viewModel.sendOtp() }
                 } label: {
-                    Text("Reenviar código SMS")
+                    Text("Reenviar código")
                         .font(.caption.weight(.semibold))
                         .foregroundColor(BCTheme.emerald)
                 }
@@ -418,7 +613,7 @@ struct OnboardingView: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 54)
                 } else {
-                    Text("Verificar y continuar")
+                    Text("Continuar")
                         .font(.body.weight(.semibold))
                         .foregroundColor(viewModel.otpCode.count == 6 ? .black : .white.opacity(0.35))
                         .frame(maxWidth: .infinity)
@@ -429,6 +624,16 @@ struct OnboardingView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .disabled(viewModel.otpCode.count != 6 || viewModel.isLoading)
             .padding(.horizontal, 28)
+
+            if viewModel.isLinkingPhoneFlow {
+                Button {
+                    viewModel.skipPhoneLinking()
+                } label: {
+                    Text("Omitir por ahora")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundColor(.white.opacity(0.75))
+                }
+            }
         }
         .onAppear {
             isOtpFocused = true
@@ -454,7 +659,7 @@ struct OnboardingView: View {
                     .foregroundColor(.white)
 
                 if let user = viewModel.currentUser {
-                    Text(user.name ?? "Pasajero BC")
+                    Text(user.displayFullName)
                         .font(.headline)
                         .foregroundColor(BCTheme.emerald)
 
@@ -483,82 +688,124 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - Hoja de Selección de Cuentas de Prueba (Modo Dev)
-    private var testAccountsPickerSheet: some View {
+    private func channelChip(id: String, title: String, icon: String) -> some View {
+        let selected = viewModel.otpChannel == id
+        return Button {
+            BCFeedbackManager.shared.impactLight()
+            viewModel.otpChannel = id
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption)
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundColor(selected ? .black : .white.opacity(0.8))
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
+            .background(selected ? BCTheme.emerald : Color.white.opacity(0.06))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(selected ? BCTheme.emerald : BCTheme.hairlineBorder, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    // MARK: - Sheet de Google Sign-In
+    private var googleSignInSheet: some View {
         NavigationStack {
             ZStack {
                 BCTheme.elevatedSurface.ignoresSafeArea()
+                VStack(spacing: 14) {
+                    Text("Ingresa los datos de tu cuenta Google para continuar.")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.65))
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Selecciona un perfil de prueba para iniciar sesión con 1 toque. Todas las cuentas de prueba inician con 0 Puntos BC, 0 movimientos y sin paraderos ni buses simulados en el mapa.")
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.6))
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
+                    TextField("Nombre", text: $googleNameInput)
+                        .foregroundColor(.white)
+                        .padding(14)
+                        .background(Color.white.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                        ForEach(TestAccountPreset.officialPresets) { preset in
-                            Button {
-                                showTestAccountsSheet = false
-                                Task {
-                                    await viewModel.selectTestAccount(preset)
-                                }
-                            } label: {
-                                HStack(spacing: 14) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(preset.role == .student ? BCTheme.amber.opacity(0.18) : (preset.role == .conadis ? BCTheme.cyanAccent.opacity(0.18) : BCTheme.royalBlue.opacity(0.18)))
-                                            .frame(width: 44, height: 44)
-                                        Image(systemName: preset.role.iconName)
-                                            .font(.headline)
-                                            .foregroundColor(preset.role == .student ? BCTheme.amber : (preset.role == .conadis ? BCTheme.cyanAccent : BCTheme.royalBlue))
-                                    }
+                    TextField("Apellido", text: $googleLastNameInput)
+                        .foregroundColor(.white)
+                        .padding(14)
+                        .background(Color.white.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        HStack(spacing: 6) {
-                                            Text(preset.name)
-                                                .font(.subheadline.weight(.semibold))
-                                                .foregroundColor(.white)
-                                            Text(preset.formattedPhone)
-                                                .font(.caption2.monospaced())
-                                                .foregroundColor(.white.opacity(0.5))
-                                        }
-                                        Text(preset.subtitle)
-                                            .font(.caption2)
-                                            .foregroundColor(.white.opacity(0.65))
-                                            .multilineTextAlignment(.leading)
-                                    }
+                    TextField("Correo Google (@gmail.com)", text: $googleEmailInput)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .foregroundColor(.white)
+                        .padding(14)
+                        .background(Color.white.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                                    Spacer()
-
-                                    Image(systemName: "arrow.right.circle.fill")
-                                        .font(.title3)
-                                        .foregroundColor(BCTheme.emerald)
-                                }
-                                .padding(14)
-                                .background(Color.white.opacity(0.05))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .stroke(BCTheme.hairlineBorder, lineWidth: 1)
-                                )
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            }
-                            .padding(.horizontal, 20)
+                    Button {
+                        let mail = googleEmailInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let fname = googleNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let lname = googleLastNameInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        showGoogleInputSheet = false
+                        Task {
+                            await viewModel.signInWithSocial(
+                                provider: "google",
+                                providerUserId: mail.isEmpty ? UUID().uuidString : mail,
+                                email: mail,
+                                firstName: fname,
+                                lastName: lname,
+                                isRegistration: googleIsRegistration
+                            )
                         }
+                    } label: {
+                        Text("Continuar con Google")
+                            .font(.body.weight(.semibold))
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(Color.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
-                    .padding(.bottom, 24)
+                    .disabled(googleEmailInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .padding(.top, 6)
+
+                    Spacer()
                 }
+                .padding(20)
             }
-            .navigationTitle("Cuentas de Prueba")
+            .navigationTitle("Cuenta Google")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Cerrar") {
-                        showTestAccountsSheet = false
-                    }
-                    .foregroundColor(.white)
+                    Button("Cancelar") { showGoogleInputSheet = false }
+                        .foregroundColor(.white)
                 }
             }
+        }
+    }
+
+    private func handleAppleAuthResult(_ result: Result<ASAuthorization, Error>, isRegistration: Bool) {
+        switch result {
+        case .success(let auth):
+            if let credential = auth.credential as? ASAuthorizationAppleIDCredential {
+                let uid = credential.user
+                let email = credential.email ?? ""
+                let first = credential.fullName?.givenName ?? ""
+                let last = credential.fullName?.familyName ?? ""
+                Task {
+                    await viewModel.signInWithSocial(
+                        provider: "apple",
+                        providerUserId: uid,
+                        email: email,
+                        firstName: first,
+                        lastName: last,
+                        isRegistration: isRegistration
+                    )
+                }
+            }
+        case .failure(let error):
+            viewModel.errorMessage = "No se pudo autenticar con Apple ID: \(error.localizedDescription)"
         }
     }
 
@@ -568,5 +815,149 @@ struct OnboardingView: View {
             return String(digits[index])
         }
         return ""
+    }
+}
+
+// MARK: - Sheet Modal para Vincular Celular desde PayQR / Monedero / Perfil
+struct PhoneLinkSheetView: View {
+    @ObservedObject var viewModel: AuthViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                BCTheme.background.ignoresSafeArea()
+                VStack(spacing: 20) {
+                    if viewModel.currentStep == .otpVerification {
+                        Text("Código de verificación")
+                            .font(.title2.weight(.bold))
+                            .foregroundColor(.white)
+
+                        Text(
+                            viewModel.otpInfoMessage
+                            ?? "Enviado por \(viewModel.otpChannel == "whatsapp" ? "WhatsApp" : "SMS") a +51 \(viewModel.phoneNumber)"
+                        )
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.65))
+                        .multilineTextAlignment(.center)
+
+                        TextField("000000", text: $viewModel.otpCode)
+                            .keyboardType(.numberPad)
+                            .textContentType(.oneTimeCode)
+                            .multilineTextAlignment(.center)
+                            .font(.system(size: 26, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+                            .frame(height: 56)
+                            .background(Color.white.opacity(0.06))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .onChange(of: viewModel.otpCode) { _, val in
+                                let clean = String(val.filter { $0.isNumber }.prefix(6))
+                                if clean != val { viewModel.otpCode = clean }
+                            }
+
+                        if let err = viewModel.errorMessage {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundColor(BCTheme.destructiveRed)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        Button {
+                            Task { await viewModel.verifyOtp() }
+                        } label: {
+                            Text("Verificar y vincular")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .background(BCTheme.emerald)
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .disabled(viewModel.otpCode.count != 6 || viewModel.isLoading)
+                    } else {
+                        Text("Vincular número celular")
+                            .font(.title2.weight(.bold))
+                            .foregroundColor(.white)
+
+                        Text("Si desea hacer pagos dentro de la app o acceder a los beneficios como descuentos o promociones, registre su celular.")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.65))
+                            .multilineTextAlignment(.center)
+
+                        HStack(spacing: 10) {
+                            ForEach([("whatsapp", "WhatsApp"), ("sms", "SMS normal")], id: \.0) { id, label in
+                                let selected = viewModel.otpChannel == id
+                                Button {
+                                    viewModel.otpChannel = id
+                                } label: {
+                                    Text(label)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundColor(selected ? .black : .white)
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: 42)
+                                        .background(selected ? BCTheme.emerald : Color.white.opacity(0.08))
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                            }
+                        }
+
+                        HStack(spacing: 10) {
+                            Text("🇵🇪 +51")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .frame(height: 54)
+                                .background(Color.white.opacity(0.06))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                            TextField("9XX XXX XXX", text: $viewModel.phoneNumber)
+                                .keyboardType(.numberPad)
+                                .font(.title3.weight(.semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .frame(height: 54)
+                                .background(Color.white.opacity(0.06))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .onChange(of: viewModel.phoneNumber) { _, val in
+                                    let clean = String(val.filter { $0.isNumber }.prefix(9))
+                                    if clean != val { viewModel.phoneNumber = clean }
+                                }
+                        }
+
+                        if let err = viewModel.errorMessage {
+                            Text(err)
+                                .font(.caption)
+                                .foregroundColor(BCTheme.destructiveRed)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        Button {
+                            Task { await viewModel.sendOtp() }
+                        } label: {
+                            Text("Enviar código")
+                                .font(.body.weight(.semibold))
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .background(viewModel.isValidPhone ? BCTheme.emerald : Color.white.opacity(0.15))
+                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .disabled(!viewModel.isValidPhone || viewModel.isLoading)
+                    }
+
+                    Spacer()
+                }
+                .padding(24)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cerrar") {
+                        viewModel.showPhoneLinkSheet = false
+                        dismiss()
+                    }
+                    .foregroundColor(.white)
+                }
+            }
+        }
     }
 }

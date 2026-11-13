@@ -51,6 +51,7 @@ const state = {
   tempTraceSegments: [],     // Tramos viales [[[lat, lng], ...]] entre cada par de nodos consecutivos
   tempTraceCoords: [],       // Polilínea densa [[lat, lng], ...] alineada a las calles de Tacna
   tempTraceStopIds: [],      // IDs de paraderos asociados durante el trazado
+  tempTraceClosedLoop: false, // Indica si la ruta volvió al Nodo #1 (inicio/fin obligatorio)
   isRoutingStreet: false,    // Indicador de consulta activa al motor vial OSRM
   modalSelectedStopIds: [],  // IDs de paraderos seleccionados en orden dentro del modal de ruta
   currentUser: CURRENT_ADMIN, // Administrador General autenticado
@@ -67,26 +68,13 @@ const state = {
 document.addEventListener('DOMContentLoaded', async () => {
   loadStoredProfile();
 
-  // 1. Hidratar al instante desde caché local (renderizado inmediato sin esperar red)
-  const hadCachedStops = hydrateStopsFromLocalCache();
-  const hadCachedRoutes = hydrateRoutesFromLocalCache();
-
-  // 2. Iniciar mapa, listeners y WebSocket en paralelo (sin waterfall bloqueante)
+  // 1. Iniciar mapa, listeners y WebSocket en paralelo
   initLeafletMap();
   setupUIEventListeners();
   setupDialogLightDismiss();
   initCollaborationWebSocket();
 
-  if (hadCachedStops || hadCachedRoutes) {
-    renderMapMarkers();
-    renderMapRoutes();
-    renderStopsList();
-    renderRoutesList();
-    updateStats();
-    updateRouteStats();
-  }
-
-  // 3. Validar con servidor usando ETag y cargar catálogo, usuarios y POS
+  // 2. Validar con servidor (fuente de verdad) y cargar catálogo, usuarios y POS
   await Promise.all([loadStopsData(), loadRoutesData(), loadUsersData(), loadPosData()]);
   renderMapMarkers();
   renderMapRoutes();
@@ -1570,9 +1558,29 @@ function flattenStreetSegments(segments, nodes = []) {
 
 function rebuildTraceCoordsFromSegments() {
   state.tempTraceCoords = flattenStreetSegments(state.tempTraceSegments, state.tempTraceNodes);
-  state.tempTraceStopIds = state.tempTraceNodes
-    .map(n => n.stopId)
-    .filter(Boolean);
+  state.tempTraceStopIds = [...new Set(
+    state.tempTraceNodes
+      .map(n => n.stopId)
+      .filter(Boolean)
+  )];
+}
+
+function syncStopsRoutesPassingFromRoutes() {
+  const stopRoutesMap = new Map();
+  (state.stops || []).forEach(s => stopRoutesMap.set(s.id, []));
+  (state.routes || []).forEach(r => {
+    const code = (r.code || '').trim();
+    if (!code) return;
+    (r.keyStopIds || []).forEach(sid => {
+      if (stopRoutesMap.has(sid)) {
+        const list = stopRoutesMap.get(sid);
+        if (!list.includes(code)) list.push(code);
+      }
+    });
+  });
+  (state.stops || []).forEach(s => {
+    s.routesPassing = stopRoutesMap.get(s.id) || [];
+  });
 }
 
 function buildFlexibleStopMap() {
@@ -1663,9 +1671,10 @@ function renderMapRoutes() {
       }
       const etaMin = Math.round((cumulativeKm / speedKmh) * 60 + idx * 0.42);
       const isStopNode = Boolean(node.stopId);
+      const canCloseLoopHere = idx === 0 && nodesToRender.length >= 2 && !state.tempTraceClosedLoop;
       const nodeIcon = L.divIcon({
         className: 'custom-route-seq-node',
-        html: `<div class="route-seq-node" style="background:${traceColor}; border:${isStopNode ? '2.5px solid #FFFFFF' : '2px dashed #E0F2FE'};">${idx + 1}</div>`,
+        html: `<div class="route-seq-node" style="background:${traceColor}; border:${canCloseLoopHere ? '3px solid #F59E0B' : (isStopNode ? '2.5px solid #FFFFFF' : '2px dashed #E0F2FE')};">${idx + 1}</div>`,
         iconSize: [24, 24],
         iconAnchor: [12, 12]
       });
@@ -1674,7 +1683,7 @@ function renderMapRoutes() {
         icon: nodeIcon,
         interactive: true,
         draggable: true,
-        zIndexOffset: 1100
+        zIndexOffset: idx === 0 ? 1200 : 1100
       });
 
       const stopObj = node.stopId ? stopMap.get(node.stopId) : null;
@@ -1682,11 +1691,22 @@ function renderMapRoutes() {
         ? `Paradero: ${stopObj.shortName || stopObj.name}`
         : `Nodo vial: ${node.streetName || 'Calle alineada'}`;
 
+      const closeHint = canCloseLoopHere
+        ? '<br><span style="color:#FBBF24;font-weight:700;">Clic aquí para cerrar ruta (Inicio/Fin)</span>'
+        : '';
+
       nodeMarker.bindTooltip(
         `<strong>#${idx + 1} ${escapeHtml(nodeTitle)}</strong><br>` +
-        `+${etaMin} min (${cumulativeKm.toFixed(2)} km) • <em>Arrastra para reajustar calle</em>`,
+        `+${etaMin} min (${cumulativeKm.toFixed(2)} km) • <em>Arrastra para reajustar calle</em>${closeHint}`,
         { direction: 'top', offset: [0, -10] }
       );
+
+      if (canCloseLoopHere) {
+        nodeMarker.on('click', (ev) => {
+          L.DomEvent.stopPropagation(ev);
+          closeRouteLoopToFirstNode();
+        });
+      }
 
       // Al arrastrar un nodo de control, se alinea automáticamente a la calle más cercana y recalcula los tramos adyacentes
       nodeMarker.on('dragend', async (ev) => {
@@ -2070,6 +2090,7 @@ async function startTracingRouteOnMap(routeId) {
   state.tracingRouteId = route.id;
   state.selectedRouteId = route.id;
   state.tempTraceStopIds = [...(route.keyStopIds || [])];
+  state.tempTraceClosedLoop = Boolean(route.isClosedLoop);
 
   const stopMap = buildFlexibleStopMap();
 
@@ -2132,8 +2153,48 @@ async function startTracingRouteOnMap(routeId) {
  * 1) Alinea el punto a la calle más cercana (OSRM nearest).
  * 2) Traza automáticamente el camino por las calles desde el nodo anterior (OSRM route).
  */
+async function closeRouteLoopToFirstNode() {
+  if (!state.tracingRouteId || state.isRoutingStreet) return;
+  if (state.tempTraceNodes.length < 2) {
+    showToast('⚠️ Agrega al menos 2 nodos antes de cerrar la ruta en el Nodo #1.');
+    return;
+  }
+  const firstNode = state.tempTraceNodes[0];
+  const prevNode = state.tempTraceNodes[state.tempTraceNodes.length - 1];
+  state.isRoutingStreet = true;
+  try {
+    const closingNode = {
+      lat: firstNode.lat,
+      lng: firstNode.lng,
+      stopId: firstNode.stopId || null,
+      streetName: firstNode.streetName || 'Inicio / Fin',
+      isLoopClosure: true
+    };
+    const seg = await fetchStreetAlignedSegment(prevNode, closingNode);
+    state.tempTraceSegments.push(seg);
+    state.tempTraceNodes.push(closingNode);
+    state.tempTraceClosedLoop = true;
+    rebuildTraceCoordsFromSegments();
+    renderMapRoutes();
+    updateTraceBarMetrics();
+  } finally {
+    state.isRoutingStreet = false;
+  }
+  saveRouteTrace(true);
+}
+
 async function handleMapClickDuringRouteTrace(rawLat, rawLng) {
   if (!state.tracingRouteId || state.isRoutingStreet) return;
+
+  if (state.tempTraceNodes.length >= 2 && !state.tempTraceClosedLoop) {
+    const firstNode = state.tempTraceNodes[0];
+    const distMeters = haversineDistanceKm(rawLat, rawLng, firstNode.lat, firstNode.lng) * 1000;
+    if (distMeters <= 25) {
+      await closeRouteLoopToFirstNode();
+      return;
+    }
+  }
+
   state.isRoutingStreet = true;
 
   try {
@@ -2164,6 +2225,16 @@ async function handleMapClickDuringRouteTrace(rawLat, rawLng) {
 
 async function handleStopClickedDuringRouteTrace(stop) {
   if (!state.tracingRouteId || state.isRoutingStreet) return;
+
+  if (
+    state.tempTraceNodes.length >= 2 &&
+    !state.tempTraceClosedLoop &&
+    state.tempTraceNodes[0].stopId === stop.id
+  ) {
+    await closeRouteLoopToFirstNode();
+    return;
+  }
+
   state.isRoutingStreet = true;
 
   try {
@@ -2218,7 +2289,10 @@ function updateTraceBarMetrics() {
 
 function undoTracePoint() {
   if (!state.tracingRouteId || state.tempTraceNodes.length === 0) return;
-  state.tempTraceNodes.pop();
+  const popped = state.tempTraceNodes.pop();
+  if (popped && popped.isLoopClosure) {
+    state.tempTraceClosedLoop = false;
+  }
   if (state.tempTraceSegments.length > 0) {
     state.tempTraceSegments.pop();
   }
@@ -2234,6 +2308,7 @@ function clearTracePoints() {
   state.tempTraceSegments = [];
   state.tempTraceCoords = [];
   state.tempTraceStopIds = [];
+  state.tempTraceClosedLoop = false;
   renderMapRoutes();
   updateTraceBarMetrics();
   showToast('🧹 Lienzo de ruta limpiado. Haz clic en paraderos o calles del mapa para modelar desde cero.');
@@ -2271,7 +2346,7 @@ async function snapTraceToRouteStops() {
   }
 }
 
-function saveRouteTrace() {
+function saveRouteTrace(closedByLoop = false) {
   if (!state.tracingRouteId) return;
   const route = state.routes.find(r => r.id === state.tracingRouteId);
   if (!route) return;
@@ -2281,24 +2356,31 @@ function saveRouteTrace() {
     return;
   }
 
+  const uniqueStopIds = [...new Set(state.tempTraceStopIds)];
   const metrics = computeRouteDistanceAndEta(
     state.tempTraceCoords,
     route.averageSpeedKmh || 22,
-    state.tempTraceStopIds.length
+    uniqueStopIds.length
   );
 
-  if (state.tempTraceStopIds.length >= 2) {
-    route.keyStopIds = [...state.tempTraceStopIds];
-  }
+  route.keyStopIds = uniqueStopIds;
   route.controlNodes = state.tempTraceNodes.map(n => ({
     lat: n.lat,
     lng: n.lng,
     stopId: n.stopId || null,
-    streetName: n.streetName || ''
+    streetName: n.streetName || '',
+    isLoopClosure: Boolean(n.isLoopClosure)
   }));
   route.pathCoordinates = [...state.tempTraceCoords];
   route.totalDistanceKm = metrics.totalDistanceKm;
   route.estimatedTotalMinutes = metrics.estimatedTotalMinutes;
+
+  const isClosed = Boolean(closedByLoop || state.tempTraceClosedLoop);
+  const firstNode = state.tempTraceNodes[0] || null;
+  route.isClosedLoop = isClosed;
+  route.terminalStopId = isClosed && firstNode ? (firstNode.stopId || null) : null;
+  route.terminalLabel = isClosed && firstNode ? (firstNode.streetName || 'Inicio / Fin') : null;
+  route.loopRule = isClosed ? 'mandatory_alighting_reboard_pays' : null;
 
   const traceBar = document.getElementById('route-trace-bar');
   if (traceBar) traceBar.classList.add('hidden');
@@ -2308,7 +2390,9 @@ function saveRouteTrace() {
   state.tempTraceSegments = [];
   state.tempTraceCoords = [];
   state.tempTraceStopIds = [];
+  state.tempTraceClosedLoop = false;
 
+  syncStopsRoutesPassingFromRoutes();
   saveRoutesToLocalStorage();
   renderRoutesList();
   updateRouteStats();
@@ -2322,7 +2406,11 @@ function saveRouteTrace() {
     user: state.currentUser
   });
 
-  showToast(`✓ Trazado vial de ${route.code} guardado (${route.totalDistanceKm} km • ~${route.estimatedTotalMinutes} min).`);
+  if (isClosed) {
+    showToast(`🔁 Ruta cerrada en Nodo #1 (Inicio/Fin: descenso obligatorio; reabordaje paga nuevo pasaje). ${route.code} guardada (${route.totalDistanceKm} km).`);
+  } else {
+    showToast(`✓ Trazado vial de ${route.code} guardado (${route.totalDistanceKm} km • ~${route.estimatedTotalMinutes} min).`);
+  }
 }
 
 function cancelRouteTrace() {
@@ -2333,6 +2421,7 @@ function cancelRouteTrace() {
   state.tempTraceSegments = [];
   state.tempTraceCoords = [];
   state.tempTraceStopIds = [];
+  state.tempTraceClosedLoop = false;
   renderMapRoutes();
   showToast('Edición de trazado cancelada.');
 }
@@ -2373,7 +2462,7 @@ function openRouteDialog(route = null) {
     badge.textContent = 'NUEVA RUTA';
     badge.className = 'dialog-badge official';
     btnDelete.style.display = 'none';
-    btnOpenTracer.style.display = 'none';
+    btnOpenTracer.style.display = 'inline-flex';
 
     document.getElementById('route-field-id').value = '';
     document.getElementById('route-field-code').value = '';
@@ -2386,7 +2475,7 @@ function openRouteDialog(route = null) {
     document.getElementById('route-field-schedule').value = '05:30 - 22:30';
     document.getElementById('route-field-color').value = '#10B981';
 
-    renderRouteStopsChecklist(['mercado-central', 'plaza-zela', 'unjbg']);
+    renderRouteStopsChecklist([]);
   }
 
   syncRouteTypeVisibilityInModal();
@@ -2486,12 +2575,16 @@ function closeRouteDialog() {
   }
 }
 
-async function handleRouteFormSubmit(e) {
-  e.preventDefault();
+async function handleRouteFormSubmit(e, openTracerAfter = false) {
+  if (e && e.preventDefault) e.preventDefault();
 
   const id = document.getElementById('route-field-id').value.trim();
   const code = document.getElementById('route-field-code').value.trim();
   const title = document.getElementById('route-field-title').value.trim();
+  if (!code || !title) {
+    showToast('⚠️ Ingresa al menos el código y el título de la ruta.');
+    return;
+  }
   const routeType = document.getElementById('route-field-type').value;
   const isOrdinary = routeType === 'ordinary';
   const isInService = isOrdinary && document.getElementById('route-field-service').value === 'true';
@@ -2501,11 +2594,7 @@ async function handleRouteFormSubmit(e) {
   const scheduleLabel = document.getElementById('route-field-schedule').value.trim() || '05:30 - 22:30';
   const colorHex = document.getElementById('route-field-color').value || '#2563EB';
   const keyStopIds = getSelectedStopIdsFromRouteModal();
-
-  if (keyStopIds.length < 2) {
-    showToast('⚠️ Selecciona al menos 2 paraderos para conformar el recorrido de la ruta.');
-    return;
-  }
+  const shouldLaunchTracer = openTracerAfter || (!id && keyStopIds.length < 2);
 
   const stopMap = buildFlexibleStopMap();
   const rawStopNodes = keyStopIds.map(sid => {
@@ -2534,7 +2623,7 @@ async function handleRouteFormSubmit(e) {
       let pathCoordinates = state.routes[idx].pathCoordinates || [];
       let controlNodes = state.routes[idx].controlNodes || rawStopNodes;
 
-      if (!alreadyStreetAligned) {
+      if (!alreadyStreetAligned && rawStopNodes.length >= 2) {
         showToast(`🛣️ Alineando paraderos de "${code}" por las calles de Tacna...`);
         const aligned = await alignNodesToStreetNetwork(rawStopNodes);
         pathCoordinates = aligned.fullCoords.length >= 2
@@ -2569,11 +2658,16 @@ async function handleRouteFormSubmit(e) {
       showToast(`✓ Ruta "${code}" actualizada y alineada a las calles.`);
     }
   } else {
-    showToast(`🛣️ Trazando nueva ruta "${code}" por las calles de Tacna...`);
-    const aligned = await alignNodesToStreetNetwork(rawStopNodes);
-    const pathCoordinates = aligned.fullCoords.length >= 2
-      ? aligned.fullCoords
-      : rawStopNodes.map(n => [n.lat, n.lng]);
+    let pathCoordinates = [];
+    let controlNodes = [];
+    if (rawStopNodes.length >= 2) {
+      showToast(`🛣️ Trazando nueva ruta "${code}" por las calles de Tacna...`);
+      const aligned = await alignNodesToStreetNetwork(rawStopNodes);
+      pathCoordinates = aligned.fullCoords.length >= 2
+        ? aligned.fullCoords
+        : rawStopNodes.map(n => [n.lat, n.lng]);
+      controlNodes = aligned.nodes;
+    }
     const metrics = computeRouteDistanceAndEta(pathCoordinates, averageSpeedKmh, keyStopIds.length);
 
     const newId = `route-${slugify(code)}-${Date.now().toString(36)}`;
@@ -2593,16 +2687,19 @@ async function handleRouteFormSubmit(e) {
       colorHex,
       iconName: 'bus.doubledecker.fill',
       keyStopIds,
-      controlNodes: aligned.nodes,
+      controlNodes,
       pathCoordinates,
       totalDistanceKm: metrics.totalDistanceKm,
       estimatedTotalMinutes: metrics.estimatedTotalMinutes
     };
     state.routes.push(savedRoute);
     state.selectedRouteId = newId;
-    showToast(`✓ Nueva ruta "${code}" creada y alineada a las calles de Tacna.`);
+    if (!shouldLaunchTracer) {
+      showToast(`✓ Nueva ruta "${code}" creada y alineada a las calles de Tacna.`);
+    }
   }
 
+  syncStopsRoutesPassingFromRoutes();
   saveRoutesToLocalStorage();
   renderRoutesList();
   updateRouteStats();
@@ -2617,7 +2714,11 @@ async function handleRouteFormSubmit(e) {
       route: savedRoute,
       user: state.currentUser
     });
-    selectRouteOnMap(savedRoute.id, true);
+    if (shouldLaunchTracer) {
+      startTracingRouteOnMap(savedRoute.id);
+    } else {
+      selectRouteOnMap(savedRoute.id, true);
+    }
   }
 }
 
@@ -2721,7 +2822,7 @@ function openStopDialog(stop = null, defaultLat = null, defaultLng = null) {
     document.getElementById('field-subtitle').value = '';
     document.getElementById('field-category').value = 'marketsCommercial';
     document.getElementById('field-icon').value = 'bus.fill';
-    document.getElementById('field-routes').value = 'Ruta 14';
+    document.getElementById('field-routes').value = '';
     document.getElementById('field-lat').value = defaultLat ? defaultLat.toFixed(6) : '-18.013580';
     document.getElementById('field-lng').value = defaultLng ? defaultLng.toFixed(6) : '-70.250550';
     document.getElementById('field-note').value = '';
@@ -3109,9 +3210,7 @@ function setupUIEventListeners() {
   });
 
   document.getElementById('btn-open-map-tracer-from-modal')?.addEventListener('click', () => {
-    const id = document.getElementById('route-field-id').value;
-    closeRouteDialog();
-    if (id) startTracingRouteOnMap(id);
+    handleRouteFormSubmit(null, true);
   });
 
   // Botones de la Barra Flotante de Reubicación ("¿Deseas mover?" ➔ "Establecer")
@@ -3651,8 +3750,11 @@ function renderDriversTable() {
         <td>${statusPill}</td>
         <td>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button type="button" class="btn btn-secondary btn-sm" onclick="openDriverDetailModal('${escapeHtml(u.dni)}')">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openDriverDetailModal('${escapeHtml(u.dni || u.id || '')}')">
               Ver Ficha
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openEditDriverDialog('${escapeHtml(u.id || u.dni || '')}')">
+              ✏️ Editar
             </button>
             <button type="button" class="btn btn-secondary btn-sm" onclick="controlDriverSession('${escapeHtml(u.dni)}', 'force_logout')" title="Cerrar sesión remota en Cabina y POS">
               🔒 Cerrar Sesión
@@ -3821,26 +3923,30 @@ function renderUsersTable() {
       balanceOrCarnet = `<strong style="color: #F8FAFC; font-family: var(--font-mono);">${u.points_balance || 0} pts</strong>`;
     }
 
+    const fullName = u.display_name || u.name || `${u.first_name || ''} ${u.last_name || ''}`.trim() || 'Pasajero BC';
+    const contactLine = [u.email, u.phone].filter(Boolean).join(' · ') || 'Sin contacto';
+    const userKey = u.id || u.dni || '';
+
     return `
       <tr>
         <td>
           <div style="display: flex; align-items: center; gap: 10px;">
             <div style="width: 32px; height: 32px; border-radius: 50%; background: #1E293B; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.75rem; color: #38BDF8;">
-              ${escapeHtml((u.name || 'U').substring(0, 2).toUpperCase())}
+              ${escapeHtml(fullName.substring(0, 2).toUpperCase())}
             </div>
             <div>
-              <strong style="color: #F8FAFC;">${escapeHtml(u.name)}</strong>
-              <div style="font-size: 0.74rem; color: #94A3B8;">${escapeHtml(u.phone || '')}</div>
+              <strong style="color: #F8FAFC;">${escapeHtml(fullName)}</strong>
+              <div style="font-size: 0.74rem; color: #94A3B8;">${escapeHtml(contactLine)}</div>
             </div>
           </div>
         </td>
-        <td style="font-family: var(--font-mono); font-size: 0.8rem; color: #CBD5E1;">${escapeHtml(u.dni)}</td>
+        <td style="font-family: var(--font-mono); font-size: 0.8rem; color: #CBD5E1;">${escapeHtml(u.dni || '-')}</td>
         <td>${roleBadge}</td>
         <td>${opsDetail}</td>
         <td>${balanceOrCarnet}</td>
         <td><span class="pos-status-pill online">ACTIVO</span></td>
         <td>
-          <button type="button" class="btn btn-ghost btn-sm" onclick="showToast('Usuario ${escapeHtml(u.name)} verificado en padrón.');">
+          <button type="button" class="btn btn-secondary btn-sm" onclick="openClientDetailModal('${escapeHtml(userKey)}')">
             Ver Ficha
           </button>
         </td>
@@ -3860,6 +3966,12 @@ function openUserDialog(defaultRole = 'STUDENT') {
   document.getElementById('user-field-university').value = 'UNJBG Tacna';
   document.getElementById('user-field-student-expiry').value = '2026-12-31';
 
+  const titleEl = document.getElementById('user-dialog-title');
+  if (titleEl) {
+    titleEl.textContent = defaultRole === 'DRIVER' ? '🚌 Registrar Chofer en Ruta' : '👤 Registrar Usuario';
+  }
+  const pinInput = document.getElementById('user-field-pin');
+  if (pinInput) pinInput.value = '';
   const roleSelect = document.getElementById('user-field-role');
   if (roleSelect && defaultRole) {
     roleSelect.value = defaultRole;
@@ -3868,6 +3980,48 @@ function openUserDialog(defaultRole = 'STUDENT') {
   // Sincronizar campos según rol inicial
   handleUserRoleFieldsToggle(defaultRole || 'STUDENT');
 
+  dialog.showModal();
+}
+
+function openEditDriverDialog(key) {
+  const u = (state.users || []).find((x) => (x.id && x.id === key) || (x.dni && x.dni === key));
+  if (!u) {
+    showToast('No se encontró el chofer para editar.', 'error');
+    return;
+  }
+
+  const dialog = document.getElementById('user-dialog');
+  const form = document.getElementById('user-form');
+  if (!dialog || !form) return;
+
+  form.reset();
+
+  const linkedPos = (state.posTerminals || []).find(
+    (p) => (p.driver_dni && p.driver_dni === u.dni) || (u.unit_code && p.unit_code === u.unit_code)
+  );
+
+  document.getElementById('user-field-id').value = u.id || u.dni || '';
+  document.getElementById('user-field-role').value = u.role || 'DRIVER';
+  document.getElementById('user-field-name').value = u.name || '';
+  document.getElementById('user-field-dni').value = u.dni || '';
+  document.getElementById('user-field-phone').value = u.phone || '';
+  document.getElementById('user-field-email').value = u.email || '';
+  document.getElementById('user-field-points').value = String(u.points ?? 100);
+  document.getElementById('user-field-route').value = u.route_code || '';
+  document.getElementById('user-field-unit').value = u.unit_code || '';
+  document.getElementById('user-field-plate').value = u.plate || '';
+  document.getElementById('user-field-brevete').value = u.brevete || '';
+  const pinInput = document.getElementById('user-field-pin');
+  if (pinInput) {
+    pinInput.value = u.pin || (linkedPos && (linkedPos.pairing_code || linkedPos.pin)) || '';
+  }
+
+  const titleEl = document.getElementById('user-dialog-title');
+  if (titleEl) {
+    titleEl.textContent = `✏️ Editar Chofer: ${u.name || u.dni || ''}`;
+  }
+
+  handleUserRoleFieldsToggle('DRIVER');
   dialog.showModal();
 }
 
@@ -3995,6 +4149,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (userForm) {
     userForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const editId = document.getElementById('user-field-id').value.trim();
       const role = document.getElementById('user-field-role').value;
       const name = document.getElementById('user-field-name').value.trim();
       const dni = document.getElementById('user-field-dni').value.trim();
@@ -4010,12 +4165,17 @@ document.addEventListener('DOMContentLoaded', () => {
         points_balance: points,
         email: email || `${slugify(name)}@busconectado.pe`
       };
+      if (editId) {
+        newUser.id = editId;
+      }
 
       if (role === 'DRIVER') {
         newUser.route_code = document.getElementById('user-field-route').value;
         newUser.unit_code = document.getElementById('user-field-unit').value.trim();
         newUser.plate = document.getElementById('user-field-plate').value.trim().toUpperCase();
         newUser.brevete = document.getElementById('user-field-brevete').value.trim().toUpperCase();
+        const pinVal = (document.getElementById('user-field-pin')?.value || '').trim();
+        if (pinVal) newUser.pin = pinVal;
       } else if (role === 'STUDENT') {
         newUser.carnet_code = document.getElementById('user-field-student-code').value.trim();
         newUser.university = document.getElementById('user-field-university').value.trim();
@@ -4167,8 +4327,8 @@ function startLiveBusesMapPolling() {
   setInterval(poll, 3000);
 }
 
-async function openDriverDetailModal(dni) {
-  const driver = (state.users || []).find(u => u.dni === dni && u.role === 'DRIVER');
+async function openDriverDetailModal(key) {
+  const driver = (state.users || []).find(u => (u.dni === key || u.id === key) && u.role === 'DRIVER');
   if (!driver) {
     showToast('No se encontró información del chofer.');
     return;
@@ -4184,50 +4344,49 @@ async function openDriverDetailModal(dni) {
   const driverTxs = txs.filter(t => !unitCode || (t.unit_code || '').toUpperCase() === unitCode);
   const appCount = driverTxs.filter(t => t.payment_method === 'APP_BUS_CONECTADO').length;
   const yapeCount = driverTxs.filter(t => t.payment_method === 'YAPE_EMPRESA').length;
-  const conadisCount = driverTxs.filter(t => (t.fare_label || '').toUpperCase().includes('CONADIS') || t.payment_method === 'CONADIS').length;
   const totalNet = driverTxs.reduce((acc, t) => acc + Number(t.net_pen || t.amount_pen || 0), 0);
 
   const linkedPos = (state.posTerminals || []).find(p => p.driver_dni === driver.dni || p.unit_code === driver.unit_code);
-  const posId = linkedPos?.pos_id || linkedPos?.terminal_id || driver.pos_terminal_id || 'POS-UNI-1408';
-  const posPin = linkedPos?.pairing_code || linkedPos?.pin || driver.pin || '1408';
+  const posId = linkedPos?.pos_id || linkedPos?.terminal_id || driver.pos_terminal_id || 'Sin asignar';
+  const posPin = linkedPos?.pairing_code || linkedPos?.pin || driver.pin || '-';
+  const driverName = driver.display_name || driver.name || 'Chofer';
 
   let dialog = document.getElementById('driver-detail-dialog');
   if (!dialog) {
     dialog = document.createElement('dialog');
     dialog.id = 'driver-detail-dialog';
-    dialog.className = 'admin-dialog';
-    dialog.style.maxWidth = '720px';
-    dialog.style.width = '92vw';
+    dialog.style.cssText = 'padding:0;border:1px solid rgba(148,163,184,0.28);border-radius:16px;background:#0F172A;color:#F8FAFC;max-width:740px;width:92vw;margin:auto;';
     document.body.appendChild(dialog);
   }
 
   const rowsHtml = driverTxs.slice(0, 20).map(t => `
     <tr>
-      <td style="font-family:var(--font-mono);font-size:0.75rem;">${new Date(t.timestamp).toLocaleTimeString('es-PE')}</td>
+      <td style="font-family:var(--font-mono);font-size:0.75rem;">${t.timestamp ? new Date(t.timestamp).toLocaleTimeString('es-PE') : '-'}</td>
       <td><strong>${escapeHtml(t.passenger_name || 'Pasajero')}</strong></td>
       <td>${escapeHtml(t.fare_label || 'Tarifa General')}</td>
       <td>${escapeHtml(t.method_label || t.payment_method || 'App')}</td>
       <td style="font-family:var(--font-mono);font-weight:700;color:#34D399;">S/. ${Number(t.amount_pen || 0).toFixed(2)}</td>
     </tr>
-  `).join('') || `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-muted);">Sin abordajes registrados aún para esta unidad.</td></tr>`;
+  `).join('') || `<tr><td colspan="5" style="text-align:center;padding:16px;color:#94A3B8;">Sin abordajes registrados aún para esta unidad.</td></tr>`;
 
   dialog.innerHTML = `
-    <div style="padding:20px;background:#0F172A;color:#F8FAFC;border-radius:16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div style="padding:22px;background:#0F172A;color:#F8FAFC;border-radius:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:12px;">
         <div>
-          <h3 style="margin:0;font-size:1.15rem;">🚌 Ficha del Chofer: ${escapeHtml(driver.name)}</h3>
-          <p style="margin:4px 0 0;color:#94A3B8;font-size:0.82rem;">DNI: ${escapeHtml(driver.dni)} • Brevete: ${escapeHtml(driver.brevete || 'N/A')} (${escapeHtml(driver.brevete_category || 'A-IIIa')}) • Tel: ${escapeHtml(driver.phone || '-')}</p>
+          <h3 style="margin:0;font-size:1.15rem;">🚌 Ficha del Chofer: ${escapeHtml(driverName)}</h3>
+          <p style="margin:4px 0 0;color:#94A3B8;font-size:0.82rem;">ID: ${escapeHtml(driver.id || '-')} • DNI: ${escapeHtml(driver.dni || '-')} • Correo: ${escapeHtml(driver.email || '-')}</p>
+          <p style="margin:2px 0 0;color:#94A3B8;font-size:0.82rem;">Brevete: ${escapeHtml(driver.brevete || 'N/A')} (${escapeHtml(driver.brevete_category || 'A-IIIa')}) • Tel: ${escapeHtml(driver.phone || '-')}</p>
         </div>
         <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('driver-detail-dialog').close()">Cerrar</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
-        <div class="stat-card"><span class="stat-number" style="font-size:1rem;">${escapeHtml(driver.unit_code || 'UNI-1408')}</span><span class="stat-label">${escapeHtml(driver.plate || 'Z4B-812')} · ${escapeHtml(driver.route_code || 'Ruta 14')}</span></div>
+        <div class="stat-card"><span class="stat-number" style="font-size:1rem;">${escapeHtml(driver.unit_code || '-')}</span><span class="stat-label">${escapeHtml(driver.plate || '-')} · ${escapeHtml(driver.route_code || '-')}</span></div>
         <div class="stat-card"><span class="stat-number" style="font-size:1rem;color:#38BDF8;">${appCount + yapeCount}</span><span class="stat-label">App (${appCount}) / Yape (${yapeCount})</span></div>
-        <div class="stat-card"><span class="stat-number" style="font-size:1rem;color:#FBBF24;">${conadisCount}</span><span class="stat-label">Pases CONADIS</span></div>
-        <div class="stat-card"><span class="stat-number" style="font-size:1rem;color:#34D399;">S/. ${totalNet.toFixed(2)}</span><span class="stat-label">POS ${escapeHtml(posId)} (PIN ${escapeHtml(posPin)})</span></div>
+        <div class="stat-card"><span class="stat-number" style="font-size:1rem;color:#FBBF24;">${escapeHtml(posPin)}</span><span class="stat-label">PIN Enlace POS</span></div>
+        <div class="stat-card"><span class="stat-number" style="font-size:1rem;color:#34D399;">S/. ${totalNet.toFixed(2)}</span><span class="stat-label">POS ${escapeHtml(posId)}</span></div>
       </div>
-      <h4 style="margin:0 0 8px;font-size:0.9rem;color:#CBD5E1;">Historial de Abordajes (App QR, Billetera y CONADIS)</h4>
-      <div class="table-responsive" style="max-height:280px;overflow-y:auto;">
+      <h4 style="margin:0 0 8px;font-size:0.9rem;color:#CBD5E1;">Historial de Abordajes (App QR y Yape)</h4>
+      <div class="table-responsive" style="max-height:260px;overflow-y:auto;">
         <table class="admin-data-table">
           <thead><tr><th>Hora</th><th>Pasajero</th><th>Tarifa</th><th>Medio</th><th>Monto</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
@@ -4235,7 +4394,80 @@ async function openDriverDetailModal(dni) {
       </div>
     </div>
   `;
-  dialog.showModal();
+  if (typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+  }
+}
+
+function openClientDetailModal(key) {
+  const user = (state.users || []).find(u => (u.id === key || u.dni === key) && u.role !== 'DRIVER');
+  if (!user) {
+    showToast('No se encontró información del cliente.');
+    return;
+  }
+
+  let dialog = document.getElementById('client-detail-dialog');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'client-detail-dialog';
+    dialog.style.cssText = 'padding:0;border:1px solid rgba(148,163,184,0.28);border-radius:16px;background:#0F172A;color:#F8FAFC;max-width:640px;width:92vw;margin:auto;';
+    document.body.appendChild(dialog);
+  }
+
+  const fullName = user.display_name || user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Pasajero BC';
+  const points = Number(user.points_balance || 0);
+  const pen = (points / 10).toFixed(2);
+  const phoneStatus = user.phone ? (user.phone_verified === false ? 'Pendiente' : 'Verificado') : 'Sin vincular';
+
+  dialog.innerHTML = `
+    <div style="padding:22px;background:#0F172A;color:#F8FAFC;border-radius:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;gap:12px;">
+        <div>
+          <h3 style="margin:0;font-size:1.15rem;">👤 Ficha del Cliente: ${escapeHtml(fullName)}</h3>
+          <p style="margin:4px 0 0;color:#94A3B8;font-size:0.8rem;font-family:var(--font-mono);">ID: ${escapeHtml(user.id || '-')}</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('client-detail-dialog').close()">Cerrar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;font-size:0.86rem;">
+        <div class="stat-card" style="text-align:left;padding:12px;">
+          <div style="color:#94A3B8;font-size:0.72rem;">NOMBRE Y APELLIDO</div>
+          <div style="font-weight:700;margin-top:3px;">${escapeHtml(user.first_name || fullName)} ${escapeHtml(user.last_name || '')}</div>
+        </div>
+        <div class="stat-card" style="text-align:left;padding:12px;">
+          <div style="color:#94A3B8;font-size:0.72rem;">CORREO ELECTRÓNICO</div>
+          <div style="font-weight:700;margin-top:3px;word-break:break-all;">${escapeHtml(user.email || 'No registrado')}</div>
+        </div>
+        <div class="stat-card" style="text-align:left;padding:12px;">
+          <div style="color:#94A3B8;font-size:0.72rem;">CELULAR (${escapeHtml(phoneStatus)})</div>
+          <div style="font-weight:700;margin-top:3px;font-family:var(--font-mono);">${escapeHtml(user.phone || 'Sin celular')}</div>
+        </div>
+        <div class="stat-card" style="text-align:left;padding:12px;">
+          <div style="color:#94A3B8;font-size:0.72rem;">DNI</div>
+          <div style="font-weight:700;margin-top:3px;font-family:var(--font-mono);">${escapeHtml(user.dni || 'No registrado')}</div>
+        </div>
+        <div class="stat-card" style="text-align:left;padding:12px;">
+          <div style="color:#94A3B8;font-size:0.72rem;">PROVEEDOR / ROL</div>
+          <div style="font-weight:700;margin-top:3px;">${escapeHtml((user.auth_provider || 'app').toUpperCase())} · ${escapeHtml(user.role || 'ADULT')}</div>
+        </div>
+        <div class="stat-card" style="text-align:left;padding:12px;">
+          <div style="color:#94A3B8;font-size:0.72rem;">SALDO MONEDERO</div>
+          <div style="font-weight:700;margin-top:3px;color:#34D399;">${points} pts (S/. ${pen})</div>
+        </div>
+        <div class="stat-card" style="text-align:left;padding:12px;">
+          <div style="color:#94A3B8;font-size:0.72rem;">CARNET SUNEDU / UNIVERSIDAD</div>
+          <div style="font-weight:700;margin-top:3px;">${escapeHtml(user.university || '-')} ${user.carnet_code ? '· ' + escapeHtml(user.carnet_code) : ''}</div>
+          <div style="color:#94A3B8;font-size:0.72rem;margin-top:2px;">Vence: ${escapeHtml(user.carnet_expiry || '-')}</div>
+        </div>
+        <div class="stat-card" style="text-align:left;padding:12px;">
+          <div style="color:#94A3B8;font-size:0.72rem;">FECHA DE REGISTRO</div>
+          <div style="font-weight:700;margin-top:3px;font-family:var(--font-mono);">${escapeHtml(user.created_at || '-')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+  if (typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+  }
 }
 
 

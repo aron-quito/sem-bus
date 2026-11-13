@@ -207,6 +207,28 @@ fun ExploreMapScreen(
                             )
                         )
                     }
+                    if (cand.isTransfer && cand.transferWalkCoords.size >= 2) {
+                        add(
+                            MapPolylineSpec(
+                                id = "guide_transfer_walk",
+                                points = cand.transferWalkCoords,
+                                colorArgb = BCColors.CyanAccent.toArgb(),
+                                strokeWidthPx = 9f,
+                                dashed = true
+                            )
+                        )
+                    }
+                    if (cand.isTransfer && cand.secondBusTransitCoords.size >= 2) {
+                        add(
+                            MapPolylineSpec(
+                                id = "guide_bus2",
+                                points = cand.secondBusTransitCoords,
+                                colorArgb = BCColors.fromHex(cand.secondRouteColorHex ?: cand.colorHex).toArgb(),
+                                strokeWidthPx = 13f,
+                                dashed = !isOrd
+                            )
+                        )
+                    }
                 }
                 val finalPts = if (guidedFinalStreetCoords.size >= 2) guidedFinalStreetCoords else cand.walkFinalCoords
                 if (finalPts.size >= 2) {

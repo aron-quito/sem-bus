@@ -453,6 +453,13 @@ fun MainTabScreen(
         HelpFaqDialog(onDismiss = { showFaqDialog = false })
     }
 
+    if (state.showPhoneLinkDialog) {
+        pe.edu.unjbg.busconectado.feature.auth.ui.PhoneLinkModalDialog(
+            state = state,
+            viewModel = viewModel
+        )
+    }
+
     // Alerta de Saldo Insuficiente en pago QR
     if (state.showInsufficientBalanceDialog) {
         AlertDialog(

@@ -89,17 +89,19 @@ fun DriverTabletScreen(
                     )
                     OutlinedTextField(
                         value = dniInput,
-                        onValueChange = { dniInput = it },
+                        onValueChange = { dniInput = it.filter { c -> c.isDigit() }.take(8) },
                         label = { Text("DNI del Chofer") },
                         singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                         colors = fieldColors,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
                         value = pinInput,
-                        onValueChange = { pinInput = it },
+                        onValueChange = { pinInput = it.filter { c -> c.isDigit() }.take(6) },
                         label = { Text("PIN de Unidad / POS") },
                         singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                         colors = fieldColors,
                         modifier = Modifier.fillMaxWidth()
                     )

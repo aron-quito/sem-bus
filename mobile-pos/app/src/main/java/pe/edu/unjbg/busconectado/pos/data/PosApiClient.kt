@@ -256,7 +256,13 @@ class PosNetworkRepository(
     }
 
     suspend fun loginDriver(dni: String, pin: String): Result<DriverLoginResponse> = runCatching {
-        val resp = api.driverLogin(DriverLoginRequest(dni = dni.trim(), pin = pin.trim()))
+        val resp = try {
+            api.driverLogin(DriverLoginRequest(dni = dni.trim(), pin = pin.trim()))
+        } catch (httpEx: retrofit2.HttpException) {
+            val rawErr = httpEx.response()?.errorBody()?.string().orEmpty()
+            val parsedMsg = runCatching { org.json.JSONObject(rawErr).optString("error") }.getOrNull()
+            throw IllegalStateException(parsedMsg?.takeIf { it.isNotBlank() } ?: "DNI o PIN no registrado")
+        }
         val drv = resp.driver ?: throw IllegalStateException(resp.error ?: "Credenciales inválidas")
         activeDriver = drv
         activeDriverToken = resp.token

@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bus Conectado • Panel de Gestión y Reubicación de Paraderos (Tacna)</title>
-  
+
   <!-- Preconexión a CDNs y Tiles para acelerar handshake TLS en red móvil -->
   <link rel="preconnect" href="https://unpkg.com" crossorigin>
   <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin>
@@ -13,11 +14,19 @@
 
   <!-- Estilos críticos y Leaflet Map -->
   <link rel="stylesheet" href="styles.css?v=7">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <!-- Fuentes tipográficas diferidas (no bloquean el primer pintado) -->
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet"></noscript>
+  <link rel="preload"
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap"
+    as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap"
+      rel="stylesheet">
+  </noscript>
 </head>
+
 <body>
   <div class="app-layout">
     <!-- BARRA LATERAL (DIRECTORIO Y CONTROLES) -->
@@ -25,14 +34,16 @@
       <header class="sidebar-header">
         <div class="brand">
           <div class="brand-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 6v6"/>
-              <path d="M15 6v6"/>
-              <path d="M2 12h19.6"/>
-              <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.6-.3-1.1-.8-1.4-.4-.2-1-.3-1.6-.3H4.4c-.6 0-1.2.1-1.6.3-.5.3-.8.8-.8 1.4 0 .4.1.8.2 1.2.3 1.1.8 2.8.8 2.8h3"/>
-              <circle cx="7" cy="18" r="2"/>
-              <path d="M9 18h5"/>
-              <circle cx="16" cy="18" r="2"/>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 6v6" />
+              <path d="M15 6v6" />
+              <path d="M2 12h19.6" />
+              <path
+                d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.6-.3-1.1-.8-1.4-.4-.2-1-.3-1.6-.3H4.4c-.6 0-1.2.1-1.6.3-.5.3-.8.8-.8 1.4 0 .4.1.8.2 1.2.3 1.1.8 2.8.8 2.8h3" />
+              <circle cx="7" cy="18" r="2" />
+              <path d="M9 18h5" />
+              <circle cx="16" cy="18" r="2" />
             </svg>
           </div>
           <div>
@@ -56,34 +67,41 @@
           <div class="collab-presence-strip">
             <span class="collab-presence-label">Central Operativa:</span>
             <div class="collab-presence-pills" id="collab-presence-pills">
-              <span class="presence-pill live"><span class="presence-dot"></span> Servidor en Línea (34.30.86.129)</span>
+              <span class="presence-pill live"><span class="presence-dot"></span> Servidor en Línea
+                (34.30.86.129)</span>
             </div>
           </div>
         </div>
 
         <!-- CONMUTADOR PRINCIPAL DE MÓDULOS -->
         <div class="module-tabs" role="tablist" aria-label="Módulos del Administrador">
-          <button type="button" class="module-tab active" id="tab-module-stops" data-module="stops" role="tab" aria-selected="true">
+          <button type="button" class="module-tab active" id="tab-module-stops" data-module="stops" role="tab"
+            aria-selected="true">
             <span>🚏 Paraderos</span>
-            <span class="module-tab-badge" id="tab-badge-stops">34</span>
+            <span class="module-tab-badge" id="tab-badge-stops">0</span>
           </button>
-          <button type="button" class="module-tab" id="tab-module-routes" data-module="routes" role="tab" aria-selected="false">
+          <button type="button" class="module-tab" id="tab-module-routes" data-module="routes" role="tab"
+            aria-selected="false">
             <span>🛣️ Rutas</span>
-            <span class="module-tab-badge" id="tab-badge-routes">5</span>
+            <span class="module-tab-badge" id="tab-badge-routes">0</span>
           </button>
-          <button type="button" class="module-tab" id="tab-module-drivers" data-module="drivers" role="tab" aria-selected="false">
+          <button type="button" class="module-tab" id="tab-module-drivers" data-module="drivers" role="tab"
+            aria-selected="false">
             <span>🚌 Choferes &amp; Flota</span>
             <span class="module-tab-badge" id="tab-badge-drivers">0</span>
           </button>
-          <button type="button" class="module-tab" id="tab-module-clients" data-module="clients" role="tab" aria-selected="false">
+          <button type="button" class="module-tab" id="tab-module-clients" data-module="clients" role="tab"
+            aria-selected="false">
             <span>👥 Clientes / SUNEDU</span>
             <span class="module-tab-badge" id="tab-badge-clients">0</span>
           </button>
-          <button type="button" class="module-tab" id="tab-module-pos" data-module="pos" role="tab" aria-selected="false">
+          <button type="button" class="module-tab" id="tab-module-pos" data-module="pos" role="tab"
+            aria-selected="false">
             <span>💳 POS &amp; Caja</span>
             <span class="module-tab-badge live-badge" id="tab-badge-pos">En vivo</span>
           </button>
-          <button type="button" class="module-tab" id="tab-module-stats" data-module="stats" role="tab" aria-selected="false">
+          <button type="button" class="module-tab" id="tab-module-stats" data-module="stats" role="tab"
+            aria-selected="false">
             <span>📊 Métricas</span>
           </button>
         </div>
@@ -95,15 +113,15 @@
           <!-- Estadísticas Rápidas de Paraderos -->
           <div class="stats-row">
             <div class="stat-card">
-              <span class="stat-number" id="stat-total">34</span>
+              <span class="stat-number" id="stat-total">0</span>
               <span class="stat-label">Total</span>
             </div>
             <div class="stat-card official">
-              <span class="stat-number" id="stat-official">27</span>
+              <span class="stat-number" id="stat-official">0</span>
               <span class="stat-label">Oficiales</span>
             </div>
             <div class="stat-card proposal">
-              <span class="stat-number" id="stat-proposals">7</span>
+              <span class="stat-number" id="stat-proposals">0</span>
               <span class="stat-label">Propuestas</span>
             </div>
           </div>
@@ -111,24 +129,42 @@
           <!-- Barra de Acciones Principales de Paraderos -->
           <div class="actions-toolbar">
             <button type="button" class="btn btn-primary" id="btn-add-stop">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
               Nuevo Paradero
             </button>
-            <button type="button" class="btn btn-secondary" id="btn-export-swift" title="Generar código Swift para DomainModels.swift">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+            <button type="button" class="btn btn-secondary" id="btn-export-swift"
+              title="Generar código Swift para DomainModels.swift">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 18 22 12 16 6"></polyline>
+                <polyline points="8 6 2 12 8 18"></polyline>
+              </svg>
               Exportar a iOS
             </button>
-            <button type="button" class="btn btn-secondary" id="btn-export-json" title="Descargar base de datos en JSON">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <button type="button" class="btn btn-secondary" id="btn-export-json"
+              title="Descargar base de datos en JSON">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
               Descargar JSON
             </button>
           </div>
 
           <!-- Barra de Búsqueda de Paraderos -->
           <div class="search-box">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <input type="search" id="search-input" placeholder="Buscar por nombre, calle o ruta (Ej: Mercado Central, Ruta 14)..." aria-label="Buscar paradero">
-            <button type="button" class="search-clear" id="search-clear" aria-label="Limpiar búsqueda" hidden>&times;</button>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="search" id="search-input"
+              placeholder="Buscar por nombre, calle o ruta (Ej: Mercado Central, Ruta 14)..."
+              aria-label="Buscar paradero">
+            <button type="button" class="search-clear" id="search-clear" aria-label="Limpiar búsqueda"
+              hidden>&times;</button>
           </div>
 
           <!-- Filtros por Categoría de Paraderos -->
@@ -164,22 +200,32 @@
           <!-- Barra de Acciones Principales de Rutas -->
           <div class="actions-toolbar">
             <button type="button" class="btn btn-primary" id="btn-add-route">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
               Nueva Ruta
             </button>
-            <button type="button" class="btn btn-secondary" id="btn-toggle-all-routes" title="Superponer o limpiar todas las líneas en el mapa de Tacna">
+            <button type="button" class="btn btn-secondary" id="btn-toggle-all-routes"
+              title="Superponer o limpiar todas las líneas en el mapa de Tacna">
               🗺️ Ver Todas en Mapa
             </button>
-            <button type="button" class="btn btn-secondary" id="btn-export-routes-json" title="Descargar catálogo de rutas en JSON">
+            <button type="button" class="btn btn-secondary" id="btn-export-routes-json"
+              title="Descargar catálogo de rutas en JSON">
               📥 JSON Rutas
             </button>
           </div>
 
           <!-- Barra de Búsqueda de Rutas -->
           <div class="search-box">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <input type="search" id="route-search-input" placeholder="Buscar línea, corredor o paradero (Ej: Ruta 14, Externa, UNJBG)..." aria-label="Buscar ruta">
-            <button type="button" class="search-clear" id="route-search-clear" aria-label="Limpiar búsqueda de ruta" hidden>&times;</button>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input type="search" id="route-search-input"
+              placeholder="Buscar línea, corredor o paradero (Ej: Ruta 14, Externa, UNJBG)..." aria-label="Buscar ruta">
+            <button type="button" class="search-clear" id="route-search-clear" aria-label="Limpiar búsqueda de ruta"
+              hidden>&times;</button>
           </div>
 
           <!-- Filtros por Tipo de Ruta -->
@@ -195,7 +241,7 @@
       <!-- Lista Scrollable de Paraderos (Módulo 1) -->
       <section class="stops-list-container" id="stops-list-section" aria-label="Lista de Paraderos">
         <div class="list-meta">
-          <span id="showing-count-text">Mostrando 34 paraderos</span>
+          <span id="showing-count-text">Cargando paraderos...</span>
           <span class="drag-hint">💡 Haz clic en un paradero para ver sus rutas o reubicarlo</span>
         </div>
         <ul class="stops-list" id="stops-list">
@@ -216,7 +262,8 @@
 
       <!-- Pie de Barra Lateral -->
       <footer class="sidebar-footer">
-        <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-catalog" title="Restablecer coordenadas originales curadas">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-catalog"
+          title="Restablecer coordenadas originales curadas">
           ↺ Restablecer valores predeterminados
         </button>
         <div class="sync-status" id="sync-status">
@@ -244,7 +291,8 @@
       </div>
 
       <!-- Barra Flotante de Reubicación de Paradero (Aparece al activar "¿Deseas mover el paradero?") -->
-      <div class="relocation-action-bar hidden" id="relocation-bar" role="region" aria-label="Confirmación de reubicación de paradero">
+      <div class="relocation-action-bar hidden" id="relocation-bar" role="region"
+        aria-label="Confirmación de reubicación de paradero">
         <div class="relocation-info">
           <div class="relocation-pulse"></div>
           <div>
@@ -257,15 +305,18 @@
           </div>
         </div>
         <div class="relocation-actions">
-          <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-relocation" title="Descartar y volver a la posición original">Cancelar</button>
-          <button type="button" class="btn btn-primary btn-sm btn-establish" id="btn-establish-relocation" title="Confirmar y guardar nueva ubicación">
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-relocation"
+            title="Descartar y volver a la posición original">Cancelar</button>
+          <button type="button" class="btn btn-primary btn-sm btn-establish" id="btn-establish-relocation"
+            title="Confirmar y guardar nueva ubicación">
             ✓ Establecer
           </button>
         </div>
       </div>
 
       <!-- Barra Flotante de Trazado Interactivo de Ruta en el Mapa (Referencia App + Chofer) -->
-      <div class="relocation-action-bar route-trace-bar hidden" id="route-trace-bar" role="region" aria-label="Editor de trazado de ruta en el mapa">
+      <div class="relocation-action-bar route-trace-bar hidden" id="route-trace-bar" role="region"
+        aria-label="Editor de trazado de ruta en el mapa">
         <div class="relocation-info">
           <div class="relocation-pulse" id="trace-route-color-dot"></div>
           <div>
@@ -274,14 +325,19 @@
               <span class="trace-metrics-pill" id="trace-route-metrics">0.0 km • ~0 min</span>
             </div>
             <div class="relocation-coords" id="trace-route-hint">
-              Haz clic en calles o paraderos: cada nodo se alinea automáticamente a las calles de Tacna. Arrastra cualquier nodo # para ajustar la avenida.
+              Haz clic en calles o paraderos: cada nodo se alinea automáticamente a las calles de Tacna. Arrastra
+              cualquier nodo # para ajustar la avenida.
             </div>
           </div>
         </div>
         <div class="relocation-actions">
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-undo-trace-point" title="Quitar último nodo y su tramo de calle">↶ Deshacer nodo</button>
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-clear-trace-points" title="Limpiar todos los nodos para trazar desde cero sobre el mapa">🧹 Limpiar</button>
-          <button type="button" class="btn btn-secondary btn-sm" id="btn-snap-trace-stops" title="Enrutar automáticamente todos los paraderos de esta línea por las calles de Tacna">🛣️ Alinear a Calles</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-undo-trace-point"
+            title="Quitar último nodo y su tramo de calle">↶ Deshacer nodo</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-clear-trace-points"
+            title="Limpiar todos los nodos para trazar desde cero sobre el mapa">🧹 Limpiar</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-snap-trace-stops"
+            title="Enrutar automáticamente todos los paraderos de esta línea por las calles de Tacna">🛣️ Alinear a
+            Calles</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-cancel-trace">Cancelar</button>
           <button type="button" class="btn btn-primary btn-sm btn-establish" id="btn-save-trace">
             ✓ Guardar Trazado
@@ -292,7 +348,8 @@
       <!-- Banner de Reubicación Colaborativa (Cuando otro admin está moviendo un paradero) -->
       <div class="collab-remote-banner" id="collab-remote-banner" style="display: none;">
         <span class="collab-remote-dot"></span>
-        <span class="collab-remote-text" id="collab-remote-text">Admin 2 está reubicando un paradero en tiempo real...</span>
+        <span class="collab-remote-text" id="collab-remote-text">Admin 2 está reubicando un paradero en tiempo
+          real...</span>
       </div>
 
       <!-- Indicador de Coordenadas del Cursor en Vivo -->
@@ -313,10 +370,12 @@
           <div>
             <div class="panel-badge-live"><span class="presence-dot"></span> EN VIVO • CAJA CENTRALIZADA</div>
             <h2 class="panel-title">💳 Gestión de POS, Recaudación &amp; Abordajes</h2>
-            <p class="panel-subtitle">Monitoreo en tiempo real de terminales POS por bus, cobros por App Bus Conectado, Billeteras Digitales (Yape Empresas), Tarjetas NFC y Pase Libre CONADIS (Ley 30412).</p>
+            <p class="panel-subtitle">Monitoreo en tiempo real de terminales POS por bus, cobros por App Bus Conectado,
+              Billeteras Digitales (Yape Empresas), Tarjetas NFC y Pase Libre CONADIS (Ley 30412).</p>
           </div>
           <div class="panel-header-actions">
-            <button type="button" class="btn btn-secondary" id="btn-refresh-pos" title="Actualizar transacciones y terminales">
+            <button type="button" class="btn btn-secondary" id="btn-refresh-pos"
+              title="Actualizar transacciones y terminales">
               ↻ Actualizar
             </button>
             <button type="button" class="btn btn-primary" id="btn-open-add-pos">
@@ -354,7 +413,8 @@
           <div class="section-box-header">
             <div>
               <h3 class="section-box-title">Terminales POS Activos por Unidad de Bus</h3>
-              <p class="section-box-desc">Estado de enlace de tablet/dispositivo validador, chofer asignado, PIN de inicio de sesión y recaudación del turno.</p>
+              <p class="section-box-desc">Estado de enlace de tablet/dispositivo validador, chofer asignado, PIN de
+                inicio de sesión y recaudación del turno.</p>
             </div>
             <span class="badge-count" id="pos-terminals-count">2 terminales</span>
           </div>
@@ -368,7 +428,8 @@
           <div class="section-box-header">
             <div>
               <h3 class="section-box-title">Libro Mayor de Transacciones &amp; Abordajes en Ruta</h3>
-              <p class="section-box-desc">Registro auditable con usuario, método de pago, tarifa aplicada y comisiones bancarias.</p>
+              <p class="section-box-desc">Registro auditable con usuario, método de pago, tarifa aplicada y comisiones
+                bancarias.</p>
             </div>
             <div class="table-filters-toolbar">
               <select id="filter-tx-route" class="select-filter" aria-label="Filtrar por ruta">
@@ -384,7 +445,8 @@
                 <option value="NFC">Tarjeta Contactless NFC</option>
                 <option value="CONADIS">Pase Libre CONADIS</option>
               </select>
-              <input type="search" id="search-tx-input" class="search-input-compact" placeholder="Buscar pasajero, carnet o unidad...">
+              <input type="search" id="search-tx-input" class="search-input-compact"
+                placeholder="Buscar pasajero, carnet o unidad...">
             </div>
           </div>
           <div class="table-responsive">
@@ -421,7 +483,8 @@
           <div>
             <div class="panel-badge-live">FLOTA OPERATIVA • TACNA</div>
             <h2 class="panel-title">🚌 Choferes, Rutas Asignadas &amp; Enlace POS</h2>
-            <p class="panel-subtitle">Registra conductores, asígnalos a rutas existentes con su unidad y placa, y vincula sus credenciales (DNI + PIN) tanto para la App del Chofer como para el Terminal POS.</p>
+            <p class="panel-subtitle">Registra conductores, asígnalos a rutas existentes con su unidad y placa, y
+              vincula sus credenciales (DNI + PIN) tanto para la App del Chofer como para el Terminal POS.</p>
           </div>
           <div class="panel-header-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
             <button type="button" class="btn btn-secondary" id="btn-goto-create-route">
@@ -439,7 +502,8 @@
             <span class="badge badge-official">Choferes activos: <strong id="driver-count-total">0</strong></span>
             <span class="badge badge-route">Con POS enlazado: <strong id="driver-count-pos">0</strong></span>
           </div>
-          <input type="search" id="drivers-search-input" class="search-input-compact" placeholder="Buscar chofer por nombre, DNI, brevete, placa o ruta...">
+          <input type="search" id="drivers-search-input" class="search-input-compact"
+            placeholder="Buscar chofer por nombre, DNI, brevete, placa o ruta...">
         </div>
 
         <!-- Tabla de Choferes y Flota -->
@@ -469,13 +533,15 @@
     <!-- ═════════════════════════════════════════════════════════════════
          PANEL PRINCIPAL 2B: CLIENTES, UNIVERSITARIOS SUNEDU Y CONADIS
          ═════════════════════════════════════════════════════════════════ -->
-    <section class="admin-main-panel hidden" id="clients-admin-panel" aria-label="Directorio de Clientes y Beneficiarios">
+    <section class="admin-main-panel hidden" id="clients-admin-panel"
+      aria-label="Directorio de Clientes y Beneficiarios">
       <div class="panel-inner">
         <header class="panel-header">
           <div>
             <div class="panel-badge-live">PADRÓN DE PASAJEROS • TACNA</div>
             <h2 class="panel-title">👥 Clientes &amp; Universitarios SUNEDU</h2>
-            <p class="panel-subtitle">Administra pasajeros regulares, verificación de carnet universitario SUNEDU (tarifa S/. 0.70 / 7 pts con espera de 2 min) y administradores.</p>
+            <p class="panel-subtitle">Administra pasajeros regulares, verificación de carnet universitario SUNEDU
+              (tarifa S/. 0.70 / 7 pts con espera de 2 min) y administradores.</p>
           </div>
           <div class="panel-header-actions">
             <button type="button" class="btn btn-primary" id="btn-open-add-user">
@@ -488,25 +554,34 @@
         <div class="panel-section-box" style="margin-bottom: 18px; border: 1px solid rgba(99, 102, 241, 0.35);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
             <div>
-              <h3 style="margin:0; font-size:1rem; color:#A5B4FC;">🎓 Verificación de Carnets Universitarios (SUNEDU)</h3>
-              <p style="margin:2px 0 0; font-size:0.78rem; color:#94A3B8;">Revisa la foto frontal, el QR validado y DNI del estudiante para aprobar su tarifa universitaria y fecha de caducidad.</p>
+              <h3 style="margin:0; font-size:1rem; color:#A5B4FC;">🎓 Verificación de Carnets Universitarios (SUNEDU)
+              </h3>
+              <p style="margin:2px 0 0; font-size:0.78rem; color:#94A3B8;">Revisa la foto frontal, el QR validado y DNI
+                del estudiante para aprobar su tarifa universitaria y fecha de caducidad.</p>
             </div>
             <span class="badge-role badge-student" id="sunedu-pending-badge">0 pendientes</span>
           </div>
-          <div id="sunedu-carnets-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px;">
-            <p style="color: var(--text-muted); font-size:0.82rem; margin:0;">No hay solicitudes de carnet SUNEDU pendientes.</p>
+          <div id="sunedu-carnets-list"
+            style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px;">
+            <p style="color: var(--text-muted); font-size:0.82rem; margin:0;">No hay solicitudes de carnet SUNEDU
+              pendientes.</p>
           </div>
         </div>
 
         <!-- Barra de Filtros por Rol y Búsqueda -->
         <div class="users-filter-bar">
           <nav class="category-chips" id="user-role-chips" aria-label="Filtrar por tipo de cliente">
-            <button type="button" class="route-chip active" data-userfilter="all">Todos (<span id="user-count-all">0</span>)</button>
-            <button type="button" class="route-chip" data-userfilter="STUDENT">🎓 Universitarios SUNEDU (<span id="user-count-student">0</span>)</button>
-            <button type="button" class="route-chip" data-userfilter="PASSENGER">📱 Pasajeros (<span id="user-count-passenger">0</span>)</button>
-            <button type="button" class="route-chip" data-userfilter="ADMIN">🛡️ Admins (<span id="user-count-admin">0</span>)</button>
+            <button type="button" class="route-chip active" data-userfilter="all">Todos (<span
+                id="user-count-all">0</span>)</button>
+            <button type="button" class="route-chip" data-userfilter="STUDENT">🎓 Universitarios SUNEDU (<span
+                id="user-count-student">0</span>)</button>
+            <button type="button" class="route-chip" data-userfilter="PASSENGER">📱 Pasajeros (<span
+                id="user-count-passenger">0</span>)</button>
+            <button type="button" class="route-chip" data-userfilter="ADMIN">🛡️ Admins (<span
+                id="user-count-admin">0</span>)</button>
           </nav>
-          <input type="search" id="users-search-input" class="search-input-compact" placeholder="Buscar cliente por nombre, DNI o carnet...">
+          <input type="search" id="users-search-input" class="search-input-compact"
+            placeholder="Buscar cliente por nombre, DNI o carnet...">
         </div>
 
         <!-- Tabla de Clientes / Pasajeros -->
@@ -542,7 +617,8 @@
           <div>
             <div class="panel-badge-live">ANALÍTICA DE TRANSPORTE URBANO</div>
             <h2 class="panel-title">📊 Estadísticas &amp; Demanda Operativa de Tacna</h2>
-            <p class="panel-subtitle">Patrones de abordaje por horas pico, adopción de medios de pago digitales y rendimiento por corredor de transporte.</p>
+            <p class="panel-subtitle">Patrones de abordaje por horas pico, adopción de medios de pago digitales y
+              rendimiento por corredor de transporte.</p>
           </div>
         </header>
 
@@ -574,28 +650,36 @@
                   <span>📱 App Bus Conectado (Puntos QR)</span>
                   <strong>62%</strong>
                 </div>
-                <div class="dist-bar"><div class="dist-fill" style="width: 62%; background: #38BDF8;"></div></div>
+                <div class="dist-bar">
+                  <div class="dist-fill" style="width: 62%; background: #38BDF8;"></div>
+                </div>
               </div>
               <div class="dist-item">
                 <div class="dist-header">
                   <span>🟣 Yape Empresas BCP (QR Dinámico)</span>
                   <strong>24%</strong>
                 </div>
-                <div class="dist-bar"><div class="dist-fill" style="width: 24%; background: #A855F7;"></div></div>
+                <div class="dist-bar">
+                  <div class="dist-fill" style="width: 24%; background: #A855F7;"></div>
+                </div>
               </div>
               <div class="dist-item">
                 <div class="dist-header">
                   <span>♿ Pase Libre CONADIS (Ley 30412)</span>
                   <strong>10%</strong>
                 </div>
-                <div class="dist-bar"><div class="dist-fill" style="width: 10%; background: #10B981;"></div></div>
+                <div class="dist-bar">
+                  <div class="dist-fill" style="width: 10%; background: #10B981;"></div>
+                </div>
               </div>
               <div class="dist-item">
                 <div class="dist-header">
                   <span>💳 Tarjeta Contactless NFC</span>
                   <strong>4%</strong>
                 </div>
-                <div class="dist-bar"><div class="dist-fill" style="width: 4%; background: #F59E0B;"></div></div>
+                <div class="dist-bar">
+                  <div class="dist-fill" style="width: 4%; background: #F59E0B;"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -603,7 +687,8 @@
 
         <div class="panel-section-box">
           <h3 class="section-box-title">🎓 Impacto del Pasaje Universitario SUNEDU vs Adulto</h3>
-          <p class="section-box-desc">Resumen del subsidio de medio pasaje universitario (S/. 0.70) y control de reuso anti-fraude (2 minutos).</p>
+          <p class="section-box-desc">Resumen del subsidio de medio pasaje universitario (S/. 0.70) y control de reuso
+            anti-fraude (2 minutos).</p>
           <div class="panel-kpi-grid">
             <div class="panel-kpi-card">
               <span class="panel-kpi-label">Pasajes Universitarios</span>
@@ -617,8 +702,8 @@
             </div>
             <div class="panel-kpi-card">
               <span class="panel-kpi-label">Intentos Bloqueados (< 2 min)</span>
-              <span class="panel-kpi-value highlight-amber">2 bloqueos</span>
-              <span class="panel-kpi-desc">Protección anti-fraude temporal activa</span>
+                  <span class="panel-kpi-value highlight-amber">2 bloqueos</span>
+                  <span class="panel-kpi-desc">Protección anti-fraude temporal activa</span>
             </div>
             <div class="panel-kpi-card">
               <span class="panel-kpi-label">Pases Libres CONADIS</span>
@@ -658,7 +743,8 @@
 
         <div class="form-group">
           <label for="field-subtitle">Dirección / Avenidas de Referencia <span class="req">*</span></label>
-          <input type="text" id="field-subtitle" required placeholder="Ej: Av. Bolognesi cdra 8 / Calle Zela • Centro Histórico">
+          <input type="text" id="field-subtitle" required
+            placeholder="Ej: Av. Bolognesi cdra 8 / Calle Zela • Centro Histórico">
         </div>
 
         <div class="form-row">
@@ -696,7 +782,7 @@
 
         <div class="form-group">
           <label for="field-routes">Rutas que Abordan (separadas por coma)</label>
-          <input type="text" id="field-routes" placeholder="Ruta 14, Ruta 10B, Ruta 101">
+          <input type="text" id="field-routes" placeholder="Opcional (se asigna automáticamente al trazar una ruta)">
         </div>
 
         <div class="form-row coords-group">
@@ -709,7 +795,8 @@
             <input type="number" step="0.000001" id="field-lng" required placeholder="-70.250550">
           </div>
           <div class="form-group align-end">
-            <button type="button" class="btn btn-accent btn-sm" id="btn-pick-coords" title="Capturar coordenadas haciendo clic en el mapa">
+            <button type="button" class="btn btn-accent btn-sm" id="btn-pick-coords"
+              title="Capturar coordenadas haciendo clic en el mapa">
               📍 Marcar en mapa
             </button>
           </div>
@@ -741,7 +828,8 @@
           <span class="dialog-badge official" id="route-dialog-badge">ORDINARIA • TRACKING</span>
           <h2 id="route-dialog-title">Configurar Ruta de Transporte</h2>
         </div>
-        <button type="button" class="dialog-close-btn" id="route-dialog-close-x" aria-label="Cerrar ventana">&times;</button>
+        <button type="button" class="dialog-close-btn" id="route-dialog-close-x"
+          aria-label="Cerrar ventana">&times;</button>
       </div>
 
       <form id="route-form" method="dialog" class="dialog-form">
@@ -754,7 +842,8 @@
           </div>
           <div class="form-group flex-2">
             <label for="route-field-title">Nombre del Corredor / Eje Urbano <span class="req">*</span></label>
-            <input type="text" id="route-field-title" required placeholder="Ej: Eje Troncal Cono Norte – Centro – UNJBG – Cono Sur">
+            <input type="text" id="route-field-title" required
+              placeholder="Ej: Eje Troncal Cono Norte – Centro – UNJBG – Cono Sur">
           </div>
         </div>
 
@@ -762,7 +851,8 @@
           <div class="form-group flex-2">
             <label for="route-field-type">Clasificación de la Ruta <span class="req">*</span></label>
             <select id="route-field-type" required>
-              <option value="ordinary">🚌 Ruta Ordinaria (Bus Conectado • Con Tracking GPS, Pago QR y Notificación)</option>
+              <option value="ordinary">🚌 Ruta Ordinaria (Bus Conectado • Con Tracking GPS, Pago QR y Notificación)
+              </option>
               <option value="external">🗺️ Ruta Externa (Línea de Tacna • Solo Referencial sin Tracking ni QR)</option>
             </select>
           </div>
@@ -777,7 +867,8 @@
 
         <div class="form-group">
           <label for="route-field-corridor">Resumen de Avenidas / Corredor <span class="req">*</span></label>
-          <input type="text" id="route-field-corridor" required placeholder="Ej: Ciudad Nueva ⇄ Mercado 2 de Mayo ⇄ Mercado Central ⇄ UNJBG ⇄ Viñani">
+          <input type="text" id="route-field-corridor" required
+            placeholder="Ej: Ciudad Nueva ⇄ Mercado 2 de Mayo ⇄ Mercado Central ⇄ UNJBG ⇄ Viñani">
         </div>
 
         <div class="form-row">
@@ -802,11 +893,14 @@
         <!-- Selector Ordenado de Paraderos que Integran la Ruta -->
         <div class="form-group">
           <div class="route-stops-picker-header">
-            <label>Secuencia de Paraderos de la Ruta (<span id="route-selected-stops-count">0</span> seleccionados)</label>
-            <span class="route-eta-preview" id="route-modal-eta-preview">Distancia est.: 0.0 km • Tiempo vuelta: ~0 min</span>
+            <label>Secuencia de Paraderos de la Ruta (<span id="route-selected-stops-count">0</span>
+              seleccionados)</label>
+            <span class="route-eta-preview" id="route-modal-eta-preview">Distancia est.: 0.0 km • Tiempo vuelta: ~0
+              min</span>
           </div>
           <p class="field-help-text">
-            Marca los paraderos por los que pasa esta línea. Si es una <strong>Ruta Ordinaria</strong>, estos paraderos habilitarán la opción de <strong>Notificación de Llegada</strong> en la app cuando la ruta esté en servicio.
+            Marca los paraderos por los que pasa esta línea. Si es una <strong>Ruta Ordinaria</strong>, estos paraderos
+            habilitarán la opción de <strong>Notificación de Llegada</strong> en la app cuando la ruta esté en servicio.
           </p>
           <div class="route-stops-checklist" id="route-stops-checklist">
             <!-- Renderizado dinámico de paraderos seleccionables -->
@@ -818,7 +912,8 @@
             Eliminar Ruta
           </button>
           <div class="dialog-actions-right">
-            <button type="button" class="btn btn-secondary" id="btn-open-map-tracer-from-modal" title="Trazar o ajustar la polilínea directamente haciendo clic sobre el mapa">
+            <button type="button" class="btn btn-secondary" id="btn-open-map-tracer-from-modal"
+              title="Trazar o ajustar la polilínea directamente haciendo clic sobre el mapa">
               🛣️ Trazar en el Mapa
             </button>
             <button type="button" class="btn btn-ghost" id="btn-cancel-route-dialog">Cancelar</button>
@@ -837,10 +932,12 @@
           <span class="dialog-badge official">SWIFT 5 / IOS 17</span>
           <h2 id="export-dialog-title">Código Generado para DomainModels.swift</h2>
         </div>
-        <button type="button" class="dialog-close-btn" id="export-dialog-close-x" aria-label="Cerrar ventana">&times;</button>
+        <button type="button" class="dialog-close-btn" id="export-dialog-close-x"
+          aria-label="Cerrar ventana">&times;</button>
       </div>
       <p class="export-desc">
-        Copia este bloque o haz clic en <strong>"Copiar Código Swift"</strong> para actualizar directamente tu archivo <code>mobile-ios/.../DomainModels.swift</code> con las coordenadas exactas calibradas en el mapa.
+        Copia este bloque o haz clic en <strong>"Copiar Código Swift"</strong> para actualizar directamente tu archivo
+        <code>mobile-ios/.../DomainModels.swift</code> con las coordenadas exactas calibradas en el mapa.
       </p>
 
       <div class="code-container">
@@ -864,7 +961,8 @@
         <h2 id="confirm-dialog-title">¿Eliminar este paradero?</h2>
         <button type="button" class="dialog-close-btn" id="confirm-dialog-close-x" aria-label="Cerrar">&times;</button>
       </div>
-      <p id="confirm-dialog-desc">Esta acción eliminará el paradero del catálogo oficial. Podrás restablecerlo en cualquier momento si lo necesitas.</p>
+      <p id="confirm-dialog-desc">Esta acción eliminará el paradero del catálogo oficial. Podrás restablecerlo en
+        cualquier momento si lo necesitas.</p>
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" id="btn-cancel-confirm">Cancelar</button>
         <button type="button" class="btn btn-destructive" id="btn-confirm-delete">Sí, Eliminar Paradero</button>
@@ -880,7 +978,8 @@
           <span class="dialog-badge official" id="user-dialog-badge">PADRÓN TACNA</span>
           <h2 id="user-dialog-title">Registrar Nuevo Usuario / Chofer</h2>
         </div>
-        <button type="button" class="dialog-close-btn" id="user-dialog-close-x" aria-label="Cerrar ventana">&times;</button>
+        <button type="button" class="dialog-close-btn" id="user-dialog-close-x"
+          aria-label="Cerrar ventana">&times;</button>
       </div>
 
       <form id="user-form" method="dialog" class="dialog-form">
@@ -940,6 +1039,10 @@
               <label for="user-field-brevete">N° Brevete / Categoría <span class="req">*</span></label>
               <input type="text" id="user-field-brevete" placeholder="Ej: Q43892110 (A-IIIa)">
             </div>
+            <div class="form-group flex-1">
+              <label for="user-field-pin">PIN Enlace POS</label>
+              <input type="text" id="user-field-pin" maxlength="6" placeholder="Ej: 1408">
+            </div>
           </div>
         </div>
 
@@ -991,7 +1094,8 @@
           <span class="dialog-badge official">HARDWARE POS &amp; DESPACHO</span>
           <h2 id="pos-dialog-title">Vincular Terminal POS a Bus y Chofer</h2>
         </div>
-        <button type="button" class="dialog-close-btn" id="pos-dialog-close-x" aria-label="Cerrar ventana">&times;</button>
+        <button type="button" class="dialog-close-btn" id="pos-dialog-close-x"
+          aria-label="Cerrar ventana">&times;</button>
       </div>
 
       <form id="pos-form" method="dialog" class="dialog-form">
@@ -1002,7 +1106,8 @@
           </div>
           <div class="form-group flex-1">
             <label for="pos-field-pairing-code">PIN de Inicio de Sesión POS <span class="req">*</span></label>
-            <input type="text" id="pos-field-pairing-code" required maxlength="6" placeholder="Ej: 1409 (PIN para chofer)">
+            <input type="text" id="pos-field-pairing-code" required maxlength="6"
+              placeholder="Ej: 1409 (PIN para chofer)">
           </div>
         </div>
 
@@ -1035,7 +1140,8 @@
         <div class="form-row">
           <div class="form-group flex-1">
             <label for="pos-field-device-model">Dispositivo / Tablet Validadora</label>
-            <input type="text" id="pos-field-device-model" value="Samsung Galaxy Tab S6 Lite (SM-P613)" placeholder="Modelo de dispositivo">
+            <input type="text" id="pos-field-device-model" value="Samsung Galaxy Tab S6 Lite (SM-P613)"
+              placeholder="Modelo de dispositivo">
           </div>
         </div>
 
@@ -1048,8 +1154,9 @@
   </dialog>
 
   <!-- Leaflet JS y Lógica de la Aplicación con carga diferida ordenada -->
-  <script defer fetchpriority="high" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script defer fetchpriority="high" src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script defer fetchpriority="high" src="app.js?v=7"></script>
 </body>
-</html>
 
+</html>

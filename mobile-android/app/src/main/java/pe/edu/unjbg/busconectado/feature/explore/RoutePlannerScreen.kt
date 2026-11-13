@@ -285,9 +285,8 @@ fun RoutePlannerScreen(
         }
     }
 
-    val userFareLabel = state.currentUser?.roleType?.let {
-        String.format(Locale.US, "S/. %.2f", it.farePen)
-    } ?: "S/. 0.70"
+    val userFarePen = state.currentUser?.roleType?.farePen ?: 0.70
+    val userFareLabel = String.format(Locale.US, "S/. %.2f", userFarePen)
 
     Box(
         modifier = Modifier
@@ -386,6 +385,7 @@ fun RoutePlannerScreen(
                     selectedFilter = selectedFilter,
                     sheetSnap = sheetSnap,
                     userFareLabel = userFareLabel,
+                    userFarePen = userFarePen,
                     onBack = { screenState = PlannerState.Selector },
                     onEditOrigin = {
                         searchQuery = ""
@@ -890,6 +890,7 @@ private fun RouteMapResultView(
     selectedFilter: RouteFilterTab,
     sheetSnap: SheetSnapLevel,
     userFareLabel: String,
+    userFarePen: Double = 0.70,
     onBack: () -> Unit,
     onEditOrigin: () -> Unit,
     onEditDestination: () -> Unit,
@@ -920,6 +921,20 @@ private fun RouteMapResultView(
                         )
                     )
                 }
+                if (activeCandidate.isTransfer && activeCandidate.transferWalkCoords.size >= 2) {
+                    add(MapPolylineSpec("p_transfer_walk", activeCandidate.transferWalkCoords, BCColors.CyanAccent.toArgb(), 9f, dashed = true))
+                }
+                if (activeCandidate.isTransfer && activeCandidate.secondBusTransitCoords.size >= 2) {
+                    add(
+                        MapPolylineSpec(
+                            "p_bus2",
+                            activeCandidate.secondBusTransitCoords,
+                            BCColors.fromHex(activeCandidate.secondRouteColorHex ?: activeCandidate.colorHex).toArgb(),
+                            if (isOrd) 14f else 11f,
+                            dashed = !isOrd
+                        )
+                    )
+                }
             }
             val w2 = if (finalCoords.size >= 2) finalCoords else activeCandidate?.walkFinalCoords.orEmpty()
             if (w2.size >= 2) {
@@ -941,6 +956,17 @@ private fun RouteMapResultView(
                         (if (isOrd) BCColors.Emerald else BCColors.Amber).toArgb()
                     )
                 )
+                activeCandidate.transferCoordinate?.let { tCoord ->
+                    add(
+                        MapMarkerSpec(
+                            "r_transfer",
+                            tCoord,
+                            MapMarkerKind.TRANSIT_STOP_DOT,
+                            BCColors.Amber.toArgb(),
+                            "Transbordo"
+                        )
+                    )
+                }
                 add(
                     MapMarkerSpec(
                         "r_alight",
@@ -1082,8 +1108,9 @@ private fun RouteMapResultView(
                                 Text("→ 🚶 ${cand.walkFinalMinutes}m", color = BCColors.CyanAccent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             }
                         }
+                        val candFareLabel = String.format(Locale.US, "S/. %.2f", userFarePen * if (cand.isTransfer) 2.0 else 1.0)
                         Text(
-                            if (isOrd) "~${cand.totalDurationMinutes} min · $userFareLabel" else "~${cand.totalDurationMinutes} min · Sin QR",
+                            if (isOrd) "~${cand.totalDurationMinutes} min · $candFareLabel" else "~${cand.totalDurationMinutes} min · Sin QR",
                             color = if (isOrd) BCColors.Emerald else BCColors.Amber,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -1290,14 +1317,36 @@ private fun RouteMapResultView(
                                                     Icon(Icons.Default.DirectionsWalk, contentDescription = null, tint = BCColors.CyanAccent, modifier = Modifier.size(16.dp))
                                                     Text("Camina ${cand.walkInitialMeters} m hasta ${cand.boardingPointName}", color = Color.White, fontSize = 12.sp)
                                                 }
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(16.dp))
-                                                    Text(
-                                                        "Toma ${cand.routeCode} (~${cand.busRideMinutes} min · ${if (cand.kind == EvaluatedCandidateKind.ORDINARY_IN_SERVICE) "Pago QR $userFareLabel" else "Abordaje libre"})",
-                                                        color = BCColors.CyanAccent,
-                                                        fontSize = 12.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
+                                                if (cand.isTransfer) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(16.dp))
+                                                        Text(
+                                                            "1° Bus: Toma ${cand.route?.code ?: cand.routeCode} (~${cand.firstBusRideMinutes} min)",
+                                                            color = BCColors.CyanAccent,
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Amber, modifier = Modifier.size(16.dp))
+                                                        val walkTStr = if (cand.transferWalkMeters > 25) " (camina ${cand.transferWalkMeters} m)" else ""
+                                                        Text(
+                                                            "Transbordo en ${cand.transferPointName ?: "cruce"}$walkTStr → ${cand.secondRouteCode ?: ""} (~${cand.secondBusRideMinutes} min)",
+                                                            color = BCColors.Amber,
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                } else {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(16.dp))
+                                                        Text(
+                                                            "Toma ${cand.routeCode} (~${cand.busRideMinutes} min · ${if (cand.kind == EvaluatedCandidateKind.ORDINARY_IN_SERVICE) "Pago QR $userFareLabel" else "Abordaje libre"})",
+                                                            color = BCColors.CyanAccent,
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
                                                 }
                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     Icon(Icons.Default.Place, contentDescription = null, tint = BCColors.DestructiveRed, modifier = Modifier.size(16.dp))
@@ -1366,10 +1415,11 @@ private fun RouteMapResultView(
                                                 maxLines = 2
                                             )
                                             if (isOrd) {
+                                                val candFareLabel = String.format(Locale.US, "S/. %.2f", userFarePen * if (cand.isTransfer) 2.0 else 1.0)
                                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                         Icon(Icons.Default.QrCode2, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(13.dp))
-                                                        Text("QR $userFareLabel", color = BCColors.Emerald, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                        Text("QR $candFareLabel", color = BCColors.Emerald, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                                     }
                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                         Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(13.dp))

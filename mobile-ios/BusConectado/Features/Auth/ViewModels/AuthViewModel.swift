@@ -6,6 +6,8 @@ import MapKit
 
 enum OnboardingStep {
     case splash
+    case registerSocial
+    case profileSetup
     case phoneInput
     case otpVerification
     case success
@@ -24,6 +26,13 @@ final class AuthViewModel: ObservableObject {
     @Published var selectedTab: Int = 0
     @Published var phoneNumber: String = ""
     @Published var otpCode: String = ""
+    @Published var otpChannel: String = "whatsapp"
+    @Published var otpInfoMessage: String? = nil
+    @Published var isLinkingPhoneFlow: Bool = false
+    @Published var showPhoneLinkSheet: Bool = false
+    @Published var draftFirstName: String = ""
+    @Published var draftLastName: String = ""
+    @Published var draftEmail: String = ""
     @Published var isGuestMode: Bool = false
     @Published var isLoggedIn: Bool = false
     @Published var currentUser: UserAuth? = nil
@@ -61,8 +70,8 @@ final class AuthViewModel: ObservableObject {
     @Published var requiredPointsForAttempt: Int = 0
 
     // Catálogo Dinámico de Paraderos y Rutas (Sincronizados con el Administrador Web y Servidor Cloud)
-    @Published var dynamicCatalogStops: [TacnaDestinationPlace] = TacnaDestinationPlace.catalog
-    @Published var dynamicRoutes: [TacnaOfficialRouteCatalogItem] = TacnaOfficialRouteCatalogItem.officialRoutes
+    @Published var dynamicCatalogStops: [TacnaDestinationPlace] = []
+    @Published var dynamicRoutes: [TacnaOfficialRouteCatalogItem] = []
 
     // Estado del Buscador Predictivo y Pin de Destino Buscado
     @Published var isSearchDropdownVisible: Bool = false
@@ -828,7 +837,215 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Paso 1 Auth: Enviar OTP (Híbrido Backend + Local)
+    // MARK: - Autenticación Social (Google / Apple ID)
+    func signInWithSocial(
+        provider: String,
+        providerUserId: String,
+        email: String,
+        firstName: String,
+        lastName: String,
+        isRegistration: Bool
+    ) async {
+        isLoading = true
+        errorMessage = nil
+
+        struct SocialReq: Encodable {
+            let provider: String
+            let providerUserId: String
+            let email: String
+            let firstName: String
+            let lastName: String
+            let displayName: String
+        }
+        struct SocialUserDTO: Decodable {
+            let id: String
+            let phone: String?
+            let phoneVerified: Bool?
+            let firstName: String?
+            let lastName: String?
+            let displayName: String?
+            let email: String?
+            let authProvider: String?
+            let isStudent: Bool?
+            let role: String?
+            let pointsBalance: Int?
+        }
+        struct SocialResp: Decodable {
+            let accessToken: String
+            let refreshToken: String
+            let isNewUser: Bool?
+            let user: SocialUserDTO
+        }
+
+        let cleanFirst = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanLast = lastName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fullName = [cleanFirst, cleanLast].filter { !$0.isEmpty }.joined(separator: " ")
+
+        var resolvedUser: UserAuth? = nil
+        var isNew = isRegistration
+
+        if APIClient.shared.canReachRemoteBackend {
+            do {
+                let req = SocialReq(
+                    provider: provider,
+                    providerUserId: providerUserId,
+                    email: email,
+                    firstName: cleanFirst,
+                    lastName: cleanLast,
+                    displayName: fullName.isEmpty ? (provider == "apple" ? "Usuario Apple" : "Usuario Google") : fullName
+                )
+                let encoder = JSONEncoder()
+                encoder.keyEncodingStrategy = .convertToSnakeCase
+                let body = try encoder.encode(req)
+                let res: SocialResp = try await APIClient.shared.request(
+                    endpoint: "auth/social",
+                    method: "POST",
+                    body: body,
+                    requiresAuth: false
+                )
+                KeychainService.shared.save(key: "access_token", value: res.accessToken)
+                KeychainService.shared.save(key: "refresh_token", value: res.refreshToken)
+                isNew = res.isNewUser ?? isRegistration
+                resolvedUser = UserAuth(
+                    id: res.user.id,
+                    phone: res.user.phone ?? "",
+                    name: res.user.displayName,
+                    firstName: res.user.firstName,
+                    lastName: res.user.lastName,
+                    email: res.user.email,
+                    authProvider: res.user.authProvider ?? provider,
+                    phoneVerified: res.user.phoneVerified ?? false,
+                    role: res.user.role ?? "ADULT",
+                    pointsBalance: res.user.pointsBalance ?? 0,
+                    isNewUser: isNew,
+                    studentVerification: nil
+                )
+            } catch {
+                // Fallback local si no hay red
+            }
+        }
+
+        if resolvedUser == nil {
+            let uid = "usr_\(provider)_\(providerUserId.isEmpty ? UUID().uuidString.prefix(8) : Substring(providerUserId.prefix(12)))"
+            KeychainService.shared.save(key: "access_token", value: "local_jwt_\(uid)")
+            KeychainService.shared.save(key: "refresh_token", value: "local_refresh_\(uid)")
+            resolvedUser = UserAuth(
+                id: uid,
+                phone: "",
+                name: fullName.isEmpty ? (provider == "apple" ? "Usuario Apple" : "Usuario Google") : fullName,
+                firstName: cleanFirst,
+                lastName: cleanLast,
+                email: email,
+                authProvider: provider,
+                phoneVerified: false,
+                role: "ADULT",
+                pointsBalance: 0,
+                isNewUser: isRegistration,
+                studentVerification: nil
+            )
+        }
+
+        guard let user = resolvedUser else {
+            isLoading = false
+            return
+        }
+
+        self.currentUser = user
+        self.saveActiveUserLocally(user)
+        self.draftFirstName = user.firstName ?? ""
+        self.draftLastName = user.lastName ?? ""
+        self.draftEmail = user.email ?? ""
+        self.isLoading = false
+        BCFeedbackManager.shared.notificationSuccess()
+
+        if isNew || !user.hasVerifiedPhone {
+            self.isLinkingPhoneFlow = true
+            self.currentStep = isNew ? .profileSetup : .phoneInput
+        } else {
+            self.isLinkingPhoneFlow = false
+            self.isGuestMode = false
+            self.isLoggedIn = true
+            self.selectedTab = 0
+        }
+    }
+
+    func saveProfileSetupAndContinue() async {
+        let first = draftFirstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let last = draftLastName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !first.isEmpty else {
+            errorMessage = "Ingresa tu nombre para continuar"
+            BCFeedbackManager.shared.notificationError()
+            return
+        }
+        errorMessage = nil
+        isLoading = true
+
+        let fullName = [first, last].filter { !$0.isEmpty }.joined(separator: " ")
+        if var user = currentUser {
+            user.firstName = first
+            user.lastName = last
+            user.name = fullName
+            if !draftEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                user.email = draftEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            self.currentUser = user
+            self.saveActiveUserLocally(user)
+
+            if APIClient.shared.canReachRemoteBackend {
+                struct ProfileReq: Encodable {
+                    let userId: String
+                    let firstName: String
+                    let lastName: String
+                    let displayName: String
+                    let email: String
+                }
+                let encoder = JSONEncoder()
+                encoder.keyEncodingStrategy = .convertToSnakeCase
+                if let body = try? encoder.encode(ProfileReq(
+                    userId: user.id,
+                    firstName: first,
+                    lastName: last,
+                    displayName: fullName,
+                    email: user.email ?? ""
+                )) {
+                    struct EmptyResp: Decodable { let status: String? }
+                    let _: EmptyResp? = try? await APIClient.shared.request(
+                        endpoint: "auth/profile",
+                        method: "POST",
+                        body: body,
+                        requiresAuth: false
+                    )
+                }
+            }
+        }
+
+        isLoading = false
+        isLinkingPhoneFlow = true
+        currentStep = .phoneInput
+    }
+
+    func skipPhoneLinking() {
+        BCFeedbackManager.shared.impactLight()
+        self.errorMessage = nil
+        self.otpInfoMessage = nil
+        self.isLinkingPhoneFlow = false
+        self.showPhoneLinkSheet = false
+        self.isGuestMode = false
+        self.isLoggedIn = true
+        self.selectedTab = 0
+    }
+
+    func openPhoneLinkingFromApp() {
+        BCFeedbackManager.shared.impactLight()
+        self.errorMessage = nil
+        self.otpInfoMessage = nil
+        self.otpCode = ""
+        self.isLinkingPhoneFlow = true
+        self.currentStep = .phoneInput
+        self.showPhoneLinkSheet = true
+    }
+
+    // MARK: - Paso 1 Auth: Enviar OTP (SMS o WhatsApp)
     func sendOtp() async {
         guard isValidPhone else {
             errorMessage = "Ingresa un número peruano de 9 dígitos que inicie con 9"
@@ -838,17 +1055,21 @@ final class AuthViewModel: ObservableObject {
 
         isLoading = true
         errorMessage = nil
+        otpInfoMessage = nil
 
-        struct SendRequest: Encodable { let phone: String }
+        struct SendRequest: Encodable {
+            let phone: String
+            let channel: String
+        }
         struct SendResponse: Decodable {
-            let success: Bool
-            let expiresInSeconds: Int
+            let status: String?
+            let message: String?
         }
 
         if APIClient.shared.canReachRemoteBackend {
             do {
-                let body = try JSONEncoder().encode(SendRequest(phone: phoneNumber))
-                let _: SendResponse = try await APIClient.shared.request(
+                let body = try JSONEncoder().encode(SendRequest(phone: normalizedPhone, channel: otpChannel))
+                let res: SendResponse = try await APIClient.shared.request(
                     endpoint: "auth/otp/send",
                     method: "POST",
                     body: body,
@@ -856,6 +1077,7 @@ final class AuthViewModel: ObservableObject {
                 )
                 isConnectedToBackend = true
                 isLoading = false
+                otpInfoMessage = res.message
                 currentStep = .otpVerification
                 startCountdown()
                 return
@@ -865,18 +1087,17 @@ final class AuthViewModel: ObservableObject {
                 BCFeedbackManager.shared.notificationError()
                 return
             } catch {
-                // Fallback transparente al repositorio local en el iPhone si el servidor Mac está apagado
                 isConnectedToBackend = false
             }
         }
 
-        // Modo Local Inteligente en iPhone
         isLoading = false
+        otpInfoMessage = "Código de prueba (\(otpChannel == "whatsapp" ? "WhatsApp" : "SMS")): 123456"
         currentStep = .otpVerification
         startCountdown()
     }
 
-    // MARK: - Paso 2 Auth: Verificar OTP y Cargar/Crear Cuenta (0 pts, 0 viajes, 0 paraderos)
+    // MARK: - Paso 2 Auth: Verificar OTP y Cargar/Vincular Cuenta
     func verifyOtp() async {
         guard otpCode.count == 6 else {
             errorMessage = "El código debe tener 6 dígitos"
@@ -889,22 +1110,45 @@ final class AuthViewModel: ObservableObject {
         struct VerifyRequest: Encodable {
             let phone: String
             let code: String
+            let userId: String?
             let deviceId: String
             let deviceName: String
+        }
+
+        struct BackendUserDTO: Decodable {
+            let id: String
+            let phone: String?
+            let phoneVerified: Bool?
+            let firstName: String?
+            let lastName: String?
+            let displayName: String?
+            let email: String?
+            let authProvider: String?
+            let isStudent: Bool?
+            let role: String?
+            let pointsBalance: Int?
         }
 
         struct TokenResponse: Decodable {
             let accessToken: String
             let refreshToken: String
-            let user: UserAuth
+            let isNewUser: Bool?
+            let user: BackendUserDTO
         }
 
         let deviceId = UIDevice.current.identifierForVendor?.uuidString ?? "IPHONE-BC-001"
         let deviceName = UIDevice.current.name
+        let linkingUserId = isLinkingPhoneFlow ? currentUser?.id : nil
 
         if APIClient.shared.canReachRemoteBackend {
             do {
-                let req = VerifyRequest(phone: phoneNumber, code: otpCode, deviceId: deviceId, deviceName: deviceName)
+                let req = VerifyRequest(
+                    phone: normalizedPhone,
+                    code: otpCode,
+                    userId: linkingUserId,
+                    deviceId: deviceId,
+                    deviceName: deviceName
+                )
                 let encoder = JSONEncoder()
                 encoder.keyEncodingStrategy = .convertToSnakeCase
                 let body = try encoder.encode(req)
@@ -918,14 +1162,36 @@ final class AuthViewModel: ObservableObject {
                 KeychainService.shared.save(key: "access_token", value: res.accessToken)
                 KeychainService.shared.save(key: "refresh_token", value: res.refreshToken)
 
-                self.currentUser = res.user
-                self.saveActiveUserLocally(res.user)
-                self.loadLocalTransactions(for: res.user.phone)
-                self.loadCarnetReviewRequest(for: res.user.phone)
+                let mapped = UserAuth(
+                    id: res.user.id,
+                    phone: res.user.phone ?? normalizedPhone,
+                    name: res.user.displayName ?? currentUser?.name,
+                    firstName: res.user.firstName ?? currentUser?.firstName,
+                    lastName: res.user.lastName ?? currentUser?.lastName,
+                    email: res.user.email ?? currentUser?.email,
+                    authProvider: res.user.authProvider ?? currentUser?.authProvider ?? "phone",
+                    phoneVerified: res.user.phoneVerified ?? true,
+                    role: res.user.role ?? currentUser?.role ?? "ADULT",
+                    pointsBalance: res.user.pointsBalance ?? currentUser?.pointsBalance ?? 0,
+                    isNewUser: res.isNewUser ?? false,
+                    studentVerification: currentUser?.studentVerification
+                )
+                self.currentUser = mapped
+                self.saveActiveUserLocally(mapped)
+                self.loadLocalTransactions(for: mapped.phone)
+                self.loadCarnetReviewRequest(for: mapped.phone)
                 self.isConnectedToBackend = true
                 self.isLoading = false
                 BCFeedbackManager.shared.notificationSuccess()
-                self.currentStep = .success
+                if self.showPhoneLinkSheet {
+                    self.showPhoneLinkSheet = false
+                    self.isLinkingPhoneFlow = false
+                    self.isLoggedIn = true
+                    self.isGuestMode = false
+                } else {
+                    self.isLinkingPhoneFlow = false
+                    self.currentStep = .success
+                }
                 await refreshStateFromBackendIfAvailable()
                 return
             } catch let APIError.serverError(_, message) {
@@ -938,16 +1204,24 @@ final class AuthViewModel: ObservableObject {
             }
         }
 
-        // Validación en Repositorio Local del iPhone (Código de desarrollo: 123456)
+        // Validación local (código 123456)
         guard otpCode == "123456" else {
             isLoading = false
-            errorMessage = "Código incorrecto. En modo de prueba utiliza 123456."
+            errorMessage = "Código incorrecto. Utiliza 123456 en entorno de prueba."
             BCFeedbackManager.shared.notificationError()
             return
         }
 
         let phoneKey = normalizedPhone
-        let user = loadOrCreateLocalAccount(phone: phoneKey)
+        var user: UserAuth
+        if isLinkingPhoneFlow, var existing = currentUser {
+            existing.phone = phoneKey
+            existing.phoneVerified = true
+            user = existing
+        } else {
+            user = loadOrCreateLocalAccount(phone: phoneKey)
+            user.phoneVerified = true
+        }
         KeychainService.shared.save(key: "access_token", value: "local_jwt_\(user.id)")
         KeychainService.shared.save(key: "refresh_token", value: "local_refresh_\(user.id)")
 
@@ -956,14 +1230,17 @@ final class AuthViewModel: ObservableObject {
         self.loadLocalTransactions(for: phoneKey)
         self.loadCarnetReviewRequest(for: phoneKey)
 
-        // Al ser cuenta de prueba o cuenta nueva, no existen paraderos ni buses falsos precargados
-        self.routes = []
-        self.stops = []
-        self.activeBuses = []
-
         self.isLoading = false
         BCFeedbackManager.shared.notificationSuccess()
-        self.currentStep = .success
+        if self.showPhoneLinkSheet {
+            self.showPhoneLinkSheet = false
+            self.isLinkingPhoneFlow = false
+            self.isLoggedIn = true
+            self.isGuestMode = false
+        } else {
+            self.isLinkingPhoneFlow = false
+            self.currentStep = .success
+        }
     }
 
     func completeOnboarding() {
@@ -1016,19 +1293,17 @@ final class AuthViewModel: ObservableObject {
                 method: "GET",
                 requiresAuth: false
             )
-            if !adminStops.isEmpty {
-                let converted = adminStops.map { $0.toDestinationPlace() }
-                await MainActor.run {
-                    if self.dynamicCatalogStops != converted {
-                        self.dynamicCatalogStops = converted
-                        if let rawData = try? JSONEncoder().encode(adminStops) {
-                            UserDefaults.standard.set(rawData, forKey: "bc_cached_stops")
-                        }
+            let converted = adminStops.map { $0.toDestinationPlace() }
+            await MainActor.run {
+                if self.dynamicCatalogStops != converted {
+                    self.dynamicCatalogStops = converted
+                    if let rawData = try? JSONEncoder().encode(adminStops) {
+                        UserDefaults.standard.set(rawData, forKey: "bc_cached_stops")
                     }
-                    self.isConnectedToBackend = true
-                    if isManual {
-                        BCFeedbackManager.shared.notificationSuccess()
-                    }
+                }
+                self.isConnectedToBackend = true
+                if isManual {
+                    BCFeedbackManager.shared.notificationSuccess()
                 }
             }
         } catch {
@@ -1042,21 +1317,18 @@ final class AuthViewModel: ObservableObject {
                 method: "GET",
                 requiresAuth: false
             )
-            if !adminRoutes.isEmpty {
-                let convertedRoutes = adminRoutes.map { $0.toRouteCatalogItem() }
-                await MainActor.run {
-                    if self.dynamicRoutes != convertedRoutes {
-                        self.dynamicRoutes = convertedRoutes
-                        if let rawRoutes = try? JSONEncoder().encode(adminRoutes) {
-                            UserDefaults.standard.set(rawRoutes, forKey: "bc_cached_routes")
-                        }
-                        if let currentOverlay = self.activeRouteOverlayOnMap,
-                           let updatedOverlay = convertedRoutes.first(where: { $0.id == currentOverlay.id }) {
-                            self.activeRouteOverlayOnMap = updatedOverlay
-                        }
+            let convertedRoutes = adminRoutes.map { $0.toRouteCatalogItem() }
+            await MainActor.run {
+                if self.dynamicRoutes != convertedRoutes {
+                    self.dynamicRoutes = convertedRoutes
+                    if let rawRoutes = try? JSONEncoder().encode(adminRoutes) {
+                        UserDefaults.standard.set(rawRoutes, forKey: "bc_cached_routes")
                     }
-                    self.isConnectedToBackend = true
+                    if let currentOverlay = self.activeRouteOverlayOnMap {
+                        self.activeRouteOverlayOnMap = convertedRoutes.first(where: { $0.id == currentOverlay.id })
+                    }
                 }
+                self.isConnectedToBackend = true
             }
         } catch {
             print("[SYNC] Error sincronizando rutas desde backend: \(error)")

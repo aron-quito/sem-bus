@@ -29,17 +29,53 @@ import java.net.URLEncoder
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-data class OtpSendRequest(val phone: String)
+data class OtpSendRequest(
+    val phone: String,
+    val channel: String = "whatsapp"
+)
 
 data class OtpSendResponse(
     val status: String? = null,
     val phone: String? = null,
+    val channel: String? = null,
     val message: String? = null
 )
 
 data class OtpVerifyRequest(
     val phone: String,
-    val code: String
+    val code: String,
+    @SerializedName("user_id")
+    val userId: String? = null
+)
+
+data class SocialAuthRequest(
+    val provider: String,
+    @SerializedName("provider_user_id")
+    val providerUserId: String,
+    val email: String,
+    @SerializedName("first_name")
+    val firstName: String,
+    @SerializedName("last_name")
+    val lastName: String,
+    @SerializedName("display_name")
+    val displayName: String
+)
+
+data class ProfileUpdateRequest(
+    @SerializedName("user_id")
+    val userId: String,
+    @SerializedName("first_name")
+    val firstName: String,
+    @SerializedName("last_name")
+    val lastName: String,
+    @SerializedName("display_name")
+    val displayName: String,
+    val email: String
+)
+
+data class ProfileUpdateResponse(
+    val status: String? = null,
+    val user: UserAuth? = null
 )
 
 data class AuthVerifyResponse(
@@ -47,6 +83,8 @@ data class AuthVerifyResponse(
     val accessToken: String,
     @SerializedName("refresh_token")
     val refreshToken: String,
+    @SerializedName("is_new_user")
+    val isNewUser: Boolean = false,
     val user: UserAuth
 )
 
@@ -81,6 +119,12 @@ interface BCApiService {
 
     @POST("auth/otp/verify")
     suspend fun verifyOtp(@Body request: OtpVerifyRequest): Response<AuthVerifyResponse>
+
+    @POST("auth/social")
+    suspend fun socialAuth(@Body request: SocialAuthRequest): Response<AuthVerifyResponse>
+
+    @POST("auth/profile")
+    suspend fun updateProfile(@Body request: ProfileUpdateRequest): Response<ProfileUpdateResponse>
 
     @GET("transit/stops")
     suspend fun fetchStopsCatalog(): Response<List<TacnaDestinationPlace>>

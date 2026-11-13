@@ -102,6 +102,8 @@ struct WalletView: View {
 
             if viewModel.isGuestMode {
                 guestGateView
+            } else if !(viewModel.currentUser?.hasVerifiedPhone ?? false) {
+                phoneRequiredGateView
             } else {
                 authenticatedWalletContent
             }
@@ -1132,6 +1134,52 @@ struct WalletView: View {
                 Text("Crear Cuenta o Iniciar Sesión")
                     .font(.headline)
                     .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(BCTheme.emerald)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 8)
+        }
+    }
+
+    private var phoneRequiredGateView: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                Circle()
+                    .fill(BCTheme.emerald.opacity(0.14))
+                    .frame(width: 76, height: 76)
+                Image(systemName: "wallet.pass.fill")
+                    .font(.largeTitle)
+                    .foregroundColor(BCTheme.emerald)
+            }
+
+            if let user = viewModel.currentUser {
+                Text(user.displayFullName)
+                    .font(.headline)
+                    .foregroundColor(BCTheme.cyanAccent)
+            }
+
+            Text("Accede con tu número celular para usar tu Monedero")
+                .font(.title3.weight(.bold))
+                .foregroundColor(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            Text("Si desea hacer pagos dentro de la app o acceder a los beneficios como descuentos o promociones, registre su celular.")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            Button {
+                BCFeedbackManager.shared.impactMedium()
+                viewModel.openPhoneLinkingFromApp()
+            } label: {
+                Text("Vincular número celular")
+                    .font(.headline)
+                    .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
                     .background(BCTheme.emerald)

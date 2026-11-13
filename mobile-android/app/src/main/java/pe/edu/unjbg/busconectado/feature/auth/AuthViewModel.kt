@@ -39,7 +39,9 @@ import pe.edu.unjbg.busconectado.core.model.UserRoleType
 import pe.edu.unjbg.busconectado.core.network.BCNetworkClient
 import pe.edu.unjbg.busconectado.core.network.OtpSendRequest
 import pe.edu.unjbg.busconectado.core.network.OtpVerifyRequest
+import pe.edu.unjbg.busconectado.core.network.ProfileUpdateRequest
 import pe.edu.unjbg.busconectado.core.network.RechargeRequest
+import pe.edu.unjbg.busconectado.core.network.SocialAuthRequest
 import pe.edu.unjbg.busconectado.core.notifications.BCNotificationManager
 import pe.edu.unjbg.busconectado.core.security.EncryptedStorage
 import java.text.Normalizer
@@ -52,6 +54,8 @@ import kotlin.math.roundToInt
 
 sealed class OnboardingStep {
     object Splash : OnboardingStep()
+    object RegisterSocial : OnboardingStep()
+    object ProfileSetup : OnboardingStep()
     object PhoneInput : OnboardingStep()
     object OtpVerification : OnboardingStep()
     object Success : OnboardingStep()
@@ -67,6 +71,13 @@ data class BCUiState(
     val currentStep: OnboardingStep = OnboardingStep.Splash,
     val phoneNumber: String = "",
     val otpCode: String = "",
+    val otpChannel: String = "whatsapp",
+    val otpInfoMessage: String? = null,
+    val isLinkingPhoneFlow: Boolean = false,
+    val showPhoneLinkDialog: Boolean = false,
+    val draftFirstName: String = "",
+    val draftLastName: String = "",
+    val draftEmail: String = "",
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val isLoggedIn: Boolean = false,
@@ -271,17 +282,248 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startPhoneOnboarding() {
-        _uiState.update { it.copy(currentStep = OnboardingStep.PhoneInput, errorMessage = null) }
+        _uiState.update {
+            it.copy(
+                currentStep = OnboardingStep.PhoneInput,
+                isLinkingPhoneFlow = false,
+                errorMessage = null,
+                otpInfoMessage = null
+            )
+        }
+    }
+
+    fun startRegisterSocial() {
+        _uiState.update {
+            it.copy(
+                currentStep = OnboardingStep.RegisterSocial,
+                isLinkingPhoneFlow = true,
+                errorMessage = null
+            )
+        }
     }
 
     fun backToSplash() {
         otpCountdownJob?.cancel()
-        _uiState.update { it.copy(currentStep = OnboardingStep.Splash, errorMessage = null) }
+        _uiState.update {
+            it.copy(
+                currentStep = OnboardingStep.Splash,
+                isLinkingPhoneFlow = false,
+                errorMessage = null,
+                otpInfoMessage = null
+            )
+        }
+    }
+
+    fun backToRegisterSocial() {
+        _uiState.update { it.copy(currentStep = OnboardingStep.RegisterSocial, errorMessage = null) }
+    }
+
+    fun backToProfileSetup() {
+        _uiState.update { it.copy(currentStep = OnboardingStep.ProfileSetup, errorMessage = null) }
     }
 
     fun backToPhoneInput() {
         otpCountdownJob?.cancel()
-        _uiState.update { it.copy(currentStep = OnboardingStep.PhoneInput, otpCode = "", errorMessage = null) }
+        _uiState.update {
+            it.copy(
+                currentStep = OnboardingStep.PhoneInput,
+                otpCode = "",
+                errorMessage = null
+            )
+        }
+    }
+
+    fun selectOtpChannel(channel: String) {
+        _uiState.update { it.copy(otpChannel = channel, errorMessage = null) }
+    }
+
+    fun onDraftFirstNameChanged(value: String) {
+        _uiState.update { it.copy(draftFirstName = value, errorMessage = null) }
+    }
+
+    fun onDraftLastNameChanged(value: String) {
+        _uiState.update { it.copy(draftLastName = value, errorMessage = null) }
+    }
+
+    fun onDraftEmailChanged(value: String) {
+        _uiState.update { it.copy(draftEmail = value, errorMessage = null) }
+    }
+
+    fun signInWithSocial(
+        provider: String,
+        providerUserId: String,
+        email: String,
+        firstName: String,
+        lastName: String,
+        isRegistration: Boolean
+    ) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val cleanFirst = firstName.trim()
+            val cleanLast = lastName.trim()
+            val fullName = listOf(cleanFirst, cleanLast).filter { it.isNotEmpty() }.joinToString(" ")
+                .ifEmpty { if (provider == "apple") "Usuario Apple" else "Usuario Google" }
+
+            var resolvedUser: UserAuth? = null
+            var isNewUser = isRegistration
+            try {
+                val resp = networkClient.service().socialAuth(
+                    SocialAuthRequest(
+                        provider = provider,
+                        providerUserId = providerUserId,
+                        email = email.trim(),
+                        firstName = cleanFirst,
+                        lastName = cleanLast,
+                        displayName = fullName
+                    )
+                )
+                if (resp.isSuccessful && resp.body() != null) {
+                    val body = resp.body()!!
+                    storage.saveAccessToken(body.accessToken)
+                    storage.saveRefreshToken(body.refreshToken)
+                    resolvedUser = body.user
+                    isNewUser = body.isNewUser
+                }
+            } catch (_: Exception) {
+            }
+
+            if (resolvedUser == null) {
+                val uid = "usr_${provider}_${UUID.randomUUID().toString().take(8)}"
+                storage.saveAccessToken("local_jwt_$uid")
+                storage.saveRefreshToken("local_refresh_$uid")
+                isNewUser = true
+                resolvedUser = UserAuth(
+                    id = uid,
+                    phone = "",
+                    firstName = cleanFirst,
+                    lastName = cleanLast,
+                    displayName = fullName,
+                    email = email.trim(),
+                    authProvider = provider,
+                    phoneVerified = false,
+                    role = "ADULT",
+                    isStudent = false,
+                    pointsBalance = 0
+                )
+            }
+
+            val user = resolvedUser
+            if (user.phone.isNotBlank()) storage.saveLastPhone(user.phone)
+            val nextStep = when {
+                isNewUser -> OnboardingStep.ProfileSetup
+                !user.hasVerifiedPhone -> OnboardingStep.PhoneInput
+                else -> OnboardingStep.Splash
+            }
+
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    currentUser = user,
+                    draftFirstName = user.firstName ?: cleanFirst,
+                    draftLastName = user.lastName ?: cleanLast,
+                    draftEmail = user.email ?: email.trim(),
+                    isLinkingPhoneFlow = isNewUser || !user.hasVerifiedPhone,
+                    currentStep = nextStep,
+                    isLoggedIn = !isNewUser && user.hasVerifiedPhone,
+                    isGuestMode = false
+                )
+            }
+            BCFeedback.success(appContext)
+        }
+    }
+
+    fun saveProfileSetupAndContinue() {
+        val first = _uiState.value.draftFirstName.trim()
+        val last = _uiState.value.draftLastName.trim()
+        val email = _uiState.value.draftEmail.trim()
+        if (first.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Ingresa tu nombre para continuar") }
+            BCFeedback.error(appContext)
+            return
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val current = _uiState.value.currentUser
+            val fullName = listOf(first, last).filter { it.isNotEmpty() }.joinToString(" ")
+            if (current != null) {
+                val updated = current.copy(
+                    firstName = first,
+                    lastName = last,
+                    displayName = fullName,
+                    email = email.ifEmpty { current.email }
+                )
+                try {
+                    networkClient.service().updateProfile(
+                        ProfileUpdateRequest(
+                            userId = updated.id,
+                            firstName = first,
+                            lastName = last,
+                            displayName = fullName,
+                            email = updated.email ?: ""
+                        )
+                    )
+                } catch (_: Exception) {
+                }
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        currentUser = updated,
+                        isLinkingPhoneFlow = true,
+                        currentStep = OnboardingStep.PhoneInput
+                    )
+                }
+            } else {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        isLinkingPhoneFlow = true,
+                        currentStep = OnboardingStep.PhoneInput
+                    )
+                }
+            }
+        }
+    }
+
+    fun skipPhoneLinking() {
+        otpCountdownJob?.cancel()
+        _uiState.update {
+            it.copy(
+                isLinkingPhoneFlow = false,
+                showPhoneLinkDialog = false,
+                isLoggedIn = true,
+                isGuestMode = false,
+                errorMessage = null,
+                otpInfoMessage = null
+            )
+        }
+        BCFeedback.impactLight(appContext)
+    }
+
+    fun openPhoneLinkingFromApp() {
+        otpCountdownJob?.cancel()
+        _uiState.update {
+            it.copy(
+                isLinkingPhoneFlow = true,
+                showPhoneLinkDialog = true,
+                currentStep = OnboardingStep.PhoneInput,
+                otpCode = "",
+                errorMessage = null,
+                otpInfoMessage = null
+            )
+        }
+    }
+
+    fun closePhoneLinkingFromApp() {
+        otpCountdownJob?.cancel()
+        _uiState.update {
+            it.copy(
+                showPhoneLinkDialog = false,
+                isLinkingPhoneFlow = false,
+                errorMessage = null,
+                otpInfoMessage = null
+            )
+        }
     }
 
     fun onPhoneChanged(phone: String) {
@@ -303,6 +545,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendOtp() {
         val phone = _uiState.value.phoneNumber
+        val channel = _uiState.value.otpChannel
         if (phone.length != 9 || !phone.startsWith("9")) {
             _uiState.update {
                 it.copy(errorMessage = "Ingresa un celular peruano válido de 9 dígitos (empieza con 9)")
@@ -312,19 +555,23 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, errorMessage = null, otpInfoMessage = null) }
             val fullPhone = "+51$phone"
+            var infoMsg = "Código de prueba (${if (channel == "whatsapp") "WhatsApp" else "SMS"}): 123456"
             try {
-                networkClient.service().sendOtp(OtpSendRequest(fullPhone))
+                val resp = networkClient.service().sendOtp(OtpSendRequest(fullPhone, channel))
+                if (resp.isSuccessful && !resp.body()?.message.isNullOrBlank()) {
+                    infoMsg = resp.body()!!.message!!
+                }
             } catch (_: Exception) {
-                // Fallback offline permitido para entorno demo Tacna
             }
             _uiState.update {
                 it.copy(
                     isLoading = false,
                     currentStep = OnboardingStep.OtpVerification,
                     countdownSeconds = 59,
-                    otpCode = ""
+                    otpCode = "",
+                    otpInfoMessage = infoMsg
                 )
             }
             BCFeedback.success(appContext)
@@ -349,6 +596,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun verifyOtp() {
         val code = _uiState.value.otpCode
         val phone = _uiState.value.phoneNumber
+        val isLinking = _uiState.value.isLinkingPhoneFlow
+        val currentUser = _uiState.value.currentUser
         if (code.length != 6) {
             _uiState.update { it.copy(errorMessage = "El código de verificación debe tener 6 dígitos") }
             BCFeedback.error(appContext)
@@ -357,54 +606,85 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            val preset = TestAccountPreset.officialPresets.firstOrNull { it.phoneNumber == phone }
-            if (preset != null && code == preset.otpCode) {
-                storage.saveAccessToken("demo_access_${preset.id}")
-                storage.saveRefreshToken("demo_refresh_${preset.id}")
-                storage.saveLastPhone(phone)
-                applyAuthenticatedUser(preset.defaultUser, toSuccessStep = true)
-                _uiState.update { it.copy(isLoading = false) }
-                BCFeedback.success(appContext)
-                return@launch
-            }
+            val linkingUserId = if (isLinking) currentUser?.id else null
 
             try {
                 val resp = networkClient.service().verifyOtp(
-                    OtpVerifyRequest(phone = "+51$phone", code = code)
+                    OtpVerifyRequest(phone = "+51$phone", code = code, userId = linkingUserId)
                 )
                 if (resp.isSuccessful && resp.body() != null) {
                     val body = resp.body()!!
                     storage.saveAccessToken(body.accessToken)
                     storage.saveRefreshToken(body.refreshToken)
                     storage.saveLastPhone(phone)
-                    applyAuthenticatedUser(body.user, toSuccessStep = true)
-                    _uiState.update { it.copy(isLoading = false) }
+                    if (_uiState.value.showPhoneLinkDialog) {
+                        applyAuthenticatedUser(body.user, toSuccessStep = false)
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                showPhoneLinkDialog = false,
+                                isLinkingPhoneFlow = false,
+                                isLoggedIn = true,
+                                isGuestMode = false
+                            )
+                        }
+                    } else {
+                        applyAuthenticatedUser(body.user, toSuccessStep = true)
+                        _uiState.update { it.copy(isLoading = false, isLinkingPhoneFlow = false) }
+                    }
                     BCFeedback.success(appContext)
                     return@launch
+                } else {
+                    val errText = resp.errorBody()?.string()
+                    if (!errText.isNullOrBlank() && errText.contains("vinculado")) {
+                        _uiState.update {
+                            it.copy(isLoading = false, errorMessage = "Este número celular ya está vinculado a otra cuenta.")
+                        }
+                        BCFeedback.error(appContext)
+                        return@launch
+                    }
                 }
             } catch (_: Exception) {
             }
 
             if (code == "123456") {
-                val demoUser = UserAuth(
-                    id = "user_tacna_$phone",
-                    phone = "+51$phone",
-                    displayName = "Pasajero Tacna",
-                    role = "ADULT",
-                    isStudent = false,
-                    pointsBalance = 0
-                )
-                storage.saveAccessToken("demo_access_$phone")
-                storage.saveRefreshToken("demo_refresh_$phone")
+                val updatedUser = if (isLinking && currentUser != null) {
+                    currentUser.copy(phone = "+51$phone", phoneVerified = true)
+                } else {
+                    UserAuth(
+                        id = "user_tacna_$phone",
+                        phone = "+51$phone",
+                        displayName = "Pasajero Tacna",
+                        phoneVerified = true,
+                        role = "ADULT",
+                        isStudent = false,
+                        pointsBalance = 0
+                    )
+                }
+                storage.saveAccessToken("local_access_${updatedUser.id}")
+                storage.saveRefreshToken("local_refresh_${updatedUser.id}")
                 storage.saveLastPhone(phone)
-                applyAuthenticatedUser(demoUser, toSuccessStep = true)
-                _uiState.update { it.copy(isLoading = false) }
+                if (_uiState.value.showPhoneLinkDialog) {
+                    applyAuthenticatedUser(updatedUser, toSuccessStep = false)
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            showPhoneLinkDialog = false,
+                            isLinkingPhoneFlow = false,
+                            isLoggedIn = true,
+                            isGuestMode = false
+                        )
+                    }
+                } else {
+                    applyAuthenticatedUser(updatedUser, toSuccessStep = true)
+                    _uiState.update { it.copy(isLoading = false, isLinkingPhoneFlow = false) }
+                }
                 BCFeedback.success(appContext)
             } else {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        errorMessage = "Código OTP incorrecto. Usa 123456 para cuentas de prueba."
+                        errorMessage = "Código OTP incorrecto. Verifica el código enviado."
                     )
                 }
                 BCFeedback.error(appContext)

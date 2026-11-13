@@ -122,10 +122,25 @@ struct ProfileSheetView: View {
                     }
                 }
 
-                if let phone = viewModel.currentUser?.phone {
-                    Text(phone)
-                        .font(.subheadline)
-                        .foregroundColor(.white.opacity(0.68))
+                if let user = viewModel.currentUser {
+                    if user.hasVerifiedPhone {
+                        Text(user.phone)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.68))
+                    } else {
+                        Button {
+                            dismiss()
+                            viewModel.openPhoneLinkingFromApp()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "phone.badge.plus")
+                                    .font(.caption)
+                                Text("Vincular número celular")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .foregroundColor(BCTheme.amber)
+                        }
+                    }
                 }
 
                 if let user = viewModel.currentUser {

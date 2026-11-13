@@ -141,6 +141,9 @@ struct MainTabView: View {
             let current = viewModel.currentUser?.pointsBalance ?? 0
             Text("Tu saldo actual es de \(current) pts y necesitas \(viewModel.requiredPointsForAttempt) pts para este abordaje. Recarga al instante con Yape o Plin.")
         }
+        .sheet(isPresented: $viewModel.showPhoneLinkSheet) {
+            PhoneLinkSheetView(viewModel: viewModel)
+        }
     }
 
     // MARK: - Píldora Flotante Estilo Google Maps (Con Avatar Integrado a la Derecha y Cero Fondo Detrás)

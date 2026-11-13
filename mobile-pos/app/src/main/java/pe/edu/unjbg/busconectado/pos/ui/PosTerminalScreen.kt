@@ -508,6 +508,7 @@ fun PosTerminalScreen(
                                 onValueChange = { driverDniInput = it.filter { c -> c.isDigit() }.take(8) },
                                 label = { Text("DNI del Chofer") },
                                 singleLine = true,
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                                 colors = fieldColors,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -516,6 +517,7 @@ fun PosTerminalScreen(
                                 onValueChange = { driverPinInput = it.filter { c -> c.isDigit() }.take(6) },
                                 label = { Text("PIN de Enlace") },
                                 singleLine = true,
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                                 colors = fieldColors,
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -523,8 +525,16 @@ fun PosTerminalScreen(
                                 Text(err, color = Color(0xFFF87171), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
                             Button(
-                                enabled = !isLoggingInDriver && driverDniInput.length == 8 && driverPinInput.isNotBlank(),
+                                enabled = !isLoggingInDriver,
                                 onClick = {
+                                    if (driverDniInput.length != 8) {
+                                        driverLoginError = "Ingresa un DNI válido de 8 dígitos"
+                                        return@Button
+                                    }
+                                    if (driverPinInput.isBlank()) {
+                                        driverLoginError = "Ingresa el PIN de enlace del POS"
+                                        return@Button
+                                    }
                                     scope.launch {
                                         isLoggingInDriver = true
                                         driverLoginError = null

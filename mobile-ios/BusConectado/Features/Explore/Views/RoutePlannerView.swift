@@ -1019,6 +1019,33 @@ struct RoutePlannerView: View {
                             TransitStopDotMarker(accentColor: isOrd ? BCTheme.emerald : BCTheme.amber)
                         }
 
+                        if cand.isTransfer && cand.transferWalkCLCoordinates.count >= 2 {
+                            MapPolyline(coordinates: cand.transferWalkCLCoordinates)
+                                .stroke(
+                                    BCTheme.cyanAccent,
+                                    style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [6, 6])
+                                )
+                        }
+
+                        if cand.isTransfer && cand.secondBusTransitCLCoordinates.count >= 2 {
+                            MapPolyline(coordinates: cand.secondBusTransitCLCoordinates)
+                                .stroke(
+                                    Color(hex: cand.secondRouteColorHex ?? cand.colorHex),
+                                    style: StrokeStyle(
+                                        lineWidth: isOrd ? 7 : 5.5,
+                                        lineCap: .round,
+                                        lineJoin: .round,
+                                        dash: isOrd ? [] : [9, 6]
+                                    )
+                                )
+                        }
+
+                        if let transferCoord = cand.transferCoordinate {
+                            Annotation("Transbordo", coordinate: transferCoord) {
+                                TransitStopDotMarker(accentColor: BCTheme.amber)
+                            }
+                        }
+
                         // Marcador de Descenso (solo punto con signo de paradero, sin texto)
                         Annotation("", coordinate: cand.alightingCoordinate) {
                             TransitStopDotMarker(accentColor: BCTheme.cyanAccent)
@@ -1286,7 +1313,7 @@ struct RoutePlannerView: View {
 
                         Spacer()
 
-                        Text(isOrd ? "~\(cand.totalDurationMinutes) min · \(formattedUserFare)" : "~\(cand.totalDurationMinutes) min · Sin QR")
+                        Text(isOrd ? "~\(cand.totalDurationMinutes) min · \(formattedFare(for: cand))" : "~\(cand.totalDurationMinutes) min · Sin QR")
                             .font(.caption2.weight(.heavy).monospaced())
                             .foregroundColor(isOrd ? BCTheme.emerald : BCTheme.amber)
                     }
@@ -1546,7 +1573,7 @@ struct RoutePlannerView: View {
                                     .font(.system(size: 10.5, weight: .semibold))
                                     .foregroundColor(BCTheme.emerald)
                                 Spacer()
-                                Text(formattedUserFare)
+                                Text(formattedFare(for: cand))
                                     .font(.system(size: 11, weight: .bold).monospacedDigit())
                                     .foregroundColor(.white.opacity(0.9))
                             } else if cand.kind == .externalFreeBoarding {
@@ -1591,16 +1618,38 @@ struct RoutePlannerView: View {
                                     isLast: false
                                 )
 
-                                visualTimelineRow(
-                                    icon: "bus.fill",
-                                    color: Color(hex: cand.colorHex),
-                                    title: cand.routeCode,
-                                    subtitle: isOrd
-                                        ? "\(cand.intermediateStopsCount) paradas · Pago QR"
-                                        : "Ruta Externa · Abordaje libre",
-                                    trailingValue: "\(cand.busRideMinutes)m",
-                                    isLast: false
-                                )
+                                if cand.isTransfer {
+                                    visualTimelineRow(
+                                        icon: "bus.fill",
+                                        color: Color(hex: cand.colorHex),
+                                        title: "1° Bus: \(cand.route?.code ?? cand.routeCode)",
+                                        subtitle: isOrd ? "Pago QR \(formattedUserFare)" : "Abordaje libre",
+                                        trailingValue: "\(cand.firstBusRideMinutes)m",
+                                        isLast: false
+                                    )
+
+                                    let walkTStr = cand.transferWalkMeters > 25 ? " · Camina \(cand.transferWalkMeters) m" : ""
+                                    let secondFareStr = isOrd ? " · Pago QR \(formattedUserFare)" : ""
+                                    visualTimelineRow(
+                                        icon: "arrow.triangle.swap",
+                                        color: Color(hex: cand.secondRouteColorHex ?? cand.colorHex),
+                                        title: "Transbordo → \(cand.secondRouteCode ?? "")",
+                                        subtitle: "En \(cand.transferPointName ?? "cruce")\(walkTStr)\(secondFareStr)",
+                                        trailingValue: "\(cand.secondBusRideMinutes)m",
+                                        isLast: false
+                                    )
+                                } else {
+                                    visualTimelineRow(
+                                        icon: "bus.fill",
+                                        color: Color(hex: cand.colorHex),
+                                        title: cand.routeCode,
+                                        subtitle: isOrd
+                                            ? "\(cand.intermediateStopsCount) paradas · Pago QR"
+                                            : "Ruta Externa · Abordaje libre",
+                                        trailingValue: "\(cand.busRideMinutes)m",
+                                        isLast: false
+                                    )
+                                }
 
                                 visualTimelineRow(
                                     icon: "mappin.and.ellipse",
@@ -1830,7 +1879,7 @@ struct RoutePlannerView: View {
 
                     HStack(spacing: 12) {
                         if isOrd {
-                            Label("QR \(formattedUserFare)", systemImage: "qrcode")
+                            Label("QR \(formattedFare(for: candidate))", systemImage: "qrcode")
                                 .foregroundColor(BCTheme.emerald)
                             Label("Aviso 5m", systemImage: "bell.badge.fill")
                                 .foregroundColor(BCTheme.emerald)
@@ -2192,11 +2241,17 @@ struct RoutePlannerView: View {
         }
     }
 
+    private var singleUserFarePen: Double {
+        viewModel.currentUser?.roleType.farePen ?? 0.70
+    }
+
     private var formattedUserFare: String {
-        if let user = viewModel.currentUser {
-            return String(format: "S/. %.2f", user.roleType.farePen)
-        }
-        return "S/. 0.70"
+        String(format: "S/. %.2f", singleUserFarePen)
+    }
+
+    private func formattedFare(for candidate: EvaluatedRouteCandidate) -> String {
+        let multiplier: Double = candidate.isTransfer ? 2.0 : 1.0
+        return String(format: "S/. %.2f", singleUserFarePen * multiplier)
     }
 
     private func currentSheetHeight(in totalHeight: CGFloat, bottomInset: CGFloat) -> CGFloat {

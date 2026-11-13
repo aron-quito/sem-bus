@@ -126,9 +126,18 @@ data class CarnetReviewRequest(
 
 data class UserAuth(
     val id: String,
-    val phone: String,
+    val phone: String = "",
+    @SerializedName("first_name")
+    val firstName: String? = null,
+    @SerializedName("last_name")
+    val lastName: String? = null,
     @SerializedName("display_name")
-    val displayName: String,
+    val displayName: String = "Pasajero BC",
+    val email: String? = null,
+    @SerializedName("auth_provider")
+    val authProvider: String? = null,
+    @SerializedName("phone_verified")
+    val phoneVerified: Boolean? = null,
     val role: String = "ADULT",
     @SerializedName("is_student")
     val isStudent: Boolean = false,
@@ -139,6 +148,20 @@ data class UserAuth(
     @SerializedName("qr_code_payload")
     val qrCodePayload: String? = null
 ) {
+    val hasVerifiedPhone: Boolean
+        get() = phone.trim().isNotEmpty() && (phoneVerified ?: true)
+
+    val displayFullName: String
+        get() {
+            val combined = listOfNotNull(firstName?.trim(), lastName?.trim())
+                .filter { it.isNotEmpty() }
+                .joinToString(" ")
+            return when {
+                combined.isNotEmpty() -> combined
+                displayName.trim().isNotEmpty() -> displayName.trim()
+                else -> "Pasajero BC"
+            }
+        }
     val roleType: UserRoleType
         get() {
             val upper = role.uppercase(Locale.ROOT)
@@ -500,7 +523,8 @@ data class TacnaOfficialRouteCatalogItem(
     val estimatedTotalMinutes: Int = 55,
     val colorHex: String = "#2563EB",
     val keyStopIds: List<String> = emptyList(),
-    val pathCoordinates: List<List<Double>> = emptyList()
+    val pathCoordinates: List<List<Double>> = emptyList(),
+    val isClosedLoop: Boolean = false
 ) {
     val isOrdinary: Boolean
         get() = routeType.equals("ordinary", ignoreCase = true)
@@ -578,7 +602,18 @@ data class EvaluatedRouteCandidate(
     val busTransitCoords: List<GeoPointData>,
     val walkFinalCoords: List<GeoPointData>,
     val isRecommendedPrimary: Boolean = false,
-    val externalRecommendationReason: String? = null
+    val externalRecommendationReason: String? = null,
+    val isTransfer: Boolean = false,
+    val secondRouteCode: String? = null,
+    val secondRouteColorHex: String? = null,
+    val transferPointName: String? = null,
+    val transferLatitude: Double? = null,
+    val transferLongitude: Double? = null,
+    val transferWalkMeters: Int = 0,
+    val firstBusRideMinutes: Int = 0,
+    val secondBusRideMinutes: Int = 0,
+    val secondBusTransitCoords: List<GeoPointData> = emptyList(),
+    val transferWalkCoords: List<GeoPointData> = emptyList()
 ) {
     val boardingCoordinate: GeoPointData
         get() = GeoPointData(boardingLatitude, boardingLongitude)
@@ -586,8 +621,15 @@ data class EvaluatedRouteCandidate(
     val alightingCoordinate: GeoPointData
         get() = GeoPointData(alightingLatitude, alightingLongitude)
 
+    val transferCoordinate: GeoPointData?
+        get() = if (transferLatitude != null && transferLongitude != null) {
+            GeoPointData(transferLatitude, transferLongitude)
+        } else {
+            null
+        }
+
     val walkTotalMeters: Int
-        get() = walkInitialMeters + walkFinalMeters
+        get() = walkInitialMeters + transferWalkMeters + walkFinalMeters
 
     val totalDistanceLabel: String
         get() = if (totalDistanceMeters >= 1000) {
@@ -649,7 +691,8 @@ object RouteAutomationEngine {
         val subCoords: List<GeoPointData>,
         val boardVertex: GeoPointData,
         val alightVertex: GeoPointData,
-        val lengthMeters: Double
+        val lengthMeters: Double,
+        val isForwardValid: Boolean = true
     )
 
     private fun extractRouteSubPolyline(
@@ -662,7 +705,8 @@ object RouteAutomationEngine {
                 subCoords = listOf(start, end),
                 boardVertex = start,
                 alightVertex = end,
-                lengthMeters = max(start.distanceMetersTo(end), 120.0)
+                lengthMeters = max(start.distanceMetersTo(end), 120.0),
+                isForwardValid = true
             )
         }
 
@@ -686,11 +730,17 @@ object RouteAutomationEngine {
             }
         }
 
-        val slice = if (idxStart <= idxEnd) {
-            polyline.subList(idxStart, idxEnd + 1).toList()
-        } else {
-            polyline.subList(idxEnd, idxStart + 1).reversed()
+        if (idxStart > idxEnd) {
+            return SubPolylineResult(
+                subCoords = emptyList(),
+                boardVertex = polyline[idxStart],
+                alightVertex = polyline[idxEnd],
+                lengthMeters = 0.0,
+                isForwardValid = false
+            )
         }
+
+        val slice = polyline.subList(idxStart, idxEnd + 1).toList()
 
         var totalMeters = 0.0
         for (i in 0 until slice.size - 1) {
@@ -755,9 +805,17 @@ object RouteAutomationEngine {
 
         val activeOrdRoutes = routes.filter { it.isOrdinary && it.isInService }
         for (route in activeOrdRoutes) {
-            val routeStops = route.resolvedStops(stops)
-            if (routeStops.size < 2) continue
+            val baseStops = route.resolvedStops(stops)
+            if (baseStops.size < 2) continue
             val fullPoly = route.resolvedPolylineCoordinates(stops)
+            val isLoop = route.isClosedLoop ||
+                (baseStops.size >= 3 && baseStops.first().id == baseStops.last().id) ||
+                (fullPoly.size >= 4 && fullPoly.first().distanceMetersTo(fullPoly.last()) <= 80.0)
+            val routeStops = if (isLoop && baseStops.first().id != baseStops.last().id) {
+                baseStops + baseStops.first()
+            } else {
+                baseStops
+            }
 
             var bestBoardIdx = -1
             var bestAlightIdx = -1
@@ -765,12 +823,12 @@ object RouteAutomationEngine {
             var bestWalk2M = 0
             var bestScore = Double.MAX_VALUE
 
-            for (i in routeStops.indices) {
+            for (i in 0 until routeStops.size - 1) {
                 val sBoard = routeStops[i]
                 val dWalk1 = originCoord.distanceMetersTo(sBoard.coordinate) * 1.18
-                for (j in routeStops.indices) {
-                    if (i == j) continue
+                for (j in (i + 1) until routeStops.size) {
                     val sAlight = routeStops[j]
+                    if (sAlight.id == sBoard.id) continue
                     val dWalk2 = sAlight.coordinate.distanceMetersTo(destCoord) * 1.18
                     if (dWalk1 + dWalk2 > max(directRawMeters * 1.35, 650.0)) continue
                     val approxBusDist = sBoard.coordinate.distanceMetersTo(sAlight.coordinate) * 1.25
@@ -790,7 +848,22 @@ object RouteAutomationEngine {
 
             val boardStop = routeStops[bestBoardIdx]
             val alightStop = routeStops[bestAlightIdx]
-            val subSegment = extractRouteSubPolyline(fullPoly, boardStop.coordinate, alightStop.coordinate)
+            val subSegment = if (isLoop && bestAlightIdx == routeStops.lastIndex && fullPoly.size >= 2) {
+                var boardPolyIdx = fullPoly.indices.minByOrNull { fullPoly[it].distanceMetersTo(boardStop.coordinate) } ?: 0
+                if (boardPolyIdx >= fullPoly.lastIndex && fullPoly.size > 2) boardPolyIdx = fullPoly.lastIndex - 1
+                val slice = fullPoly.subList(boardPolyIdx, fullPoly.size).toList()
+                var segLen = 0.0
+                for (k in 0 until slice.size - 1) segLen += slice[k].distanceMetersTo(slice[k + 1])
+                SubPolylineResult(
+                    subCoords = slice,
+                    boardVertex = slice.firstOrNull() ?: boardStop.coordinate,
+                    alightVertex = slice.lastOrNull() ?: alightStop.coordinate,
+                    lengthMeters = max(segLen, 120.0),
+                    isForwardValid = true
+                )
+            } else {
+                extractRouteSubPolyline(fullPoly, boardStop.coordinate, alightStop.coordinate)
+            }
 
             val speedKmh = max(route.averageSpeedKmh, 16.0)
             val intermediateIndices = if (bestBoardIdx < bestAlightIdx) {
@@ -854,6 +927,7 @@ object RouteAutomationEngine {
             if (fullPoly.size < 2) continue
 
             val subSegment = extractRouteSubPolyline(fullPoly, originCoord, destCoord)
+            if (!subSegment.isForwardValid) continue
             val dWalk1 = (originCoord.distanceMetersTo(subSegment.boardVertex) * 1.18).roundToInt()
             val dWalk2 = (subSegment.alightVertex.distanceMetersTo(destCoord) * 1.18).roundToInt()
 
@@ -912,6 +986,32 @@ object RouteAutomationEngine {
                 walkFinalCoords = if (dWalk2 < 35) emptyList() else listOf(subSegment.alightVertex, destCoord)
             )
         }
+
+        val loopReboardCandidates = evaluateClosedLoopReboardCandidates(
+            originCoord = originCoord,
+            destCoord = destCoord,
+            directRawMeters = directRawMeters,
+            stops = stops,
+            activeOrdRoutes = activeOrdRoutes,
+            extRoutes = extRoutes,
+            activeBuses = activeBuses
+        )
+        ordinaryCandidates += loopReboardCandidates.filter { it.kind == EvaluatedCandidateKind.ORDINARY_IN_SERVICE }
+        externalCandidates += loopReboardCandidates.filter { it.kind == EvaluatedCandidateKind.EXTERNAL_FREE_BOARDING }
+
+        val transferCandidates = evaluateTransferPairs(
+            origin = origin,
+            destination = destination,
+            originCoord = originCoord,
+            destCoord = destCoord,
+            directRawMeters = directRawMeters,
+            stops = stops,
+            activeOrdRoutes = activeOrdRoutes,
+            extRoutes = extRoutes,
+            activeBuses = activeBuses
+        )
+        ordinaryCandidates += transferCandidates.filter { it.kind == EvaluatedCandidateKind.ORDINARY_IN_SERVICE }.take(2)
+        externalCandidates += transferCandidates.filter { it.kind == EvaluatedCandidateKind.EXTERNAL_FREE_BOARDING }.take(2)
 
         ordinaryCandidates.sortWith(compareBy<EvaluatedRouteCandidate> { it.totalDurationMinutes }.thenBy { it.walkTotalMeters })
         externalCandidates.sortWith(compareBy<EvaluatedRouteCandidate> { it.totalDurationMinutes }.thenBy { it.walkTotalMeters })
@@ -979,6 +1079,371 @@ object RouteAutomationEngine {
             primaryBannerWarning = bannerWarning,
             hasOrdinaryInService = activeOrdRoutes.isNotEmpty()
         )
+    }
+
+    private data class TransferAnchor(
+        val coord: GeoPointData,
+        val label: String,
+        val stop: TacnaDestinationPlace?
+    )
+
+    private fun buildAnchorsForRoute(
+        route: TacnaOfficialRouteCatalogItem,
+        stops: List<TacnaDestinationPlace>
+    ): Pair<List<TransferAnchor>, List<GeoPointData>> {
+        val fullPoly = route.resolvedPolylineCoordinates(stops)
+        if (route.isOrdinary) {
+            val routeStops = route.resolvedStops(stops)
+            return routeStops.map { TransferAnchor(it.coordinate, it.shortName, it) } to fullPoly
+        }
+        if (fullPoly.size < 2) return emptyList<TransferAnchor>() to fullPoly
+        val sampled = mutableListOf<TransferAnchor>()
+        var lastAdded: GeoPointData? = null
+        fullPoly.forEachIndexed { idx, pt ->
+            val isEdge = idx == 0 || idx == fullPoly.lastIndex
+            if (isEdge || lastAdded == null || lastAdded!!.distanceMetersTo(pt) >= 140.0) {
+                val nearest = stops.minByOrNull { it.coordinate.distanceMetersTo(pt) }
+                val label = if (nearest != null && nearest.coordinate.distanceMetersTo(pt) < 280.0) {
+                    "alt. ${nearest.shortName}"
+                } else {
+                    "vía ${route.code}"
+                }
+                sampled += TransferAnchor(pt, label, null)
+                lastAdded = pt
+            }
+        }
+        return sampled to fullPoly
+    }
+
+    private fun evaluateTransferPairs(
+        origin: TacnaDestinationPlace,
+        destination: TacnaDestinationPlace,
+        originCoord: GeoPointData,
+        destCoord: GeoPointData,
+        directRawMeters: Double,
+        stops: List<TacnaDestinationPlace>,
+        activeOrdRoutes: List<TacnaOfficialRouteCatalogItem>,
+        extRoutes: List<TacnaOfficialRouteCatalogItem>,
+        activeBuses: List<ActiveBusModel>
+    ): List<EvaluatedRouteCandidate> {
+        if (directRawMeters <= 450.0) return emptyList()
+        val pool = activeOrdRoutes + extRoutes
+        if (pool.size < 2) return emptyList()
+
+        val routeData = pool.mapNotNull { r ->
+            val (anchors, poly) = buildAnchorsForRoute(r, stops)
+            if (anchors.size < 2) null else Triple(r, anchors, poly)
+        }
+        if (routeData.size < 2) return emptyList()
+
+        val maxWalkLimit = max(directRawMeters * 0.95, 700.0)
+        val maxSingleWalk = max(directRawMeters * 0.72, 550.0)
+        val transferCandidates = mutableListOf<EvaluatedRouteCandidate>()
+
+        for ((r1, anchors1, poly1) in routeData) {
+            // Mejor punto de subida en r1 cercano al origen
+            val boardOptions = anchors1.mapIndexed { idx, a ->
+                idx to (originCoord.distanceMetersTo(a.coord) * 1.18)
+            }.filter { it.second <= maxSingleWalk }
+            if (boardOptions.isEmpty()) continue
+
+            for ((r2, anchors2, poly2) in routeData) {
+                if (r1.id == r2.id) continue
+
+                val alightOptions = anchors2.mapIndexed { idx, a ->
+                    idx to (a.coord.distanceMetersTo(destCoord) * 1.18)
+                }.filter { it.second <= maxSingleWalk }
+                if (alightOptions.isEmpty()) continue
+
+                var bestScore = Double.MAX_VALUE
+                var bestBoardIdx = -1
+                var bestT1Idx = -1
+                var bestT2Idx = -1
+                var bestAlightIdx = -1
+                var bestWalk1 = 0.0
+                var bestWalkT = 0.0
+                var bestWalk2 = 0.0
+
+                val speed1Mpm = max(r1.averageSpeedKmh, 16.0) * 1000.0 / 60.0
+                val speed2Mpm = max(r2.averageSpeedKmh, 16.0) * 1000.0 / 60.0
+
+                for (t1Idx in anchors1.indices) {
+                    val t1 = anchors1[t1Idx]
+                    for (t2Idx in anchors2.indices) {
+                        val t2 = anchors2[t2Idx]
+                        val dTransferRaw = t1.coord.distanceMetersTo(t2.coord)
+                        if (dTransferRaw > 280.0) continue
+                        val dTransferWalk = if (dTransferRaw < 25.0) 0.0 else dTransferRaw * 1.18
+
+                        val bBest = boardOptions
+                            .filter { it.first < t1Idx && anchors1[it.first].coord.distanceMetersTo(t1.coord) >= 150.0 }
+                            .minByOrNull { (bIdx, w1) ->
+                                val dBus1 = anchors1[bIdx].coord.distanceMetersTo(t1.coord) * 1.25
+                                (w1 / 76.0) + (dBus1 / speed1Mpm)
+                            } ?: continue
+
+                        val aBest = alightOptions
+                            .filter { it.first > t2Idx && t2.coord.distanceMetersTo(anchors2[it.first].coord) >= 150.0 }
+                            .minByOrNull { (aIdx, w2) ->
+                                val dBus2 = t2.coord.distanceMetersTo(anchors2[aIdx].coord) * 1.25
+                                (w2 / 76.0) + (dBus2 / speed2Mpm)
+                            } ?: continue
+
+                        val totalWalk = bBest.second + dTransferWalk + aBest.second
+                        if (totalWalk > maxWalkLimit) continue
+
+                        val dBus1 = anchors1[bBest.first].coord.distanceMetersTo(t1.coord) * 1.25
+                        val dBus2 = t2.coord.distanceMetersTo(anchors2[aBest.first].coord) * 1.25
+                        val score = (totalWalk / 76.0) + (dBus1 / speed1Mpm) + (dBus2 / speed2Mpm) + 4.0
+
+                        if (score < bestScore) {
+                            bestScore = score
+                            bestBoardIdx = bBest.first
+                            bestT1Idx = t1Idx
+                            bestT2Idx = t2Idx
+                            bestAlightIdx = aBest.first
+                            bestWalk1 = bBest.second
+                            bestWalkT = dTransferWalk
+                            bestWalk2 = aBest.second
+                        }
+                    }
+                }
+
+                if (bestBoardIdx < 0 || bestT1Idx < 0 || bestT2Idx < 0 || bestAlightIdx < 0) continue
+
+                val boardAnchor = anchors1[bestBoardIdx]
+                val t1Anchor = anchors1[bestT1Idx]
+                val t2Anchor = anchors2[bestT2Idx]
+                val alightAnchor = anchors2[bestAlightIdx]
+
+                val seg1 = extractRouteSubPolyline(poly1, boardAnchor.coord, t1Anchor.coord)
+                val seg2 = extractRouteSubPolyline(poly2, t2Anchor.coord, alightAnchor.coord)
+
+                val walk1M = max(bestWalk1.roundToInt(), 20)
+                val walkTM = if (bestWalkT < 25.0) 0 else bestWalkT.roundToInt()
+                val walk2M = max(bestWalk2.roundToInt(), 0)
+
+                val walk1Min = max(1, (walk1M / 76.0).roundToInt())
+                val walkTMin = if (walkTM < 35) 0 else max(1, (walkTM / 76.0).roundToInt())
+                val walk2Min = if (walk2M < 45) 0 else max(1, (walk2M / 76.0).roundToInt())
+
+                val bus1Meters = seg1.lengthMeters.roundToInt()
+                val bus2Meters = seg2.lengthMeters.roundToInt()
+                val bus1Min = max(2, ((bus1Meters / 1000.0) / max(r1.averageSpeedKmh, 16.0) * 60.0).roundToInt())
+                val bus2Min = max(2, ((bus2Meters / 1000.0) / max(r2.averageSpeedKmh, 16.0) * 60.0).roundToInt())
+                val transferWaitMin = 4
+                val totalMin = walk1Min + bus1Min + walkTMin + transferWaitMin + bus2Min + walk2Min
+                val totalMeters = walk1M + bus1Meters + walkTM + bus2Meters + walk2M
+
+                val bothOrdinary = r1.isOrdinary && r2.isOrdinary
+                val liveEta = activeBuses.firstOrNull {
+                    it.lineNumber.contains(r1.code, ignoreCase = true) ||
+                        r1.code.contains(it.lineNumber, ignoreCase = true)
+                }?.nextStopEtaMinutes
+                val busWaitMin = liveEta ?: min(5, max(3, r1.frequencyMinutes))
+
+                val transferLabel = if (t1Anchor.label == t2Anchor.label) {
+                    t1Anchor.label
+                } else {
+                    "${t1Anchor.label} / ${t2Anchor.label}"
+                }
+
+                transferCandidates += EvaluatedRouteCandidate(
+                    id = "cand-transfer-${r1.id}-${r2.id}",
+                    kind = if (bothOrdinary) EvaluatedCandidateKind.ORDINARY_IN_SERVICE else EvaluatedCandidateKind.EXTERNAL_FREE_BOARDING,
+                    route = r1,
+                    routeCode = "${r1.code} → ${r2.code}",
+                    routeTitle = "Transbordo en $transferLabel (2 rutas)",
+                    colorHex = r1.colorHex,
+                    totalDurationMinutes = totalMin,
+                    totalDistanceMeters = totalMeters,
+                    walkInitialMinutes = walk1Min,
+                    walkInitialMeters = walk1M,
+                    busWaitMinutes = busWaitMin,
+                    busRideMinutes = bus1Min + bus2Min + walkTMin + transferWaitMin,
+                    busRideMeters = bus1Meters + bus2Meters,
+                    walkFinalMinutes = walk2Min,
+                    walkFinalMeters = walk2M,
+                    boardingStop = boardAnchor.stop,
+                    alightingStop = alightAnchor.stop,
+                    intermediateStopsCount = 0,
+                    intermediateStopNames = emptyList(),
+                    boardingPointName = boardAnchor.label,
+                    alightingPointName = alightAnchor.label,
+                    boardingLatitude = boardAnchor.coord.latitude,
+                    boardingLongitude = boardAnchor.coord.longitude,
+                    alightingLatitude = alightAnchor.coord.latitude,
+                    alightingLongitude = alightAnchor.coord.longitude,
+                    walkToBoardCoords = listOf(originCoord, boardAnchor.coord),
+                    busTransitCoords = seg1.subCoords,
+                    walkFinalCoords = if (walk2M < 35) emptyList() else listOf(alightAnchor.coord, destCoord),
+                    isTransfer = true,
+                    secondRouteCode = r2.code,
+                    secondRouteColorHex = r2.colorHex,
+                    transferPointName = transferLabel,
+                    transferLatitude = t1Anchor.coord.latitude,
+                    transferLongitude = t1Anchor.coord.longitude,
+                    transferWalkMeters = walkTM,
+                    firstBusRideMinutes = bus1Min,
+                    secondBusRideMinutes = bus2Min,
+                    secondBusTransitCoords = seg2.subCoords,
+                    transferWalkCoords = if (walkTM < 25) emptyList() else listOf(t1Anchor.coord, t2Anchor.coord)
+                )
+            }
+        }
+
+        return transferCandidates.sortedWith(
+            compareBy<EvaluatedRouteCandidate> { it.totalDurationMinutes }.thenBy { it.walkTotalMeters }
+        )
+    }
+
+    private fun evaluateClosedLoopReboardCandidates(
+        originCoord: GeoPointData,
+        destCoord: GeoPointData,
+        directRawMeters: Double,
+        stops: List<TacnaDestinationPlace>,
+        activeOrdRoutes: List<TacnaOfficialRouteCatalogItem>,
+        extRoutes: List<TacnaOfficialRouteCatalogItem>,
+        activeBuses: List<ActiveBusModel>
+    ): List<EvaluatedRouteCandidate> {
+        val result = mutableListOf<EvaluatedRouteCandidate>()
+        for (route in (activeOrdRoutes + extRoutes)) {
+            val routeStops = route.resolvedStops(stops)
+            if (routeStops.size < 2) continue
+            val fullPoly = route.resolvedPolylineCoordinates(stops)
+            val isLoop = route.isClosedLoop ||
+                (routeStops.size >= 3 && routeStops.first().id == routeStops.last().id) ||
+                (fullPoly.size >= 4 && fullPoly.first().distanceMetersTo(fullPoly.last()) <= 80.0)
+            if (!isLoop) continue
+
+            val terminalStop = routeStops.first()
+            val endCoord = fullPoly.lastOrNull() ?: terminalStop.coordinate
+            val startCoord = fullPoly.firstOrNull() ?: terminalStop.coordinate
+            val speedKmh = max(route.averageSpeedKmh, 16.0)
+            val speedMpm = speedKmh * 1000.0 / 60.0
+
+            var bestI = -1
+            var bestJ = -1
+            var bestWalk1 = 0
+            var bestWalk2 = 0
+            var bestScore = Double.MAX_VALUE
+
+            for (i in 1 until routeStops.size) {
+                val sBoard = routeStops[i]
+                if (sBoard.id == terminalStop.id) continue
+                val dWalk1 = originCoord.distanceMetersTo(sBoard.coordinate) * 1.18
+                for (j in 1 until i) {
+                    val sAlight = routeStops[j]
+                    if (sAlight.id == terminalStop.id) continue
+                    val dWalk2 = sAlight.coordinate.distanceMetersTo(destCoord) * 1.18
+                    if (dWalk1 + dWalk2 > max(directRawMeters * 1.35, 650.0)) continue
+
+                    val dBus1 = sBoard.coordinate.distanceMetersTo(endCoord) * 1.25
+                    val dBus2 = startCoord.distanceMetersTo(sAlight.coordinate) * 1.25
+                    val estMin = (dWalk1 + dWalk2) / 76.0 + (dBus1 + dBus2) / speedMpm + 4.0
+                    if (estMin < bestScore) {
+                        bestScore = estMin
+                        bestI = i
+                        bestJ = j
+                        bestWalk1 = max(dWalk1.roundToInt(), 20)
+                        bestWalk2 = max(dWalk2.roundToInt(), 0)
+                    }
+                }
+            }
+
+            if (bestI < 0 || bestJ < 0) continue
+
+            val boardStop = routeStops[bestI]
+            val alightStop = routeStops[bestJ]
+
+            val seg1Coords: List<GeoPointData>
+            val seg2Coords: List<GeoPointData>
+            val seg1Len: Double
+            val seg2Len: Double
+
+            if (fullPoly.size >= 2) {
+                var boardPolyIdx = fullPoly.indices.minByOrNull { fullPoly[it].distanceMetersTo(boardStop.coordinate) } ?: 0
+                if (boardPolyIdx == fullPoly.lastIndex && fullPoly.size > 2) {
+                    boardPolyIdx = fullPoly.lastIndex - 1
+                }
+                var alightPolyIdx = fullPoly.indices.minByOrNull { fullPoly[it].distanceMetersTo(alightStop.coordinate) } ?: 0
+                if (alightPolyIdx == 0 && fullPoly.size > 2) {
+                    alightPolyIdx = 1
+                }
+                seg1Coords = fullPoly.subList(boardPolyIdx, fullPoly.size).toList()
+                seg2Coords = fullPoly.subList(0, alightPolyIdx + 1).toList()
+                var d1 = 0.0
+                for (k in 0 until seg1Coords.size - 1) d1 += seg1Coords[k].distanceMetersTo(seg1Coords[k + 1])
+                var d2 = 0.0
+                for (k in 0 until seg2Coords.size - 1) d2 += seg2Coords[k].distanceMetersTo(seg2Coords[k + 1])
+                seg1Len = max(d1, max(boardStop.coordinate.distanceMetersTo(endCoord) * 1.25, 120.0))
+                seg2Len = max(d2, max(startCoord.distanceMetersTo(alightStop.coordinate) * 1.25, 120.0))
+            } else {
+                seg1Coords = listOf(boardStop.coordinate, endCoord)
+                seg2Coords = listOf(startCoord, alightStop.coordinate)
+                seg1Len = max(boardStop.coordinate.distanceMetersTo(endCoord) * 1.25, 120.0)
+                seg2Len = max(startCoord.distanceMetersTo(alightStop.coordinate) * 1.25, 120.0)
+            }
+
+            val walk1Min = max(1, (bestWalk1 / 76.0).roundToInt())
+            val walk2Min = if (bestWalk2 < 45) 0 else max(1, (bestWalk2 / 76.0).roundToInt())
+            val bus1Meters = seg1Len.roundToInt()
+            val bus2Meters = seg2Len.roundToInt()
+            val bus1Min = max(2, ((bus1Meters / 1000.0) / speedKmh * 60.0).roundToInt())
+            val bus2Min = max(2, ((bus2Meters / 1000.0) / speedKmh * 60.0).roundToInt())
+            val reboardWaitMin = 4
+            val totalMin = walk1Min + bus1Min + reboardWaitMin + bus2Min + walk2Min
+            val totalMeters = bestWalk1 + bus1Meters + bus2Meters + bestWalk2
+
+            val liveEta = activeBuses.firstOrNull {
+                it.lineNumber.contains(route.code, ignoreCase = true) ||
+                    route.code.contains(it.lineNumber, ignoreCase = true)
+            }?.nextStopEtaMinutes
+            val busWaitMin = liveEta ?: min(5, max(3, route.frequencyMinutes))
+
+            result += EvaluatedRouteCandidate(
+                id = "cand-loop-${route.id}",
+                kind = if (route.isOrdinary) EvaluatedCandidateKind.ORDINARY_IN_SERVICE else EvaluatedCandidateKind.EXTERNAL_FREE_BOARDING,
+                route = route,
+                routeCode = "${route.code} ↻ ${route.code}",
+                routeTitle = "Fin de vuelta en ${terminalStop.shortName} (bajas y reabordas)",
+                colorHex = route.colorHex,
+                totalDurationMinutes = totalMin,
+                totalDistanceMeters = totalMeters,
+                walkInitialMinutes = walk1Min,
+                walkInitialMeters = bestWalk1,
+                busWaitMinutes = busWaitMin,
+                busRideMinutes = bus1Min + bus2Min + reboardWaitMin,
+                busRideMeters = bus1Meters + bus2Meters,
+                walkFinalMinutes = walk2Min,
+                walkFinalMeters = bestWalk2,
+                boardingStop = boardStop,
+                alightingStop = alightStop,
+                intermediateStopsCount = 0,
+                intermediateStopNames = emptyList(),
+                boardingPointName = boardStop.shortName,
+                alightingPointName = alightStop.shortName,
+                boardingLatitude = boardStop.latitude,
+                boardingLongitude = boardStop.longitude,
+                alightingLatitude = alightStop.latitude,
+                alightingLongitude = alightStop.longitude,
+                walkToBoardCoords = listOf(originCoord, boardStop.coordinate),
+                busTransitCoords = seg1Coords,
+                walkFinalCoords = if (bestWalk2 < 35) emptyList() else listOf(alightStop.coordinate, destCoord),
+                isTransfer = true,
+                secondRouteCode = route.code,
+                secondRouteColorHex = route.colorHex,
+                transferPointName = "${terminalStop.shortName} (Fin de vuelta · Nuevo pasaje)",
+                transferLatitude = terminalStop.latitude,
+                transferLongitude = terminalStop.longitude,
+                transferWalkMeters = 0,
+                firstBusRideMinutes = bus1Min,
+                secondBusRideMinutes = bus2Min,
+                secondBusTransitCoords = seg2Coords,
+                transferWalkCoords = emptyList()
+            )
+        }
+        return result
     }
 }
 
