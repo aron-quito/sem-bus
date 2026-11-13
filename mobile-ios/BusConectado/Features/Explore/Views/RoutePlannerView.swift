@@ -81,6 +81,7 @@ struct RoutePlannerView: View {
     // Estado de la Hoja Inferior de 3 Niveles (Peek / Medium / Full)
     @State private var sheetSnap: RouteSheetSnapLevel = .compact
     @State private var sheetDragTranslation: CGFloat = 0
+    @State private var isSheetScrollAtTop: Bool = true
 
     // Polilíneas alineadas nativamente a las calles de Apple Maps (MKDirections)
     @State private var plannerWalkStreetCoords: [CLLocationCoordinate2D] = []
@@ -1067,6 +1068,15 @@ struct RoutePlannerView: View {
                     }
                 }
                 .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .all))
+                .onTapGesture {
+                    if sheetSnap != .compact {
+                        BCFeedbackManager.shared.impactLight()
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.85, blendDuration: 0.1)) {
+                            sheetSnap = .compact
+                            sheetDragTranslation = 0
+                        }
+                    }
+                }
                 .ignoresSafeArea()
 
                 // 2. Degradado translúcido en la parte superior del mapa (idéntico a la pantalla principal)
@@ -1391,9 +1401,60 @@ struct RoutePlannerView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: .black.opacity(0.55), radius: 22, y: -6)
+        .onChange(of: sheetSnap) { _, _ in
+            isSheetScrollAtTop = true
+        }
+        .onChange(of: selectedCandidateIndex) { _, newIdx in
+            guard displayedCandidates.indices.contains(newIdx) else { return }
+            BCFeedbackManager.shared.impactLight()
+            updatePolylinesAndCamera(for: displayedCandidates[newIdx])
+        }
         .simultaneousGesture(
-            sheetSnap == .compact ? sheetDragGesture(totalHeight: totalHeight, bottomInset: safeBottom) : nil
+            sheetSnap == .compact
+                ? sheetDragGesture(totalHeight: totalHeight, bottomInset: safeBottom)
+                : nil
         )
+        .simultaneousGesture(
+            sheetSnap != .compact
+                ? sheetPullDownFromScrollGesture(totalHeight: totalHeight, bottomInset: safeBottom)
+                : nil
+        )
+    }
+
+    private func sheetPullDownFromScrollGesture(totalHeight: CGFloat, bottomInset: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .global)
+            .onChanged { value in
+                let isVertical = abs(value.translation.height) > abs(value.translation.width)
+                guard sheetDragTranslation > 0 || (isSheetScrollAtTop && isVertical && value.translation.height > 8) else {
+                    return
+                }
+                var dy = max(0, value.translation.height)
+                let minH = RouteSheetSnapLevel.compact.height(in: totalHeight, bottomInset: bottomInset)
+                let baseH = sheetSnap.height(in: totalHeight, bottomInset: bottomInset)
+                let rawH = baseH - dy
+                if rawH < minH {
+                    dy = baseH - (minH - (minH - rawH) * 0.28)
+                }
+                withAnimation(.interactiveSpring(response: 0.16, dampingFraction: 0.9)) {
+                    sheetDragTranslation = dy
+                }
+            }
+            .onEnded { value in
+                guard sheetDragTranslation > 0 else { return }
+                let baseH = sheetSnap.height(in: totalHeight, bottomInset: bottomInset)
+                let predictedH = baseH - max(0, value.predictedEndTranslation.height)
+                let levels = RouteSheetSnapLevel.allCases
+                let closest = levels.min(by: {
+                    abs($0.height(in: totalHeight, bottomInset: bottomInset) - predictedH)
+                    < abs($1.height(in: totalHeight, bottomInset: bottomInset) - predictedH)
+                }) ?? sheetSnap
+
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.85, blendDuration: 0.1)) {
+                    sheetSnap = closest
+                    sheetDragTranslation = 0
+                }
+                BCFeedbackManager.shared.impactLight()
+            }
     }
 
     private func sheetDragGesture(totalHeight: CGFloat, bottomInset: CGFloat) -> some Gesture {
@@ -1452,29 +1513,37 @@ struct RoutePlannerView: View {
                 }
             }
 
-            if let cand = cand {
-                // Resumen visual: Tiempo + Cadena gráfica de tramos + Badge de servicio
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .center, spacing: 8) {
-                        Text("~\(cand.totalDurationMinutes) min")
-                            .font(.title3.weight(.black).monospacedDigit())
-                            .foregroundColor(.white)
+            if !displayedCandidates.isEmpty {
+                // Carrusel horizontal 1:1 de tarjetas de opción
+                TabView(selection: $selectedCandidateIndex) {
+                    ForEach(Array(displayedCandidates.enumerated()), id: \.offset) { idx, item in
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(alignment: .center, spacing: 8) {
+                                Text("~\(item.totalDurationMinutes) min")
+                                    .font(.title3.weight(.black).monospacedDigit())
+                                    .foregroundColor(.white)
 
-                        Text("· \(cand.totalDistanceLabel)")
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(.white.opacity(0.6))
+                                Text("· \(item.totalDistanceLabel)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.white.opacity(0.6))
 
-                        Spacer()
+                                Spacer()
 
-                        modeBadgePill(for: cand)
+                                modeBadgePill(for: item)
+                            }
+
+                            journeyGraphicStrip(candidate: item)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.06))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(.horizontal, 2)
+                        .tag(idx)
                     }
-
-                    journeyGraphicStrip(candidate: cand)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .background(Color.white.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 82)
             }
 
             // Botones de Acción con espacio cómodo respecto al borde inferior
@@ -1533,13 +1602,23 @@ struct RoutePlannerView: View {
 
     // ——— NIVEL 2: DETALLE VISUAL INTERMEDIO (Timeline estilo Apple Maps) ———
     private func mediumSheetContent(bottomPadding: CGFloat) -> some View {
-        let cand = activeCandidate
+        let activeCand = activeCandidate
 
         return VStack(spacing: 0) {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    if let cand = cand {
-                        HStack(alignment: .center, spacing: 8) {
+            if !displayedCandidates.isEmpty {
+                TabView(selection: $selectedCandidateIndex) {
+                    ForEach(Array(displayedCandidates.enumerated()), id: \.offset) { idx, cand in
+                        ScrollView(showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                GeometryReader { proxy in
+                                    Color.clear.preference(
+                                        key: RouteSheetScrollOffsetPreferenceKey.self,
+                                        value: proxy.frame(in: .named("routeSheetScrollSpace")).minY
+                                    )
+                                }
+                                .frame(height: 0)
+
+                                HStack(alignment: .center, spacing: 8) {
                             Text("~\(cand.totalDurationMinutes) min")
                                 .font(.title2.weight(.black).monospacedDigit())
                                 .foregroundColor(.white)
@@ -1667,15 +1746,24 @@ struct RoutePlannerView: View {
                         .background(Color(hex: "#23252B"))
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 2)
+                    .padding(.bottom, 10)
+                        }
+                        .tag(idx)
+                    }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 2)
-                .padding(.bottom, 10)
+                .tabViewStyle(.page(indexDisplayMode: .never))
             }
 
-            if let cand = cand {
+            if let cand = activeCand {
                 sheetBottomCTABar(candidate: cand, bottomPadding: bottomPadding)
             }
+        }
+        .coordinateSpace(name: "routeSheetScrollSpace")
+        .scrollDisabled(sheetDragTranslation > 4)
+        .onPreferenceChange(RouteSheetScrollOffsetPreferenceKey.self) { minY in
+            isSheetScrollAtTop = minY >= -2
         }
     }
 
@@ -1684,6 +1772,14 @@ struct RoutePlannerView: View {
         VStack(spacing: 0) {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 11) {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: RouteSheetScrollOffsetPreferenceKey.self,
+                            value: proxy.frame(in: .named("routeSheetScrollSpace")).minY
+                        )
+                    }
+                    .frame(height: 0)
+
                     // Aviso compacto único superior si aplica ruta externa por falta de ordinarias
                     if let warning = evaluationResult?.primaryBannerWarning {
                         HStack(spacing: 8) {
@@ -1751,6 +1847,11 @@ struct RoutePlannerView: View {
             if let cand = activeCandidate {
                 sheetBottomCTABar(candidate: cand, bottomPadding: bottomPadding)
             }
+        }
+        .coordinateSpace(name: "routeSheetScrollSpace")
+        .scrollDisabled(sheetDragTranslation > 4)
+        .onPreferenceChange(RouteSheetScrollOffsetPreferenceKey.self) { minY in
+            isSheetScrollAtTop = minY >= -2
         }
     }
 
@@ -2260,5 +2361,12 @@ struct RoutePlannerView: View {
         let minH = RouteSheetSnapLevel.compact.height(in: totalHeight, bottomInset: safeBottom) - 24
         let maxH = RouteSheetSnapLevel.full.height(in: totalHeight, bottomInset: safeBottom) + 28
         return min(max(base - sheetDragTranslation, minH), maxH)
+    }
+}
+
+private struct RouteSheetScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

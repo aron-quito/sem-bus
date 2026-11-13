@@ -25,8 +25,9 @@ import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
@@ -81,6 +82,23 @@ private fun appleDarkOsmFilter(): ColorMatrixColorFilter {
     return ColorMatrixColorFilter(combined)
 }
 
+private val ESRI_WORLD_STREET_MAP: OnlineTileSourceBase = object : OnlineTileSourceBase(
+    "EsriWorldStreetMap",
+    0,
+    19,
+    256,
+    "",
+    arrayOf("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/"),
+    "© Esri"
+) {
+    override fun getTileURLString(pMapTileIndex: Long): String {
+        val zoom = MapTileIndex.getZoom(pMapTileIndex)
+        val y = MapTileIndex.getY(pMapTileIndex)
+        val x = MapTileIndex.getX(pMapTileIndex)
+        return "$baseUrl$zoom/$y/$x"
+    }
+}
+
 private fun ensureOsmDroidConfigured(context: Context) {
     val config = Configuration.getInstance()
     config.load(context, context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
@@ -91,9 +109,9 @@ private fun ensureOsmDroidConfigured(context: Context) {
     config.userAgentValue = "BusConectadoTacna/1.0 (${context.packageName}; Android)"
     config.isDebugTileProviders = false
     config.isDebugMode = false
-    config.tileDownloadThreads = 4
+    config.tileDownloadThreads = 8
     config.tileFileSystemThreads = 4
-    config.expirationOverrideDuration = 7L * 24L * 60L * 60L * 1000L
+    config.expirationOverrideDuration = 14L * 24L * 60L * 60L * 1000L
 }
 
 @Composable
@@ -117,7 +135,7 @@ fun BCOsmMapView(
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
-            setTileSource(TileSourceFactory.MAPNIK)
+            setTileSource(ESRI_WORLD_STREET_MAP)
             setUseDataConnection(true)
             setMultiTouchControls(true)
             @Suppress("DEPRECATION")
@@ -129,9 +147,9 @@ fun BCOsmMapView(
             maxZoomLevel = 19.0
             setBackgroundColor(0xFF131A26.toInt())
             overlayManager.tilesOverlay.apply {
+                setColorFilter(appleDarkOsmFilter())
                 loadingBackgroundColor = 0xFF131A26.toInt()
                 loadingLineColor = 0xFF223047.toInt()
-                setColorFilter(appleDarkOsmFilter())
             }
             controller.setZoom(cameraCommand.zoom)
             controller.setCenter(GeoPoint(cameraCommand.center.latitude, cameraCommand.center.longitude))

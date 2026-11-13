@@ -8,11 +8,14 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +33,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -79,15 +84,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -875,6 +886,7 @@ private fun MapCrosshairPickerView(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RouteMapResultView(
     origin: TacnaDestinationPlace,
@@ -983,6 +995,22 @@ private fun RouteMapResultView(
     val density = LocalDensity.current
     var activeDragDeltaPx by remember { mutableFloatStateOf(0f) }
     var isDraggingSheet by remember { mutableStateOf(false) }
+    val pagerState = rememberPagerState(
+        initialPage = selectedCandidateIdx.coerceIn(0, maxOf(0, candidates.size - 1)),
+        pageCount = { candidates.size }
+    )
+
+    LaunchedEffect(pagerState.currentPage, candidates.size) {
+        if (candidates.isNotEmpty() && pagerState.currentPage in candidates.indices && pagerState.currentPage != selectedCandidateIdx) {
+            onCandidateSelected(pagerState.currentPage)
+        }
+    }
+
+    LaunchedEffect(selectedCandidateIdx, candidates.size) {
+        if (candidates.isNotEmpty() && selectedCandidateIdx in candidates.indices && pagerState.currentPage != selectedCandidateIdx && !pagerState.isScrollInProgress) {
+            pagerState.scrollToPage(selectedCandidateIdx)
+        }
+    }
 
     val targetSheetDp = remember(sheetSnap, activeDragDeltaPx, density) {
         val baseDp = sheetSnap.heightDp.toFloat()
@@ -1002,12 +1030,78 @@ private fun RouteMapResultView(
         label = "sheetHeight"
     )
 
+    val settleSheetDrag: (Float) -> Unit = { velocityY ->
+        val deltaDp = with(density) { -activeDragDeltaPx.toDp().value }
+        val projectedDp = (sheetSnap.heightDp + deltaDp)
+            .coerceIn(
+                SheetSnapLevel.COMPACT.heightDp.toFloat(),
+                SheetSnapLevel.FULL.heightDp.toFloat()
+            )
+        var nearest = SheetSnapLevel.entries.minByOrNull { level ->
+            kotlin.math.abs(level.heightDp - projectedDp)
+        } ?: sheetSnap
+        if (velocityY > 700f && nearest == sheetSnap) {
+            nearest = when (sheetSnap) {
+                SheetSnapLevel.FULL -> SheetSnapLevel.MEDIUM
+                SheetSnapLevel.MEDIUM -> SheetSnapLevel.COMPACT
+                SheetSnapLevel.COMPACT -> SheetSnapLevel.COMPACT
+            }
+        }
+        activeDragDeltaPx = 0f
+        isDraggingSheet = false
+        onSetSnap(nearest)
+    }
+
+    val sheetNestedScrollConnection = remember(sheetSnap, density) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (activeDragDeltaPx > 0f && available.y < 0f && source == NestedScrollSource.Drag) {
+                    val consumedY = available.y.coerceAtLeast(-activeDragDeltaPx)
+                    activeDragDeltaPx = (activeDragDeltaPx + consumedY).coerceAtLeast(0f)
+                    if (activeDragDeltaPx == 0f) {
+                        isDraggingSheet = false
+                    }
+                    return Offset(0f, consumedY)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (source == NestedScrollSource.Drag && available.y > 0f && sheetSnap != SheetSnapLevel.COMPACT) {
+                    isDraggingSheet = true
+                    activeDragDeltaPx = (activeDragDeltaPx + available.y).coerceAtLeast(0f)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (isDraggingSheet || activeDragDeltaPx > 0f) {
+                    settleSheetDrag(available.y)
+                    return available
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         BCOsmMapView(
             modifier = Modifier.fillMaxSize(),
             cameraCommand = camera,
             polylines = polylines,
-            markers = markers
+            markers = markers,
+            onMapTap = {
+                if (sheetSnap != SheetSnapLevel.COMPACT) {
+                    activeDragDeltaPx = 0f
+                    isDraggingSheet = false
+                    onSetSnap(SheetSnapLevel.COMPACT)
+                }
+            }
         )
 
         // Top translucent fade
@@ -1221,64 +1315,72 @@ private fun RouteMapResultView(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxWidth()
+                        .nestedScroll(sheetNestedScrollConnection)
                         .animateContentSize(spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow))
                 ) { currentSnap ->
                     when (currentSnap) {
                         SheetSnapLevel.COMPACT -> {
-                            activeCandidate?.let { cand ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Surface(shape = RoundedCornerShape(6.dp), color = BCColors.fromHex(cand.colorHex)) {
+                            if (candidates.isNotEmpty()) {
+                                HorizontalPager(
+                                    state = pagerState,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { page ->
+                                    val cand = candidates[page]
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Surface(shape = RoundedCornerShape(6.dp), color = BCColors.fromHex(cand.colorHex)) {
+                                                    Text(
+                                                        cand.routeCode,
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Black,
+                                                        fontSize = 11.sp,
+                                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                                    )
+                                                }
                                                 Text(
-                                                    cand.routeCode,
+                                                    "~${cand.totalDurationMinutes} min · ${cand.totalDistanceLabel}",
                                                     color = Color.White,
                                                     fontWeight = FontWeight.Black,
-                                                    fontSize = 11.sp,
-                                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                                    fontSize = 15.sp
                                                 )
                                             }
                                             Text(
-                                                "~${cand.totalDurationMinutes} min · ${cand.totalDistanceLabel}",
-                                                color = Color.White,
-                                                fontWeight = FontWeight.Black,
-                                                fontSize = 15.sp
+                                                if (cand.kind == EvaluatedCandidateKind.WALKING_DIRECT)
+                                                    "Caminata directa · Sin costo"
+                                                else "Sube: ${cand.boardingPointName} → Baja: ${cand.alightingPointName}",
+                                                color = BCColors.TextSecondary,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
                                         }
-                                        Text(
-                                            if (cand.kind == EvaluatedCandidateKind.WALKING_DIRECT)
-                                                "Caminata directa · Sin costo"
-                                            else "Sube: ${cand.boardingPointName} → Baja: ${cand.alightingPointName}",
-                                            color = BCColors.TextSecondary,
-                                            fontSize = 11.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                    TextButton(onClick = { onSetSnap(SheetSnapLevel.MEDIUM) }) {
-                                        Text("Ver tramos", color = BCColors.CyanAccent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        TextButton(onClick = { onSetSnap(SheetSnapLevel.MEDIUM) }) {
+                                            Text("Ver tramos", color = BCColors.CyanAccent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
                                     }
                                 }
                             }
                         }
 
                         SheetSnapLevel.MEDIUM -> {
-                            activeCandidate?.let { cand ->
+                            if (candidates.isNotEmpty()) {
                                 Column(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .verticalScroll(rememberScrollState())
-                                        .padding(horizontal = 16.dp),
+                                        .verticalScroll(rememberScrollState()),
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Row(
-                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        modifier = Modifier
+                                            .horizontalScroll(rememberScrollState())
+                                            .padding(horizontal = 16.dp),
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         candidates.forEachIndexed { index, item ->
@@ -1300,57 +1402,69 @@ private fun RouteMapResultView(
                                         }
                                     }
 
-                                    Surface(shape = RoundedCornerShape(14.dp), color = BCColors.CardSurface) {
-                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            if (cand.kind == EvaluatedCandidateKind.WALKING_DIRECT) {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Icon(Icons.Default.DirectionsWalk, contentDescription = null, tint = BCColors.CyanAccent, modifier = Modifier.size(18.dp))
-                                                    Text(
-                                                        "Caminar a ${destination.shortName} · ${cand.walkInitialMeters} m (${cand.walkInitialMinutes}m)",
-                                                        color = Color.White,
-                                                        fontSize = 13.sp,
-                                                        fontWeight = FontWeight.SemiBold
-                                                    )
-                                                }
-                                            } else {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Icon(Icons.Default.DirectionsWalk, contentDescription = null, tint = BCColors.CyanAccent, modifier = Modifier.size(16.dp))
-                                                    Text("Camina ${cand.walkInitialMeters} m hasta ${cand.boardingPointName}", color = Color.White, fontSize = 12.sp)
-                                                }
-                                                if (cand.isTransfer) {
+                                    HorizontalPager(
+                                        state = pagerState,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) { page ->
+                                        val cand = candidates[page]
+                                        Surface(
+                                            shape = RoundedCornerShape(14.dp),
+                                            color = BCColors.CardSurface,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                if (cand.kind == EvaluatedCandidateKind.WALKING_DIRECT) {
                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(16.dp))
+                                                        Icon(Icons.Default.DirectionsWalk, contentDescription = null, tint = BCColors.CyanAccent, modifier = Modifier.size(18.dp))
                                                         Text(
-                                                            "1° Bus: Toma ${cand.route?.code ?: cand.routeCode} (~${cand.firstBusRideMinutes} min)",
-                                                            color = BCColors.CyanAccent,
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
-                                                    }
-                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Amber, modifier = Modifier.size(16.dp))
-                                                        val walkTStr = if (cand.transferWalkMeters > 25) " (camina ${cand.transferWalkMeters} m)" else ""
-                                                        Text(
-                                                            "Transbordo en ${cand.transferPointName ?: "cruce"}$walkTStr → ${cand.secondRouteCode ?: ""} (~${cand.secondBusRideMinutes} min)",
-                                                            color = BCColors.Amber,
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.Bold
+                                                            "Caminar a ${destination.shortName} · ${cand.walkInitialMeters} m (${cand.walkInitialMinutes}m)",
+                                                            color = Color.White,
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.SemiBold
                                                         )
                                                     }
                                                 } else {
                                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                        Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(16.dp))
-                                                        Text(
-                                                            "Toma ${cand.routeCode} (~${cand.busRideMinutes} min · ${if (cand.kind == EvaluatedCandidateKind.ORDINARY_IN_SERVICE) "Pago QR $userFareLabel" else "Abordaje libre"})",
-                                                            color = BCColors.CyanAccent,
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.Bold
-                                                        )
+                                                        Icon(Icons.Default.DirectionsWalk, contentDescription = null, tint = BCColors.CyanAccent, modifier = Modifier.size(16.dp))
+                                                        Text("Camina ${cand.walkInitialMeters} m hasta ${cand.boardingPointName}", color = Color.White, fontSize = 12.sp)
                                                     }
-                                                }
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Icon(Icons.Default.Place, contentDescription = null, tint = BCColors.DestructiveRed, modifier = Modifier.size(16.dp))
-                                                    Text("Baja en ${cand.alightingPointName} (${cand.walkFinalMinutes}m al destino)", color = Color.White, fontSize = 12.sp)
+                                                    if (cand.isTransfer) {
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(16.dp))
+                                                            Text(
+                                                                "1° Bus: Toma ${cand.route?.code ?: cand.routeCode} (~${cand.firstBusRideMinutes} min)",
+                                                                color = BCColors.CyanAccent,
+                                                                fontSize = 12.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Amber, modifier = Modifier.size(16.dp))
+                                                            val walkTStr = if (cand.transferWalkMeters > 25) " (camina ${cand.transferWalkMeters} m)" else ""
+                                                            Text(
+                                                                "Transbordo en ${cand.transferPointName ?: "cruce"}$walkTStr → ${cand.secondRouteCode ?: ""} (~${cand.secondBusRideMinutes} min)",
+                                                                color = BCColors.Amber,
+                                                                fontSize = 12.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                            Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = BCColors.Emerald, modifier = Modifier.size(16.dp))
+                                                            Text(
+                                                                "Toma ${cand.routeCode} (~${cand.busRideMinutes} min · ${if (cand.kind == EvaluatedCandidateKind.ORDINARY_IN_SERVICE) "Pago QR $userFareLabel" else "Abordaje libre"})",
+                                                                color = BCColors.CyanAccent,
+                                                                fontSize = 12.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        }
+                                                    }
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        Icon(Icons.Default.Place, contentDescription = null, tint = BCColors.DestructiveRed, modifier = Modifier.size(16.dp))
+                                                        Text("Baja en ${cand.alightingPointName} (${cand.walkFinalMinutes}m al destino)", color = Color.White, fontSize = 12.sp)
+                                                    }
                                                 }
                                             }
                                         }
