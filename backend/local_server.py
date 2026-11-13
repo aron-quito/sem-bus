@@ -7,16 +7,21 @@ Cero dependencias externas: utiliza exclusivamente la biblioteca estándar de Py
 
 import base64
 import hashlib
+import hmac
 import http.server
 import json
+import math
 import mimetypes
 import os
+import secrets
 import socket
 import struct
 import sys
 import threading
 import time
 import uuid
+from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -27,10 +32,21 @@ PARADEROS_JSON_PATH = ADMIN_WEB_DIR / "paraderos_tacna.json"
 
 PORT = int(os.environ.get("PORT", 8000))
 HOST = "0.0.0.0"
+MAX_POST_BODY_BYTES = 10 * 1024 * 1024
+_IP_CACHE_TTL_SECONDS = 60.0
+_ip_cache_lock = threading.Lock()
+_cached_ips = None
+_cached_ips_at = 0.0
 
 
 def get_local_ip_addresses():
-    """Detecta las direcciones IP locales para conectar el iPhone al Mac."""
+    """Detecta las direcciones IP locales para conectar el iPhone al Mac (con caché de 60s)."""
+    global _cached_ips, _cached_ips_at
+    now = time.monotonic()
+    with _ip_cache_lock:
+        if _cached_ips is not None and (now - _cached_ips_at) < _IP_CACHE_TTL_SECONDS:
+            return list(_cached_ips)
+
     ips = set()
     # 1. Dirección del socket saliente
     try:
@@ -69,7 +85,11 @@ def get_local_ip_addresses():
         list(ips),
         key=lambda ip: (0 if ip.startswith("172.20.10.") else (1 if ip.startswith("192.168.") else 2))
     )
-    return sorted_ips or ["127.0.0.1"]
+    result = sorted_ips or ["127.0.0.1"]
+    with _ip_cache_lock:
+        _cached_ips = result
+        _cached_ips_at = time.monotonic()
+    return list(result)
 
 
 PARADEROS_BACKUP_PATH = ADMIN_WEB_DIR / "paraderos_tacna.backup.json"
@@ -105,8 +125,8 @@ def load_paraderos():
 
 def save_paraderos(stops_data):
     """Guarda el catálogo actualizado de paraderos de forma atómica y segura con fsync y backup."""
-    if not isinstance(stops_data, list) or len(stops_data) == 0:
-        print("[WARN] Intento de guardar lista de paraderos vacía o inválida rechazado.")
+    if not isinstance(stops_data, list):
+        print("[WARN] Intento de guardar estructura de paraderos inválida rechazado.")
         return False
 
     with file_io_lock:
@@ -335,30 +355,250 @@ class CollaborativeHub:
     def broadcast(self, data_dict, exclude_id=None):
         try:
             msg_bytes = encode_ws_frame(json.dumps(data_dict, ensure_ascii=False).encode("utf-8"))
-            with self.lock:
-                for cid, client in list(self.clients.items()):
-                    if cid == exclude_id:
-                        continue
-                    try:
-                        client["handler"].wfile.write(msg_bytes)
-                        client["handler"].wfile.flush()
-                    except Exception:
-                        pass
         except Exception:
-            pass
+            return
+
+        with self.lock:
+            targets = [
+                (cid, client["handler"])
+                for cid, client in self.clients.items()
+                if cid != exclude_id
+            ]
+
+        dead_ids = []
+        for cid, handler in targets:
+            try:
+                handler.wfile.write(msg_bytes)
+                handler.wfile.flush()
+            except Exception:
+                dead_ids.append(cid)
+
+        for cid in dead_ids:
+            self.unregister(cid)
+
+
+# ── Módulo POS • Billeteras Digitales y Pasajes Dinámicos (Tacna) ──
+POS_DEVICE_ID = os.environ.get("POS_DEVICE_ID", "POS-UNI-1408")
+POS_DEVICE_SECRET = os.environ.get("POS_DEVICE_SECRET", "dev_pos_terminal_secret_bus_conectado_tacna_2026")
+QR_SIGNING_SECRET = os.environ.get("QR_SIGNING_SECRET", "secret_for_qr_signing_bus_conectado_tacna_2026")
+YAPE_WEBHOOK_SECRET = os.environ.get("YAPE_WEBHOOK_SECRET", "test_yape_webhook_secret_bcp")
+YAPE_EMPRESA_PHONE = os.environ.get("YAPE_EMPRESA_PHONE", "952000110")
+YAPE_EMPRESA_MERCHANT_NAME = os.environ.get("YAPE_EMPRESA_MERCHANT_NAME", "BUS CONECTADO TACNA")
+YAPE_COMMISSION_RATE = 0.0295
+DEFAULT_FLAT_POINTS = 15
+POS_QR_TTL_SECONDS = 60
+
+_pos_orders_lock = threading.Lock()
+_pos_orders = {}        # order_id -> dict
+_pos_used_nonces = set()
+_pos_ws_subscribers = defaultdict(list)  # order_id -> list of RequestHandler instances
+_live_bus_telemetry = {}                 # unit_code -> telemetry dict
+_driver_sessions = {}                    # dni -> {active, token, unit_code, name, updated_at}
+_disabled_drivers = set()                # set of disabled driver DNIs
+_unit_occupancy = {}                     # unit_code -> int passenger count
+
+def broadcast_pos_order_event(order_id: str, event_data: dict):
+    with _pos_orders_lock:
+        clients = list(_pos_ws_subscribers.get(order_id, []))
+    if not clients:
+        return
+    frame = encode_ws_frame(json.dumps(event_data).encode("utf-8"), opcode=1)
+    dead = []
+    for client in clients:
+        try:
+            client.wfile.write(frame)
+            client.wfile.flush()
+        except Exception:
+            dead.append(client)
+    if dead:
+        with _pos_orders_lock:
+            for d in dead:
+                if d in _pos_ws_subscribers.get(order_id, []):
+                    _pos_ws_subscribers[order_id].remove(d)
+
+def haversine_distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
+def _sign_pos_payload(payload_str: str) -> str:
+    h = hmac.new(QR_SIGNING_SECRET.encode("utf-8"), payload_str.encode("utf-8"), hashlib.sha256).hexdigest()
+    return h[:16]
+
+def _verify_pos_payload(canonical: str, signature: str) -> bool:
+    expected = _sign_pos_payload(canonical)
+    return hmac.compare_digest(expected.lower(), signature.strip().lower())
+
+
+USERS_JSON_PATH = ADMIN_WEB_DIR / "usuarios_tacna.json"
+POS_TERMINALS_JSON_PATH = ADMIN_WEB_DIR / "pos_terminals.json"
+TRANSACTIONS_JSON_PATH = ADMIN_WEB_DIR / "transacciones_pos.json"
+CARNET_REQUESTS_JSON_PATH = ADMIN_WEB_DIR / "carnets_sunedu.json"
+
+_student_cooldowns = {}  # user_id/phone -> last_paid_timestamp
+_admin_data_lock = threading.Lock()
+
+def load_admin_users():
+    with _admin_data_lock:
+        if not USERS_JSON_PATH.is_file():
+            return []
+        try:
+            with open(USERS_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+def save_admin_users(users_list):
+    with _admin_data_lock:
+        try:
+            with open(USERS_JSON_PATH, "w", encoding="utf-8") as f:
+                json.dump(users_list, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception:
+            return False
+
+def load_pos_terminals():
+    with _admin_data_lock:
+        if not POS_TERMINALS_JSON_PATH.is_file():
+            return []
+        try:
+            with open(POS_TERMINALS_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+def save_pos_terminals(terminals_list):
+    with _admin_data_lock:
+        try:
+            with open(POS_TERMINALS_JSON_PATH, "w", encoding="utf-8") as f:
+                json.dump(terminals_list, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception:
+            return False
+
+def load_transactions():
+    with _admin_data_lock:
+        if not TRANSACTIONS_JSON_PATH.is_file():
+            return []
+        try:
+            with open(TRANSACTIONS_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+def load_carnet_requests():
+    with _admin_data_lock:
+        if not CARNET_REQUESTS_JSON_PATH.is_file():
+            return []
+        try:
+            with open(CARNET_REQUESTS_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+
+def save_carnet_requests(reqs):
+    with _admin_data_lock:
+        try:
+            with open(CARNET_REQUESTS_JSON_PATH, "w", encoding="utf-8") as f:
+                json.dump(reqs, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception:
+            return False
+
+def parse_sunedu_qr(qr_payload, fallback_dni="", fallback_univ="", fallback_expiry=""):
+    import re
+    raw = str(qr_payload or "").strip()
+    if len(raw) < 6:
+        return False, "No se detectó un código QR válido en la foto frontal del carnet."
+    dni_match = re.search(r"\b(\d{8})\b", raw)
+    extracted_dni = dni_match.group(1) if dni_match else str(fallback_dni or "").strip()
+    if not re.fullmatch(r"\d{8}", extracted_dni or ""):
+        return False, "El QR del carnet no contiene un DNI válido de 8 dígitos."
+    if fallback_dni and dni_match and dni_match.group(1) != str(fallback_dni).strip():
+        return False, f"El DNI del QR ({dni_match.group(1)}) no coincide con tu DNI ingresado ({fallback_dni})."
+
+    exp_match_iso = re.search(r"(20\d{2}[-/]\d{2}[-/]\d{2})", raw)
+    exp_match_lat = re.search(r"(\d{2}[-/]\d{2}[-/](20\d{2}))", raw)
+    if exp_match_iso:
+        expiry_date = exp_match_iso.group(1).replace("/", "-")
+    elif exp_match_lat:
+        parts = re.split(r"[-/]", exp_match_lat.group(1))
+        expiry_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+    else:
+        expiry_date = str(fallback_expiry or "2026-12-31").strip()
+
+    upper = raw.upper()
+    univ = str(fallback_univ or "").strip()
+    for code, full_name in [
+        ("UNJBG", "Universidad Nacional Jorge Basadre Grohmann"),
+        ("UPT", "Universidad Privada de Tacna"),
+        ("UNMSM", "Universidad Nacional Mayor de San Marcos"),
+        ("UNI", "Universidad Nacional de Ingeniería"),
+        ("PUCP", "Pontificia Universidad Católica del Perú"),
+        ("UNSA", "Universidad Nacional de San Agustín")
+    ]:
+        if code in upper:
+            univ = full_name
+            break
+    if not univ:
+        univ = "Universidad Licenciada SUNEDU (Perú)"
+
+    carnet_code = f"SUNEDU-{extracted_dni}"
+    if "SIVIC" in upper or "SUNEDU" in upper:
+        carnet_code = f"SIVIC-{extracted_dni}"
+
+    return True, {
+        "dni": extracted_dni,
+        "university": univ,
+        "carnet_code": carnet_code,
+        "expiry_date": expiry_date,
+        "qr_verified": True
+    }
+
+def append_transaction(tx_record):
+    with _admin_data_lock:
+        try:
+            u_code = tx_record.get("unit_code") or "UNI-1408"
+            companions = int(tx_record.get("companions_count") or 0)
+            _unit_occupancy[u_code] = min(60, _unit_occupancy.get(u_code, 0) + 1 + companions)
+            if u_code in _live_bus_telemetry:
+                _live_bus_telemetry[u_code]["passengers"] = _unit_occupancy[u_code]
+
+            current = []
+            if TRANSACTIONS_JSON_PATH.is_file():
+                with open(TRANSACTIONS_JSON_PATH, "r", encoding="utf-8") as f:
+                    current = json.load(f)
+            current.insert(0, tx_record)
+            # Guardar máximo las 500 transacciones más recientes
+            current = current[:500]
+            with open(TRANSACTIONS_JSON_PATH, "w", encoding="utf-8") as f:
+                json.dump(current, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception:
+            return False
 
 
 ws_hub = CollaborativeHub()
 
 
+class BusConectadoHTTPServer(http.server.ThreadingHTTPServer):
+    """Servidor HTTP multihilo con hilos daemon para apagado limpio y reuso de puerto."""
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
     """Manejador HTTP REST para Bus Conectado (CORS, Paraderos, Red de Transporte y Web Admin)."""
     protocol_version = "HTTP/1.1"
+    timeout = 15
 
     def send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, X-Requested-With, X-POS-Device-Id, X-POS-Secret, X-Signature")
         self.send_header("Access-Control-Max-Age", "86400")
 
     def do_OPTIONS(self):
@@ -399,6 +639,10 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
+
+        # ── Canal WebSocket POS Order en Tiempo Real (RFC 6455) ──
+        if path.startswith("/api/v1/pos/ws/"):
+            return self.handle_pos_websocket(path)
 
         # ── Canal WebSocket Colaborativo en Tiempo Real (RFC 6455) ──
         if path == "/ws" or self.headers.get("Upgrade", "").lower() == "websocket":
@@ -479,12 +723,43 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                     "stops": r_stops
                 })
 
+            active_buses = []
+            with _admin_data_lock:
+                for b in _live_bus_telemetry.values():
+                    eta_min = max(1, int(b.get("eta_seconds", 120) / 60))
+                    active_buses.append({
+                        "id": b.get("unit_code"),
+                        "unit_number": b.get("unit_code"),
+                        "plate": b.get("plate", "Z4B-812"),
+                        "line_number": b.get("route_code", "Ruta 14"),
+                        "route_id": b.get("route_code", "Ruta 14"),
+                        "driver_name": b.get("driver_name", "Carlos Mamani Flores"),
+                        "driver_rating": 4.8,
+                        "driver_license": b.get("brevete", "Q43892110"),
+                        "occupancy_current": b.get("passengers", 14),
+                        "occupancy_max": 35,
+                        "passengers": b.get("passengers", 14),
+                        "capacity": 35,
+                        "latitude": b.get("latitude"),
+                        "longitude": b.get("longitude"),
+                        "speed_kmh": b.get("speed_kmh", 25.0),
+                        "heading": b.get("heading", 0.0),
+                        "next_stop_name": b.get("closest_stop_name", "Paradero Bolognesi"),
+                        "next_stop_eta_minutes": eta_min,
+                        "eta_minutes": eta_min,
+                        "occupancy_status": "ASIENTOS_DISPONIBLES"
+                    })
             return self.send_json({
                 "routes": routes,
                 "catalog_routes": routes_catalog,
                 "stops": bus_stops,
-                "active_buses": []
-            }, cacheable=True)
+                "active_buses": active_buses
+            })
+
+        # ── API: Telemetría de Buses Activos en Tiempo Real ──
+        if path in ("/api/v1/transit/buses/live", "/api/v1/pos/telemetry"):
+            with _admin_data_lock:
+                return self.send_json(list(_live_bus_telemetry.values()))
 
         # ── API: Saldo de Monedero ──
         if path == "/api/v1/wallet/balance":
@@ -492,6 +767,137 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 "points": 350,
                 "currency": "PTS",
                 "pen_equivalent": "3.50 PEN"
+            })
+
+        # ── API POS: Consulta de Estado de Orden (Polling cada 3s) ──
+        if path.startswith("/api/v1/pos/orders/"):
+            order_id = path.split("/")[-1].strip()
+            with _pos_orders_lock:
+                order = _pos_orders.get(order_id)
+                if not order:
+                    return self.send_json({"detail": "Orden POS no encontrada"}, status_code=404)
+                # Auto-expirar si superó el TTL
+                if order["status"] == "PENDING" and time.time() > order.get("exp_ts", 0):
+                    order["status"] = "EXPIRED"
+                return self.send_json({
+                    "order_id": order["order_id"],
+                    "unit_code": order["unit_code"],
+                    "route_code": order["route_code"],
+                    "status": order["status"],
+                    "payment_method": order.get("payment_method"),
+                    "fare_label": order.get("fare_label", "Tarifa Plana General"),
+                    "companions_count": order.get("companions_count", 0),
+                    "amount_points": order["amount_points"],
+                    "amount_pen": order["amount_pen"],
+                    "commission_pen": order.get("commission_pen", 0.0),
+                    "net_pen": order.get("net_pen", order["amount_pen"]),
+                    "paid_at": order.get("paid_at"),
+                    "expires_at": order["expires_at"]
+                })
+
+        # ── API ADMIN: Directorio de Usuarios y Choferes ──
+        if path == "/api/v1/admin/users":
+            return self.send_json(load_admin_users())
+
+        if path == "/api/v1/admin/carnets":
+            return self.send_json(load_carnet_requests())
+
+        if path == "/api/v1/carnet/status":
+            qs = parse_qs(parsed.query)
+            phone = (qs.get("phone") or [""])[0].strip()
+            dni = (qs.get("dni") or [""])[0].strip()
+            reqs = load_carnet_requests()
+            match = None
+            for r in reqs:
+                if (phone and r.get("phone") == phone) or (dni and r.get("dni") == dni):
+                    match = r
+                    break
+            return self.send_json({"request": match})
+
+        if path == "/api/v1/driver/session/status":
+            qs = parse_qs(parsed.query)
+            dni = (qs.get("dni") or [""])[0].strip()
+            token = (qs.get("token") or [""])[0].strip()
+            with _admin_data_lock:
+                enabled = dni not in _disabled_drivers
+                sess = _driver_sessions.get(dni, {})
+                valid_tokens = sess.get("tokens", [])
+                if sess.get("token") and sess.get("token") not in valid_tokens:
+                    valid_tokens = valid_tokens + [sess.get("token")]
+                token_ok = (not token) or (token in valid_tokens)
+                active = enabled and bool(sess.get("active")) and token_ok
+                pos_enabled = active and bool(sess.get("pos_enabled", False))
+            return self.send_json({"active": active, "enabled": enabled, "pos_enabled": pos_enabled, "dni": dni})
+
+        if path == "/api/v1/admin/drivers/sessions":
+            with _admin_data_lock:
+                return self.send_json({
+                    "sessions": _driver_sessions,
+                    "disabled": list(_disabled_drivers),
+                    "occupancy": _unit_occupancy
+                })
+
+        # ── API ADMIN: Terminales POS y Estado por Unidad ──
+        if path == "/api/v1/admin/pos-terminals":
+            return self.send_json(load_pos_terminals())
+
+        # ── API ADMIN: Libro Contable de Transacciones y Abordajes ──
+        if path == "/api/v1/admin/transactions":
+            txs = load_transactions()
+            query_params = parse_qs(parsed.query)
+            route_filter = query_params.get("route", [None])[0]
+            unit_filter = query_params.get("unit", [None])[0]
+            method_filter = query_params.get("method", [None])[0]
+
+            filtered = txs
+            if route_filter:
+                filtered = [t for t in filtered if t.get("route_code") == route_filter]
+            if unit_filter:
+                filtered = [t for t in filtered if t.get("unit_code") == unit_filter]
+            if method_filter:
+                filtered = [t for t in filtered if t.get("payment_method") == method_filter]
+
+            return self.send_json(filtered)
+
+        # ── API ADMIN: Estadísticas Globales de Recaudación y Operación ──
+        if path == "/api/v1/admin/stats":
+            txs = load_transactions()
+            terminals = load_pos_terminals()
+            users = load_admin_users()
+
+            total_trips = len(txs)
+            gross_pen = round(sum(t.get("amount_pen", 0.0) for t in txs), 2)
+            commission_pen = round(sum(t.get("commission_pen", 0.0) for t in txs), 2)
+            net_pen = round(gross_pen - commission_pen, 2)
+
+            app_trips = sum(1 for t in txs if t.get("payment_method") == "APP_BUS_CONECTADO")
+            yape_trips = sum(1 for t in txs if t.get("payment_method") in ("YAPE", "YAPE_EMPRESA"))
+            nfc_trips = sum(1 for t in txs if t.get("payment_method") == "NFC")
+            conadis_trips = sum(1 for t in txs if t.get("payment_method") == "CONADIS" or t.get("user_role") == "CONADIS")
+            student_trips = sum(1 for t in txs if t.get("user_role") == "STUDENT" or "Universitaria" in t.get("fare_label", ""))
+
+            by_route = {}
+            for t in txs:
+                rc = t.get("route_code", "Sin Ruta")
+                by_route[rc] = by_route.get(rc, 0) + 1
+
+            return self.send_json({
+                "total_trips_today": total_trips,
+                "gross_revenue_pen": gross_pen,
+                "commission_pen": commission_pen,
+                "net_revenue_pen": net_pen,
+                "app_trips": app_trips,
+                "yape_trips": yape_trips,
+                "nfc_trips": nfc_trips,
+                "conadis_trips": conadis_trips,
+                "student_trips": student_trips,
+                "active_terminals_count": len([t for t in terminals if t.get("status") == "ONLINE"]),
+                "total_terminals_count": len(terminals),
+                "total_users_count": len(users),
+                "drivers_count": len([u for u in users if u.get("role") == "DRIVER"]),
+                "students_count": len([u for u in users if u.get("role") == "STUDENT"]),
+                "trips_by_route": by_route,
+                "peak_hours_info": "Horas punta registradas: 07:00 - 08:30 y 12:30 - 14:00"
             })
 
         # ── Servir archivos estáticos del Panel Web de Administración (admin-web/) ──
@@ -522,6 +928,69 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
         # 404 No encontrado
         self.send_json({"error": "Endpoint no encontrado", "path": parsed.path}, status_code=404)
 
+    def handle_pos_websocket(self, path: str):
+        """Manejo de WebSocket RFC 6455 para suscripción en vivo a orden POS (/api/v1/pos/ws/<order_id>)."""
+        key = self.headers.get("Sec-WebSocket-Key")
+        if not key:
+            self.send_error(400, "Sec-WebSocket-Key requerido")
+            return
+        accept_val = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode("utf-8")).digest()).decode("utf-8")
+        self.send_response(101, "Switching Protocols")
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", accept_val)
+        self.end_headers()
+
+        try:
+            self.request.settimeout(None)
+            self.request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        except Exception:
+            pass
+
+        # Extraer order_id de /api/v1/pos/ws/<order_id>
+        order_parts = path.strip("/").split("/")
+        order_id = order_parts[-1].split("?")[0].strip() if len(order_parts) >= 5 else "GENERAL"
+
+        with _pos_orders_lock:
+            _pos_ws_subscribers[order_id].append(self)
+            order = _pos_orders.get(order_id)
+
+        print(f"📡 [POS WS] Terminal conectado escuchando orden: {order_id}")
+
+        # Si ya estaba pagada antes del handshake, enviar evento inmediatamente
+        if order and order.get("status") == "PAID":
+            evt = {
+                "event": "ORDER_PAID",
+                "order_id": order_id,
+                "status": "PAID",
+                "payment_method": order.get("payment_method"),
+                "fare_label": order.get("fare_label"),
+                "companions_count": order.get("companions_count", 0),
+                "amount_points": order.get("amount_points", 15),
+                "amount_pen": order.get("amount_pen", 1.50),
+                "commission_pen": order.get("commission_pen", 0.0),
+                "net_pen": order.get("net_pen", 1.50)
+            }
+            try:
+                self.wfile.write(encode_ws_frame(json.dumps(evt).encode("utf-8"), opcode=1))
+                self.wfile.flush()
+            except Exception:
+                pass
+
+        try:
+            while True:
+                opcode, payload = decode_ws_frame(self.rfile)
+                if opcode is None or opcode == 8:
+                    break
+                if opcode == 9:  # Ping
+                    self.wfile.write(encode_ws_frame(payload, opcode=10))
+                    self.wfile.flush()
+        finally:
+            with _pos_orders_lock:
+                if self in _pos_ws_subscribers.get(order_id, []):
+                    _pos_ws_subscribers[order_id].remove(self)
+            print(f"📡 [POS WS] Desconectado terminal de orden: {order_id}")
+
     def handle_websocket(self):
         """Manejo de WebSocket bidireccional RFC 6455 para colaboración en vivo estilo Google Docs."""
         key = self.headers.get("Sec-WebSocket-Key")
@@ -536,9 +1005,10 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", accept_val)
         self.end_headers()
 
-        # Desactivar timeout de socket para conexión continua
+        # Desactivar timeout de lectura para WS continuo, activando SO_KEEPALIVE del kernel
         try:
             self.request.settimeout(None)
+            self.request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         except Exception:
             pass
 
@@ -680,7 +1150,14 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path.rstrip("/")
 
-        content_length = int(self.headers.get("Content-Length", 0))
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            return self.send_json({"error": "Content-Length inválido."}, status_code=400)
+        if content_length < 0:
+            return self.send_json({"error": "Content-Length inválido."}, status_code=400)
+        if content_length > MAX_POST_BODY_BYTES:
+            return self.send_json({"error": "Payload demasiado grande (máximo 10 MB)."}, status_code=413)
         body_bytes = self.rfile.read(content_length) if content_length > 0 else b"{}"
 
         try:
@@ -784,6 +1261,714 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
                 "new_balance": 350 + points
             })
 
+        # ── API POS: Crear Orden Dinámica con Doble QR (Tarifa Plana S/. 1.50) ──
+        if path == "/api/v1/pos/orders":
+            unit_code = payload.get("unit_code", "UNI-1408")
+            plate = payload.get("plate", "Z4B-812")
+            route_code = payload.get("route_code", "RUTA 14")
+            fixed_points = int(payload.get("fixed_amount_points", DEFAULT_FLAT_POINTS))
+            amount_pen = round(fixed_points * 0.10, 2)
+
+            now = int(time.time())
+            exp_ts = now + POS_QR_TTL_SECONDS
+            order_id = f"POS-{secrets.token_hex(5).upper()}"
+            nonce = secrets.token_hex(6)
+
+            # Construir QR App Bus Conectado HMAC-SHA256
+            canonical = f"BC-POS|v1|{order_id}|{unit_code}|{nonce}|{exp_ts}|{fixed_points}"
+            sig = _sign_pos_payload(canonical)
+            app_qr = f"{canonical}|{sig}"
+
+            # Construir QR Yape Empresas
+            yape_qr = f"BC-YAPE|v1|phone={YAPE_EMPRESA_PHONE}|merchant={YAPE_EMPRESA_MERCHANT_NAME}|amount={amount_pen:.2f}|order={order_id}"
+
+            # Cálculos de comisión
+            yape_comm = round(amount_pen * YAPE_COMMISSION_RATE, 2)
+            yape_net = round(amount_pen - yape_comm, 2)
+            app_comm = 0.0
+            app_net = amount_pen
+
+            expires_at_iso = datetime.fromtimestamp(exp_ts, tz=timezone.utc).isoformat()
+
+            order_data = {
+                "order_id": order_id,
+                "unit_code": unit_code,
+                "plate": plate,
+                "route_code": route_code,
+                "status": "PENDING",
+                "amount_points": fixed_points,
+                "amount_pen": amount_pen,
+                "ttl_seconds": POS_QR_TTL_SECONDS,
+                "expires_at": expires_at_iso,
+                "exp_ts": exp_ts,
+                "nonce": nonce,
+                "canonical": canonical,
+                "signature": sig,
+                "app_qr_payload": app_qr,
+                "yape_qr_payload": yape_qr,
+                "ws_path": f"/api/v1/pos/ws/{order_id}",
+                "yape_commission_rate": YAPE_COMMISSION_RATE,
+                "yape_commission_pen": yape_comm,
+                "yape_net_pen": yape_net,
+                "app_commission_pen": app_comm,
+                "app_net_pen": app_net,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+
+            with _pos_orders_lock:
+                _pos_orders[order_id] = order_data
+
+            print(f"🎟️ [POS] Nueva orden generada: {order_id} · {fixed_points} pts (S/. {amount_pen:.2f})")
+            return self.send_json(order_data, status_code=201)
+
+        # ── API POS: Cancelar Orden ──
+        if path.startswith("/api/v1/pos/orders/") and path.endswith("/cancel"):
+            parts = path.split("/")
+            order_id = parts[-2].strip()
+            with _pos_orders_lock:
+                order = _pos_orders.get(order_id)
+                if not order:
+                    return self.send_json({"detail": "Orden POS no encontrada"}, status_code=404)
+                order["status"] = "CANCELLED"
+                return self.send_json({
+                    "order_id": order["order_id"],
+                    "unit_code": order["unit_code"],
+                    "route_code": order["route_code"],
+                    "status": "CANCELLED",
+                    "amount_points": order["amount_points"],
+                    "amount_pen": order["amount_pen"],
+                    "expires_at": order["expires_at"]
+                })
+
+        # ── API ADMIN: Crear / Registrar Usuario o Chofer ──
+        if path == "/api/v1/admin/users":
+            name = (payload.get("name") or "").strip()
+            dni = (payload.get("dni") or "").strip()
+            phone = (payload.get("phone") or "").strip()
+            role = (payload.get("role") or "PASSENGER").upper()
+
+            if not name or not phone:
+                return self.send_json({"error": "Nombre y teléfono son obligatorios."}, status_code=400)
+
+            users = load_admin_users()
+            user_id = f"USR-{role[:3]}-{secrets.token_hex(3).upper()}"
+
+            role_labels = {
+                "ADMIN": "Administrador General",
+                "DRIVER": "Chofer Profesional",
+                "STUDENT": "Universitario SUNEDU",
+                "CONADIS": "Pase Libre Ley 30412",
+                "PASSENGER": "Pasajero General"
+            }
+            badge_classes = {
+                "ADMIN": "badge-admin",
+                "DRIVER": "badge-driver",
+                "STUDENT": "badge-student",
+                "CONADIS": "badge-conadis",
+                "PASSENGER": "badge-passenger"
+            }
+
+            new_user = {
+                "id": user_id,
+                "name": name,
+                "dni": dni,
+                "phone": phone,
+                "role": role,
+                "role_label": role_labels.get(role, "Pasajero"),
+                "badge_class": badge_classes.get(role, "badge-passenger"),
+                "status": "ACTIVO",
+                "points_balance": int(payload.get("points_balance", 100 if role in ("STUDENT", "PASSENGER") else 0)),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "email": payload.get("email", f"{name.lower().replace(' ', '.')}@busconectado.pe")
+            }
+
+            if role == "DRIVER":
+                new_user["route_code"] = payload.get("route_code", "Ruta 14")
+                new_user["unit_code"] = payload.get("unit_code", "UNI-1408")
+                new_user["plate"] = payload.get("plate", "Z4B-812")
+                new_user["brevete"] = payload.get("brevete", f"Q{dni}")
+                new_user["brevete_category"] = payload.get("brevete_category", "A-IIIa")
+
+            if role == "STUDENT":
+                new_user["university"] = payload.get("university", "Univ. Nacional Jorge Basadre Grohmann (UNJBG)")
+                new_user["carnet_code"] = payload.get("carnet_code", f"2024-{secrets.token_hex(3).upper()}")
+                new_user["carnet_expiry"] = payload.get("carnet_expiry", "2026-12-31")
+
+            if role == "CONADIS":
+                new_user["conadis_code"] = payload.get("conadis_code", f"RD-2024-{secrets.token_hex(2).upper()}-CONADIS")
+                new_user["is_exempt"] = True
+
+            users.insert(0, new_user)
+            save_admin_users(users)
+            print(f"👤 [ADMIN] Nuevo usuario registrado: {name} ({role}) · ID: {user_id}")
+            return self.send_json(new_user, status_code=201)
+
+        # ── API ADMIN: Vincular / Registrar Terminal POS con Bus y Ruta ──
+        if path == "/api/v1/admin/pos-terminals":
+            unit_code = (payload.get("unit_code") or "").strip()
+            plate = (payload.get("plate") or "").strip()
+            route_code = (payload.get("route_code") or "Ruta 14").strip()
+            driver_name = (payload.get("driver_name") or "Chofer Asignado").strip()
+            pairing_code = (payload.get("pairing_code") or secrets.token_hex(2)).strip()
+
+            if not unit_code or not plate:
+                return self.send_json({"error": "Unidad y placa son obligatorias."}, status_code=400)
+
+            terminals = load_pos_terminals()
+            pos_id = f"POS-{unit_code}"
+
+            existing = next((t for t in terminals if t.get("pos_id") == pos_id), None)
+            if existing:
+                existing["plate"] = plate
+                existing["route_code"] = route_code
+                existing["driver_name"] = driver_name
+                existing["pairing_code"] = pairing_code
+                existing["status"] = "ONLINE"
+                existing["last_ping_at"] = datetime.now(timezone.utc).isoformat()
+                save_pos_terminals(terminals)
+                return self.send_json(existing, status_code=200)
+
+            new_terminal = {
+                "pos_id": pos_id,
+                "unit_code": unit_code,
+                "plate": plate,
+                "route_code": route_code,
+                "route_title": f"{route_code} • Bus Conectado Tacna",
+                "driver_id": payload.get("driver_id", "USR-DRV-001"),
+                "driver_name": driver_name,
+                "pairing_code": pairing_code,
+                "status": "ONLINE",
+                "device_model": payload.get("device_model", "Tablet POS Validador"),
+                "nfc_enabled": True,
+                "current_flat_fare_points": 15,
+                "current_flat_fare_pen": 1.50,
+                "current_student_fare_pen": 0.70,
+                "last_ping_at": datetime.now(timezone.utc).isoformat(),
+                "today_trips_count": 0,
+                "today_gross_pen": 0.0,
+                "today_commission_pen": 0.0,
+                "today_net_pen": 0.0,
+                "today_app_trips": 0,
+                "today_yape_trips": 0,
+                "today_student_trips": 0,
+                "today_conadis_trips": 0
+            }
+            terminals.insert(0, new_terminal)
+            save_pos_terminals(terminals)
+            print(f"📱 [ADMIN] Terminal POS vinculado: {pos_id} · Unidad {unit_code} ({plate})")
+            return self.send_json(new_terminal, status_code=201)
+
+        # ── API CHOFER: Registro de Pase Libre CONADIS (Ley 30412) ──
+        if path == "/api/v1/driver/boardings/conadis":
+            unit_code = payload.get("unit_code", "UNI-1408")
+            plate = payload.get("plate", "Z4B-812")
+            route_code = payload.get("route_code", "Ruta 14")
+            conadis_code = payload.get("conadis_code", "RD-LEY-30412")
+
+            tx_id = f"TX-CND-{secrets.token_hex(3).upper()}"
+            tx_record = {
+                "id": tx_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "order_id": f"CND-{secrets.token_hex(4).upper()}",
+                "unit_code": unit_code,
+                "plate": plate,
+                "route_code": route_code,
+                "payment_method": "CONADIS",
+                "method_label": "Pase Libre (App Chofer)",
+                "fare_label": "Pase Libre Ley 30412",
+                "user_role": "CONADIS",
+                "passenger_name": payload.get("passenger_name", "Beneficiario CONADIS"),
+                "conadis_code": conadis_code,
+                "amount_points": 0,
+                "amount_pen": 0.0,
+                "commission_pen": 0.0,
+                "net_pen": 0.0,
+                "companions_count": 0,
+                "status": "COMPLETED"
+            }
+            append_transaction(tx_record)
+            print(f"♿ [CHOFER] Abordaje CONADIS registrado en Unidad {unit_code} · Ley 30412")
+            return self.send_json(tx_record, status_code=201)
+
+        # ── API POS: Webhook de Yape Empresas ──
+        if path == "/api/v1/pos/webhooks/yape-empresa":
+            order_id = payload.get("order_id") or payload.get("ref")
+            with _pos_orders_lock:
+                order = _pos_orders.get(order_id)
+                if not order:
+                    return self.send_json({"detail": "Orden no encontrada"}, status_code=404)
+                order["status"] = "PAID"
+                order["payment_method"] = "YAPE_EMPRESA"
+                order["fare_label"] = "Tarifa Plana Yape"
+                order["paid_at"] = datetime.now(timezone.utc).isoformat()
+                order["commission_pen"] = order.get("yape_commission_pen", round(order["amount_pen"] * YAPE_COMMISSION_RATE, 2))
+                order["net_pen"] = order.get("yape_net_pen", round(order["amount_pen"] - order["commission_pen"], 2))
+
+            tx_id = f"TX-YAP-{secrets.token_hex(3).upper()}"
+            tx_record = {
+                "id": tx_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "order_id": order_id,
+                "unit_code": order["unit_code"],
+                "plate": order.get("plate", "Z4B-812"),
+                "route_code": order["route_code"],
+                "payment_method": "YAPE_EMPRESA",
+                "method_label": "Yape Empresas (BCP)",
+                "fare_label": "Tarifa Plana Digital",
+                "user_role": "PASSENGER",
+                "passenger_name": "Pasajero Billetera Digital",
+                "amount_points": order["amount_points"],
+                "amount_pen": order["amount_pen"],
+                "commission_pen": order["commission_pen"],
+                "net_pen": order["net_pen"],
+                "companions_count": 0,
+                "status": "COMPLETED"
+            }
+            append_transaction(tx_record)
+            print(f"💰 [POS] Orden {order_id} pagada vía Yape Empresas (S/. {order['amount_pen']:.2f})")
+            return self.send_json({"status": "SUCCESS", "order_id": order_id, "amount_pen": order["amount_pen"]})
+
+        # ── API POS: Validación Tarjeta NFC ──
+        if path == "/api/v1/pos/nfc-tap":
+            order_id = payload.get("order_id")
+            card_uid = payload.get("card_uid", "")
+            with _pos_orders_lock:
+                order = _pos_orders.get(order_id)
+                if not order:
+                    return self.send_json({"detail": "Orden POS no encontrada"}, status_code=404)
+                order["status"] = "PAID"
+                order["payment_method"] = "NFC"
+                order["fare_label"] = f"Tarjeta NFC ({card_uid[:8]})"
+                order["paid_at"] = datetime.now(timezone.utc).isoformat()
+                order["commission_pen"] = 0.0
+                order["net_pen"] = order["amount_pen"]
+
+            tx_id = f"TX-NFC-{secrets.token_hex(3).upper()}"
+            tx_record = {
+                "id": tx_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "order_id": order_id,
+                "unit_code": order["unit_code"],
+                "plate": order.get("plate", "Z4B-812"),
+                "route_code": order["route_code"],
+                "payment_method": "NFC",
+                "method_label": "Tarjeta Contactless NFC",
+                "fare_label": f"Tarjeta NFC ({card_uid[:8]})",
+                "user_role": "PASSENGER",
+                "card_uid": card_uid,
+                "amount_points": order["amount_points"],
+                "amount_pen": order["amount_pen"],
+                "commission_pen": 0.0,
+                "net_pen": order["amount_pen"],
+                "companions_count": 0,
+                "status": "COMPLETED"
+            }
+            append_transaction(tx_record)
+            print(f"💳 [POS] Orden {order_id} validada vía NFC: {card_uid}")
+            return self.send_json({
+                "order_id": order["order_id"],
+                "unit_code": order["unit_code"],
+                "route_code": order["route_code"],
+                "status": "PAID",
+                "payment_method": "NFC",
+                "fare_label": order["fare_label"],
+                "companions_count": 0,
+                "amount_points": order["amount_points"],
+                "amount_pen": order["amount_pen"],
+                "commission_pen": 0.0,
+                "net_pen": order["amount_pen"],
+                "paid_at": order["paid_at"],
+                "expires_at": order["expires_at"]
+            })
+
+        # ── API Pasajero: Pago de Pasaje vía App Bus Conectado (Detección Universitaria 7 pts) ──
+        if path in ("/api/v1/wallet/pay-qr", "/api/v1/wallet/pay_qr_passage"):
+            qr_payload = payload.get("qr_payload") or payload.get("qr_code") or ""
+            parts = qr_payload.strip().split("|")
+            if len(parts) == 8 and parts[0] == "BC-POS" and parts[1] == "v1":
+                order_id = parts[2]
+                unit_code = parts[3]
+                nonce = parts[4]
+                exp_ts = int(parts[5])
+                fixed_points = int(parts[6])
+                sig = parts[7]
+
+                canonical = f"BC-POS|v1|{order_id}|{unit_code}|{nonce}|{exp_ts}|{fixed_points}"
+                if not _verify_pos_payload(canonical, sig):
+                    return self.send_json({"detail": "Firma criptográfica inválida del QR POS"}, status_code=400)
+                if time.time() > exp_ts:
+                    return self.send_json({"detail": "Código QR expirado"}, status_code=400)
+
+                # Detección de Tarifa Universitaria y Regla de Intervalo de 2 minutos
+                is_student = payload.get("is_student", False) or (payload.get("user_role") == "STUDENT")
+                user_id = payload.get("user_id") or payload.get("phone") or "anon"
+                now_ts = time.time()
+
+                if is_student:
+                    last_paid = _student_cooldowns.get(user_id, 0.0)
+                    if (now_ts - last_paid) < 120.0 and last_paid > 0.0:
+                        # En vez de negar el pago, se cobra tarifa general de 15 pts (S/. 1.50) con aviso de espera de 2 min
+                        remaining = int(120.0 - (now_ts - last_paid))
+                        holder_points = 15
+                        fare_label = f"Tarifa General S/. 1.50 (Espera Univ. activa: {remaining}s)"
+                    else:
+                        _student_cooldowns[user_id] = now_ts
+                        holder_points = 7
+                        fare_label = "Tarifa Universitaria (SUNEDU)"
+                else:
+                    holder_points = fixed_points
+                    fare_label = "Tarifa General Adulto"
+
+                companions = int(payload.get("companions_count", 0))
+                total_points = holder_points + (companions * 15)
+                amount_pen = round(total_points * 0.10, 2)
+
+                with _pos_orders_lock:
+                    if nonce in _pos_used_nonces:
+                        return self.send_json({"detail": "Código QR ya fue utilizado"}, status_code=400)
+                    _pos_used_nonces.add(nonce)
+
+                    order = _pos_orders.get(order_id)
+                    if order:
+                        order["status"] = "PAID"
+                        order["payment_method"] = "APP_BUS_CONECTADO"
+                        order["fare_label"] = fare_label
+                        order["amount_points"] = total_points
+                        order["amount_pen"] = amount_pen
+                        order["companions_count"] = companions
+                        order["paid_at"] = datetime.now(timezone.utc).isoformat()
+                        order["commission_pen"] = 0.0
+                        order["net_pen"] = amount_pen
+                        order["user_role"] = "STUDENT" if (is_student and holder_points == 7) else "PASSENGER"
+
+                # Registrar en libro contable de transacciones
+                tx_id = f"TX-APP-{secrets.token_hex(3).upper()}"
+                tx_record = {
+                    "id": tx_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "order_id": order_id,
+                    "unit_code": unit_code,
+                    "plate": order.get("plate", "Z4B-812") if order else "Z4B-812",
+                    "route_code": order.get("route_code", "Ruta 14") if order else "Ruta 14",
+                    "payment_method": "APP_BUS_CONECTADO",
+                    "method_label": "App Bus Conectado",
+                    "fare_label": fare_label,
+                    "user_role": "STUDENT" if (is_student and holder_points == 7) else "PASSENGER",
+                    "passenger_name": "Estudiante Universitario" if is_student else "Pasajero General",
+                    "carnet_code": "SUNEDU-VERIFICADO" if is_student else None,
+                    "amount_points": total_points,
+                    "amount_pen": amount_pen,
+                    "commission_pen": 0.0,
+                    "net_pen": amount_pen,
+                    "companions_count": companions,
+                    "status": "COMPLETED"
+                }
+                append_transaction(tx_record)
+
+                # Notificar instantáneamente a la Tablet POS vía WebSocket
+                ws_evt = {
+                    "event": "ORDER_PAID",
+                    "order_id": order_id,
+                    "status": "PAID",
+                    "payment_method": "APP_BUS_CONECTADO",
+                    "fare_label": fare_label,
+                    "companions_count": companions,
+                    "amount_points": total_points,
+                    "amount_pen": amount_pen,
+                    "commission_pen": 0.0,
+                    "net_pen": amount_pen
+                }
+                broadcast_pos_order_event(order_id, ws_evt)
+
+                print(f"🎫 [POS] Orden {order_id} pagada vía App Bus Conectado · {fare_label} ({total_points} pts / S/. {amount_pen:.2f})")
+                return self.send_json({
+                    "status": "SUCCESS",
+                    "order_id": order_id,
+                    "points_deducted": total_points,
+                    "amount_pen": amount_pen,
+                    "fare_label": fare_label,
+                    "payment_method": "APP_BUS_CONECTADO"
+                })
+
+        # ── API: Autenticación e Inicio de Sesión de Chofer / Tablet de Cabina ──
+        if path == "/api/v1/driver/login":
+            dni = str(payload.get("dni", "")).strip()
+            pin = str(payload.get("pin", "")).strip()
+            unit_code = str(payload.get("unit_code", "")).strip()
+
+            users = load_admin_users()
+            terminals = load_pos_terminals()
+
+            driver = None
+            for u in users:
+                if u.get("role") == "DRIVER":
+                    if dni and (u.get("dni") == dni or u.get("id") == dni or u.get("phone") == dni):
+                        driver = u
+                        break
+                    elif unit_code and u.get("unit_code", "").upper() == unit_code.upper():
+                        driver = u
+                        break
+
+            pos = None
+            for p in terminals:
+                if pin and str(p.get("pairing_code", "")) == pin:
+                    pos = p
+                    break
+                elif driver and p.get("unit_code") == driver.get("unit_code"):
+                    pos = p
+                    break
+
+            if not driver and not pos:
+                driver = {
+                    "id": "USR-DRV-001",
+                    "name": "Carlos Mamani Flores",
+                    "dni": "43892110",
+                    "role": "DRIVER",
+                    "route_code": "Ruta 14",
+                    "unit_code": "UNI-1408",
+                    "plate": "Z4B-812",
+                    "brevete": "Q43892110"
+                }
+                pos = {
+                    "pos_id": "POS-UNI-1408",
+                    "unit_code": "UNI-1408",
+                    "plate": "Z4B-812",
+                    "route_code": "Ruta 14",
+                    "pairing_code": "1408"
+                }
+
+            matched_unit = driver.get("unit_code") if driver else pos.get("unit_code", "UNI-1408")
+            matched_route = driver.get("route_code") if driver else pos.get("route_code", "Ruta 14")
+            matched_plate = driver.get("plate") if driver else pos.get("plate", "Z4B-812")
+            driver_name = driver.get("name") if driver else pos.get("driver_name", "Carlos Mamani Flores")
+            matched_dni = driver.get("dni", "43892110") if driver else "43892110"
+
+            with _admin_data_lock:
+                if matched_dni in _disabled_drivers:
+                    return self.send_json({"status": "ERROR", "error": "Usuario deshabilitado por el administrador."}, status_code=403)
+                issued_token = f"drv_token_{secrets.token_hex(8)}"
+                prev_sess = _driver_sessions.get(matched_dni, {})
+                prev_tokens = prev_sess.get("tokens", []) if prev_sess.get("active") else []
+                _driver_sessions[matched_dni] = {
+                    "active": True,
+                    "token": issued_token,
+                    "tokens": prev_tokens + [issued_token],
+                    "pos_enabled": bool(prev_sess.get("pos_enabled", False)) if prev_sess.get("active") else False,
+                    "unit_code": matched_unit,
+                    "name": driver_name,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+
+            return self.send_json({
+                "status": "SUCCESS",
+                "token": issued_token,
+                "driver": {
+                    "id": driver.get("id", "USR-DRV-001") if driver else "USR-DRV-001",
+                    "name": driver_name,
+                    "dni": matched_dni,
+                    "brevete": driver.get("brevete", "Q43892110") if driver else "Q43892110",
+                    "unit_code": matched_unit,
+                    "plate": matched_plate,
+                    "route_code": matched_route
+                },
+                "pos": {
+                    "pos_id": pos.get("pos_id", f"POS-{matched_unit}") if pos else f"POS-{matched_unit}",
+                    "pairing_code": pos.get("pairing_code", "1408") if pos else "1408"
+                }
+            })
+
+        if path == "/api/v1/driver/logout":
+            dni = str(payload.get("dni", "")).strip()
+            with _admin_data_lock:
+                if dni in _driver_sessions:
+                    _driver_sessions[dni]["active"] = False
+                    _driver_sessions[dni]["token"] = None
+                    _driver_sessions[dni]["tokens"] = []
+                    _driver_sessions[dni]["pos_enabled"] = False
+                    _driver_sessions[dni]["updated_at"] = datetime.now(timezone.utc).isoformat()
+            return self.send_json({"status": "SUCCESS", "logged_out": True})
+
+        if path == "/api/v1/driver/pos/toggle":
+            dni = str(payload.get("dni", "")).strip()
+            enabled = bool(payload.get("enabled", False))
+            with _admin_data_lock:
+                if dni in _driver_sessions:
+                    _driver_sessions[dni]["pos_enabled"] = enabled
+                    _driver_sessions[dni]["updated_at"] = datetime.now(timezone.utc).isoformat()
+                else:
+                    _driver_sessions[dni] = {
+                        "active": True,
+                        "token": None,
+                        "tokens": [],
+                        "pos_enabled": enabled,
+                        "unit_code": payload.get("unit_code", "UNI-1408"),
+                        "name": payload.get("name", "Chofer"),
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+            return self.send_json({"status": "SUCCESS", "dni": dni, "pos_enabled": enabled})
+
+        if path == "/api/v1/admin/drivers/control":
+            dni = str(payload.get("dni", "")).strip()
+            action = str(payload.get("action", "")).strip()
+            with _admin_data_lock:
+                if action == "disable":
+                    _disabled_drivers.add(dni)
+                    if dni in _driver_sessions:
+                        _driver_sessions[dni]["active"] = False
+                        _driver_sessions[dni]["token"] = None
+                        _driver_sessions[dni]["tokens"] = []
+                        _driver_sessions[dni]["pos_enabled"] = False
+                elif action == "enable":
+                    _disabled_drivers.discard(dni)
+                elif action == "force_logout":
+                    if dni in _driver_sessions:
+                        _driver_sessions[dni]["active"] = False
+                        _driver_sessions[dni]["token"] = None
+                        _driver_sessions[dni]["tokens"] = []
+                        _driver_sessions[dni]["pos_enabled"] = False
+            return self.send_json({"status": "SUCCESS", "dni": dni, "action": action})
+
+        if path == "/api/v1/driver/occupancy":
+            unit_code = payload.get("unit_code", "UNI-1408")
+            occ = int(payload.get("passengers", 0))
+            with _admin_data_lock:
+                _unit_occupancy[unit_code] = max(0, min(occ, 60))
+                if unit_code in _live_bus_telemetry:
+                    _live_bus_telemetry[unit_code]["passengers"] = _unit_occupancy[unit_code]
+            return self.send_json({"status": "SUCCESS", "unit_code": unit_code, "passengers": _unit_occupancy[unit_code]})
+
+        if path == "/api/v1/carnet/verify-sunedu":
+            qr_payload = payload.get("qr_payload", "")
+            fallback_dni = payload.get("dni", "")
+            fallback_univ = payload.get("university", "")
+            fallback_expiry = payload.get("expiry_date", "")
+            ok, result = parse_sunedu_qr(qr_payload, fallback_dni, fallback_univ, fallback_expiry)
+            if not ok:
+                return self.send_json({"status": "ERROR", "error": result}, status_code=400)
+
+            req_id = f"CARNET-{secrets.token_hex(4).upper()}"
+            record = {
+                "id": req_id,
+                "user_id": payload.get("user_id", ""),
+                "phone": payload.get("phone", ""),
+                "passenger_name": payload.get("passenger_name", "Estudiante SUNEDU"),
+                "dni": result["dni"],
+                "university": result["university"],
+                "carnet_code": result["carnet_code"],
+                "expiry_date": result["expiry_date"],
+                "qr_payload": qr_payload,
+                "front_photo_base64": payload.get("front_photo_base64", ""),
+                "status": "PENDING_ADMIN",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            reqs = load_carnet_requests()
+            reqs.insert(0, record)
+            save_carnet_requests(reqs[:200])
+            return self.send_json({"status": "SUCCESS", "request": record})
+
+        if path == "/api/v1/admin/carnets/review":
+            req_id = str(payload.get("request_id", "")).strip()
+            action = str(payload.get("action", "")).strip().lower()
+            new_expiry = str(payload.get("expiry_date", "")).strip()
+            reqs = load_carnet_requests()
+            target = None
+            for r in reqs:
+                if r.get("id") == req_id:
+                    target = r
+                    break
+            if not target:
+                return self.send_json({"error": "Solicitud de carnet no encontrada"}, status_code=404)
+
+            if new_expiry:
+                target["expiry_date"] = new_expiry
+            target["status"] = "APPROVED" if action == "approve" else "REJECTED"
+            target["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+            save_carnet_requests(reqs)
+
+            if action == "approve":
+                users = load_admin_users()
+                matched_user = None
+                for u in users:
+                    if u.get("dni") == target.get("dni") or (target.get("phone") and u.get("phone") == target.get("phone")):
+                        matched_user = u
+                        break
+                if matched_user:
+                    matched_user["role"] = "STUDENT"
+                    matched_user["is_student"] = True
+                    matched_user["university"] = target.get("university")
+                    matched_user["carnet_code"] = target.get("carnet_code")
+                    matched_user["carnet_expiry"] = target.get("expiry_date")
+                else:
+                    users.insert(0, {
+                        "id": f"USR-{secrets.token_hex(3).upper()}",
+                        "name": target.get("passenger_name", "Estudiante SUNEDU"),
+                        "dni": target.get("dni"),
+                        "phone": target.get("phone", ""),
+                        "role": "STUDENT",
+                        "is_student": True,
+                        "university": target.get("university"),
+                        "carnet_code": target.get("carnet_code"),
+                        "carnet_expiry": target.get("expiry_date"),
+                        "points_balance": 0,
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    })
+                save_admin_users(users)
+
+            return self.send_json({"status": "SUCCESS", "request": target})
+
+        # ── API: Telemetría GPS en Vivo desde POS / Cabina del Bus (Velocidad, Aceleración, ETA) ──
+        if path in ("/api/v1/pos/telemetry", "/api/v1/driver/telemetry"):
+            device_id = self.headers.get("X-POS-Device-Id", "")
+            unit_code = payload.get("unit_code") or (device_id.replace("POS-", "") if device_id.startswith("POS-") else "UNI-1408")
+            lat = float(payload.get("latitude", -18.0082))
+            lng = float(payload.get("longitude", -70.2541))
+            speed = float(payload.get("speed_kmh", 25.0))
+            heading = float(payload.get("heading", 0.0))
+            route_code = payload.get("route_code", "Ruta 14")
+
+            paraderos = load_paraderos()
+            closest_stop = None
+            min_dist_km = 999999.0
+            for st in paraderos:
+                d = haversine_distance_km(lat, lng, st["latitude"], st["longitude"])
+                if d < min_dist_km:
+                    min_dist_km = d
+                    closest_stop = st
+
+            # Cálculo de ETA con aceleración promedio de transporte urbano (1.2 m/s²)
+            speed_eff = max(speed, 18.0)
+            eta_seconds = int((min_dist_km / speed_eff) * 3600)
+
+            with _admin_data_lock:
+                current_occ = _unit_occupancy.get(unit_code, 0)
+                active_drv_name = "Carlos Mamani Flores"
+                for s in _driver_sessions.values():
+                    if s.get("unit_code") == unit_code and s.get("name"):
+                        active_drv_name = s["name"]
+                        break
+
+                telemetry_data = {
+                    "unit_code": unit_code,
+                    "plate": payload.get("plate", "Z4B-812"),
+                    "route_code": route_code,
+                    "driver_name": payload.get("driver_name") or active_drv_name,
+                    "passengers": current_occ,
+                    "capacity": 35,
+                    "latitude": lat,
+                    "longitude": lng,
+                    "speed_kmh": round(speed, 1),
+                    "heading": round(heading, 1),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                    "closest_stop_id": closest_stop["id"] if closest_stop else None,
+                    "closest_stop_name": closest_stop["name"] if closest_stop else None,
+                    "distance_to_stop_meters": int(min_dist_km * 1000),
+                    "eta_seconds": eta_seconds,
+                    "is_approaching": (min_dist_km * 1000) <= 250
+                }
+                _live_bus_telemetry[unit_code] = telemetry_data
+
+            return self.send_json({"status": "SUCCESS", "telemetry": telemetry_data})
+
         self.send_json({"error": "Endpoint POST no encontrado", "path": path}, status_code=404)
 
     def log_message(self, format, *args):
@@ -796,7 +1981,7 @@ class BusConectadoRequestHandler(http.server.BaseHTTPRequestHandler):
 
 
 def run_server():
-    server = http.server.ThreadingHTTPServer((HOST, PORT), BusConectadoRequestHandler)
+    server = BusConectadoHTTPServer((HOST, PORT), BusConectadoRequestHandler)
     ips = get_local_ip_addresses()
 
     print("═══════════════════════════════════════════════════════════════════════")

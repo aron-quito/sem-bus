@@ -62,6 +62,42 @@
 
 <body class="h-screen w-screen overflow-hidden bg-slate-950 text-slate-100 font-sans flex flex-col">
 
+  <!-- MODAL DE INICIO DE SESIÓN DE CHOFER (UNIFICADO CON POS) -->
+  <div id="driver-login-modal" class="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="w-full max-w-md rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-2xl">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-12 h-12 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+          <i data-lucide="bus" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h2 class="text-lg font-extrabold text-white">Terminal Cabina del Chofer</h2>
+          <p class="text-xs text-slate-400">Inicia turno con tu DNI y PIN (enlazado al POS de tu unidad)</p>
+        </div>
+      </div>
+
+      <form id="driver-login-form" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1.5">DNI del Chofer</label>
+          <input type="text" id="driver-login-dni" value="43892110" required maxlength="12"
+            class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-base focus:outline-none focus:border-blue-500"
+            placeholder="Ej. 43892110">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-300 mb-1.5">PIN de Enlace (Unidad / POS)</label>
+          <input type="password" id="driver-login-pin" value="1408" required maxlength="8"
+            class="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 text-white font-mono text-base focus:outline-none focus:border-blue-500"
+            placeholder="PIN de 4 dígitos">
+        </div>
+        <div id="driver-login-error" class="hidden text-xs font-semibold text-rose-400 bg-rose-950/50 border border-rose-800 rounded-xl px-3 py-2"></div>
+        <button type="submit" id="driver-login-btn"
+          class="w-full py-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-sm shadow-lg shadow-blue-600/30 transition active:scale-[0.99]">
+          Iniciar Turno &amp; Enlazar POS
+        </button>
+      </form>
+      <p class="text-[11px] text-slate-500 text-center mt-4">Credenciales registradas desde el Panel de Administrador • Tacna</p>
+    </div>
+  </div>
+
   <!-- ========================================================================= -->
   <!-- 1. BARRA SUPERIOR DE CABINA (Header) -->
   <!-- ========================================================================= -->
@@ -69,20 +105,20 @@
     class="h-14 bg-slate-900 border-b border-slate-800 px-4 lg:px-6 flex items-center justify-between shrink-0 shadow-md">
     <!-- Identificador de la Unidad y Conductor -->
     <div class="flex items-center gap-3">
-      <div
+      <div id="drv-route-badge"
         class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black text-base shadow-lg shadow-blue-600/30">
-        10
+        14
       </div>
       <div>
         <div class="flex items-center gap-2">
-          <h1 class="font-extrabold text-sm lg:text-base text-white tracking-wide">LÍNEA 10 • UNIDAD BUS 01</h1>
+          <h1 id="drv-header-title" class="font-extrabold text-sm lg:text-base text-white tracking-wide">RUTA 14 • UNIDAD UNI-1408</h1>
           <span
             class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 flex items-center gap-1">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> EN RUTA
           </span>
         </div>
-        <p class="text-xs text-slate-400">Placa: <strong class="text-slate-300 font-mono">Z1A-780</strong> • Chofer:
-          <strong class="text-slate-300">Juan Mamani Quispe</strong>
+        <p class="text-xs text-slate-400">Placa: <strong id="drv-header-plate" class="text-slate-300 font-mono">Z4B-812</strong> • Chofer:
+          <strong id="drv-header-name" class="text-slate-300">Por autenticar</strong>
         </p>
       </div>
     </div>
@@ -682,15 +718,28 @@
       }
     }
 
-    // REGISTRO DE CONADIS
-    function driverRecordConadis() {
+    // REGISTRO DE CONADIS (Sincronizado con Servidor Cloud)
+    async function driverRecordConadis() {
       adjustOccupancy(1);
       driverConadisCount += 1;
       document.getElementById('drv-conadis-count').textContent = `${driverConadisCount} personas`;
 
-      simulateDriverFare('conadis', 'Pase Libre  (Carnet)', 'S/. 0.00');
+      simulateDriverFare('conadis', 'Pase Libre (Carnet)', 'S/. 0.00');
       playBeep(true);
       showToast('Pasaje CONADIS registrado (+1 aforo, S/. 0.00)', 'success');
+
+      try {
+        await fetch('/api/v1/driver/boardings/conadis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            driver_dni: window.activeDriverSession?.dni || '43892110',
+            unit_code: window.activeDriverSession?.unit_code || 'UNI-1408',
+            route_code: window.activeDriverSession?.route_code || 'Ruta 14',
+            stop_name: document.getElementById('drv-current-stop')?.textContent || 'En Ruta'
+          })
+        });
+      } catch (e) { console.warn('CONADIS offline sync:', e); }
     }
 
     // CIERRE DE TURNO
@@ -910,6 +959,89 @@
       }
 
       lucide.createIcons();
+    }
+
+    // =========================================================================
+    // AUTENTICACIÓN DEL CHOFER & SINCRONIZACIÓN EN VIVO CON POS
+    // =========================================================================
+    window.activeDriverSession = null;
+    const seenTxIds = new Set();
+
+    document.getElementById('driver-login-form')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const dni = document.getElementById('driver-login-dni').value.trim();
+      const pin = document.getElementById('driver-login-pin').value.trim();
+      const errBox = document.getElementById('driver-login-error');
+      const btn = document.getElementById('driver-login-btn');
+
+      errBox.classList.add('hidden');
+      btn.disabled = true;
+      btn.textContent = 'Verificando turno...';
+
+      try {
+        const res = await fetch('/api/v1/driver/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dni, pin })
+        });
+        const data = await res.json();
+        if (!res.ok || (!data.success && data.status !== 'SUCCESS')) {
+          throw new Error(data.error || 'DNI o PIN incorrecto');
+        }
+
+        window.activeDriverSession = data.driver;
+        const drv = data.driver;
+
+        // Actualizar cabecera de cabina
+        const routeCode = drv.route_code || 'Ruta 14';
+        const routeNum = routeCode.replace(/\D/g, '') || '14';
+        document.getElementById('drv-route-badge').textContent = routeNum;
+        document.getElementById('drv-header-title').textContent = `${routeCode.toUpperCase()} • UNIDAD ${drv.unit_code || 'UNI-1408'}`;
+        document.getElementById('drv-header-plate').textContent = drv.plate || 'Z4B-812';
+        document.getElementById('drv-header-name').textContent = drv.name || 'Chofer';
+
+        document.getElementById('driver-login-modal').classList.add('hidden');
+        showToast(`Turno iniciado: ${drv.name} (${drv.unit_code})`, 'success');
+        startLivePosSyncLoop();
+      } catch (err) {
+        errBox.textContent = err.message || 'No se pudo conectar con el servidor.';
+        errBox.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Iniciar Turno & Enlazar POS';
+      }
+    });
+
+    async function startLivePosSyncLoop() {
+      const poll = async () => {
+        if (!window.activeDriverSession) return;
+        try {
+          const res = await fetch('/api/v1/admin/pos/transactions');
+          if (res.ok) {
+            const txs = await res.json();
+            const unit = (window.activeDriverSession.unit_code || '').toUpperCase();
+            // Filtrar transacciones recientes de esta unidad
+            const unitTxs = txs.filter(t => !unit || (t.unit_code || '').toUpperCase() === unit).slice(0, 15).reverse();
+            for (const tx of unitTxs) {
+              const txKey = tx.order_id || tx.id || `${tx.timestamp}_${tx.amount_pen}`;
+              if (!seenTxIds.has(txKey)) {
+                const isFirstLoad = seenTxIds.size === 0;
+                seenTxIds.add(txKey);
+                if (!isFirstLoad) {
+                  const isStudent = (tx.fare_type || '').toUpperCase().includes('STUDENT') || tx.amount_pen === 0.7;
+                  const isConadis = (tx.fare_type || '').toUpperCase().includes('CONADIS') || tx.amount_pen === 0;
+                  const amtStr = `S/. ${Number(tx.amount_pen || 1.5).toFixed(2)}`;
+                  const methodStr = tx.payment_method === 'WALLET_YAPE' ? 'Yape / Plin (QR)' : (tx.payment_method === 'CONADIS' ? 'Pase Libre (Carnet)' : 'Aplicativo Móvil');
+                  simulateDriverFare(isConadis ? 'conadis' : (isStudent ? 'student' : 'adult'), methodStr, amtStr);
+                  adjustOccupancy(1);
+                }
+              }
+            }
+          }
+        } catch (e) { /* reintento silencioso */ }
+      };
+      await poll();
+      setInterval(poll, 2500);
     }
   </script>
 </body>

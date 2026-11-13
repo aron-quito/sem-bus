@@ -30,7 +30,7 @@
 		<true/>
 		<key>NSExceptionDomains</key>
 		<dict>
-			<key>34.44.71.179</key>
+			<key>34.30.86.129</key>
 			<dict>
 				<key>NSIncludesSubdomains</key>
 				<true/>
@@ -41,7 +41,7 @@
 				<key>NSExceptionRequiresForwardSecrecy</key>
 				<false/>
 			</dict>
-			<key>34.44.71.179.sslip.io</key>
+			<key>34.30.86.129.sslip.io</key>
 			<dict>
 				<key>NSIncludesSubdomains</key>
 				<true/>

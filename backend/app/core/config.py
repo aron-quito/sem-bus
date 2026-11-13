@@ -33,16 +33,24 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str = ""
     TWILIO_PHONE_NUMBER: str = ""
 
-    # Webhooks Bancarios
+    # Webhooks Bancarios & POS Dinámico (Estilo Yape)
     YAPE_WEBHOOK_SECRET: str = "test_yape_webhook_secret_bcp"
     PLIN_WEBHOOK_SECRET: str = "test_plin_webhook_secret_interbank"
+    QR_SIGNING_SECRET: str = "dev_qr_signing_secret_bus_conectado_tacna_2026"
+    POS_DEVICE_SECRET: str = "dev_pos_terminal_secret_bus_conectado_tacna_2026"
+    POS_QR_TTL_SECONDS: int = 60
+    DEFAULT_FLAT_FARE_POINTS: int = 15
+    YAPE_EMPRESA_COMMISSION_RATE: float = 0.0295
+    YAPE_EMPRESA_PHONE: str = "952000110"
+    YAPE_EMPRESA_MERCHANT_NAME: str = "BUS CONECTADO TACNA"
 
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:8000",
         "http://localhost:5173",
-        "*"
+        "https://34.30.86.129.sslip.io",
+        "http://34.30.86.129.sslip.io"
     ]
 
     model_config = SettingsConfigDict(

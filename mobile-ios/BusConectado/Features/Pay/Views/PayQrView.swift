@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AVFoundation
 import PhotosUI
 import CoreImage
@@ -13,11 +14,20 @@ struct PayQrView: View {
     @State private var toastMessage: String? = nil
     @State private var toastIsSuccess: Bool = true
     @State private var photoPickerItem: PhotosPickerItem? = nil
+    @State private var cooldownTick = Date()
+    private let cooldownTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private let scanWindowSize: CGFloat = 248
 
+    private var isStudentCooldownActive: Bool {
+        viewModel.currentUser?.roleType == .student && viewModel.studentCooldownRemainingSeconds > 0
+    }
+
     private var holderFarePoints: Int {
-        viewModel.currentUser?.roleType.farePoints ?? 15
+        if isStudentCooldownActive {
+            return 15
+        }
+        return viewModel.currentUser?.roleType.farePoints ?? 15
     }
 
     private var companionsFarePoints: Int {
@@ -204,11 +214,14 @@ struct PayQrView: View {
         VStack(spacing: 12) {
             // Badge de tarifa activa
             if let user = viewModel.currentUser {
-                let tint = user.roleType == .student ? BCTheme.amber : (user.roleType == .conadis ? BCTheme.cyanAccent : BCTheme.emerald)
+                let _ = cooldownTick
+                let remSec = viewModel.studentCooldownRemainingSeconds
+                let cooldownActive = (user.roleType == .student && remSec > 0)
+                let tint = cooldownActive ? BCTheme.amber : (user.roleType == .student ? BCTheme.amber : BCTheme.emerald)
                 HStack(spacing: 6) {
-                    Image(systemName: user.roleType.iconName)
+                    Image(systemName: cooldownActive ? "timer" : user.roleType.iconName)
                         .font(.caption)
-                    Text(user.roleType.badgeLabel)
+                    Text(cooldownActive ? "Tarifa General S/. 1.50 (15 pts)" : user.roleType.badgeLabel)
                         .font(.caption.weight(.semibold))
                     Spacer()
                     Text("Saldo: \(user.pointsBalance) pts")
@@ -216,7 +229,25 @@ struct PayQrView: View {
                         .foregroundColor(.white.opacity(0.75))
                 }
                 .foregroundColor(tint)
+
+                if cooldownActive {
+                    let timerStr = String(format: "%02d:%02d", remSec / 60, remSec % 60)
+                    HStack(spacing: 8) {
+                        Image(systemName: "clock.badge.exclamationmark")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(BCTheme.amber)
+                        Text("Se cobrará S/. 1.50 (15 pts) porque pagaste universitario hace menos de 2 min. Espera \(timerStr) para volver a tarifa S/. 0.70.")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundColor(BCTheme.amber)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(BCTheme.amber.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(BCTheme.amber.opacity(0.45), lineWidth: 1))
+                }
             }
+            Color.clear.frame(height: 0).onReceive(cooldownTimer) { now in cooldownTick = now }
 
             Divider().background(Color.white.opacity(0.12))
 
@@ -276,22 +307,6 @@ struct PayQrView: View {
                 .frame(height: 44)
                 .background(Color.white.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-
-            // Simulación de lectura (mientras no haya validadores físicos instalados)
-            Button {
-                processPayment(busUnit: "BUS 01", busPlate: "Z1A-780", lineNumber: "14")
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "qrcode.viewfinder")
-                    Text("Simular lectura en puerta (\(totalPointsToPay) pts)")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .foregroundColor(.black)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(BCTheme.emerald)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
         }
         .padding(16)
@@ -361,28 +376,53 @@ struct PayQrView: View {
     }
 
     // MARK: - Lógica de validación del QR
-    /// Formato esperado del validador: "BC-BUS|<unidad>|<placa>|<ruta>" (Ej: BC-BUS|BUS 01|Z1A-780|14)
+    /// Formatos soportados:
+    /// 1. Dinámico POS: "BC-POS|v1|<orderId>|<unit>|<nonce>|<expTs>|<fixedPoints>|<sig>"
+    /// 2. QR Puerta legado: "BC-BUS|<unidad>|<placa>|<ruta>"
     private func handleScannedPayload(_ payload: String) {
-        let parts = payload.split(separator: "|").map { String($0).trimmingCharacters(in: .whitespaces) }
-        guard parts.count >= 3, parts[0] == "BC-BUS" else {
+        let clean = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = clean.split(separator: "|").map { String($0).trimmingCharacters(in: .whitespaces) }
+        let isPosDynamic = parts.count == 8 && parts[0] == "BC-POS" && parts[1] == "v1"
+        let isLegacyBus = parts.count >= 3 && parts[0] == "BC-BUS"
+
+        guard isPosDynamic || isLegacyBus else {
             showToast("QR no reconocido como validador Bus Conectado", success: false)
             BCFeedbackManager.shared.notificationError()
             return
         }
-        let line = parts.count >= 4 ? parts[3] : "14"
-        processPayment(busUnit: parts[1], busPlate: parts[2], lineNumber: line)
+
+        let unit = isPosDynamic ? parts[3] : parts[1]
+        let plate = isPosDynamic ? "POS" : parts[2]
+        let line = isPosDynamic ? parts[3] : (parts.count >= 4 ? parts[3] : "14")
+        let fixedPoints = isPosDynamic ? Int(parts[6]) : nil
+
+        processPayment(
+            busUnit: unit,
+            busPlate: plate,
+            lineNumber: line,
+            fixedPoints: fixedPoints,
+            qrPayload: isPosDynamic ? clean : nil
+        )
     }
 
-    private func processPayment(busUnit: String, busPlate: String, lineNumber: String) {
+    private func processPayment(
+        busUnit: String,
+        busPlate: String,
+        lineNumber: String,
+        fixedPoints: Int? = nil,
+        qrPayload: String? = nil
+    ) {
         let ok = viewModel.payPassageWithQr(
             companionsCount: companionsCount,
             busUnit: busUnit,
             busPlate: busPlate,
-            lineNumber: lineNumber
+            lineNumber: lineNumber,
+            fixedPoints: fixedPoints,
+            qrPayload: qrPayload
         )
         if ok {
             companionsCount = 0
-            showToast("¡Pasaje validado! Buen viaje en la Ruta \(lineNumber)", success: true)
+            showToast("¡Pasaje validado! Buen viaje en \(lineNumber)", success: true)
             // Tras un pago exitoso no se necesita la cámara: se libera por privacidad
             camera.stop()
         }

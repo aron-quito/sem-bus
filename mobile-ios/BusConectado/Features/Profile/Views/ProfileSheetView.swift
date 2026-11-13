@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import Vision
 
 struct ProfileSheetView: View {
     @ObservedObject var viewModel: AuthViewModel
@@ -16,6 +18,10 @@ struct ProfileSheetView: View {
     @State private var institutionInput: String = "UNJBG - Universidad Nacional Jorge Basadre"
     @State private var documentCodeInput: String = ""
     @State private var expiryDateInput: Date = Calendar.current.date(from: DateComponents(year: 2026, month: 12, day: 31)) ?? Date().addingTimeInterval(86400 * 180)
+    @State private var carnetPhotoItem: PhotosPickerItem? = nil
+    @State private var detectedCarnetQr: String? = nil
+    @State private var carnetPhotoBase64: String = ""
+    @State private var carnetQrStatus: String = "Sube la foto frontal de tu carnet universitario (con QR visible)."
 
     var body: some View {
         NavigationStack {
@@ -493,7 +499,7 @@ struct ProfileSheetView: View {
                         .foregroundColor(.white.opacity(0.6))
 
                     HStack(spacing: 8) {
-                        TextField("Ej. 34.44.71.179.sslip.io", text: $hostInput)
+                        TextField("Ej. 34.30.86.129.sslip.io", text: $hostInput)
                             .font(.caption)
                             .keyboardType(.URL)
                             .autocorrectionDisabled()
@@ -555,15 +561,54 @@ struct ProfileSheetView: View {
                 BCTheme.elevatedSurface.ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Envía tu solicitud para habilitar la tarifa reducida. Revisaremos la vigencia en el padrón oficial.")
+                        Text("Sube la foto frontal de tu carnet universitario SUNEDU. Validaremos el código QR y tu DNI para confirmar tu tarifa de S/. 0.70.")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.75))
 
-                        Picker("Tipo de carné", selection: $carnetType) {
-                            Text("Universitario SUNEDU (7 pts)").tag("STUDENT")
-                            Text("Pase Libre CONADIS (0 pts)").tag("CONADIS")
+                        PhotosPicker(selection: $carnetPhotoItem, matching: .images) {
+                            Label("Subir Foto Frontal del Carnet (QR)", systemImage: "qrcode.viewfinder")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 46)
+                                .background(Color(red: 0.145, green: 0.388, blue: 0.922))
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
-                        .pickerStyle(.segmented)
+                        .onChange(of: carnetPhotoItem) { _, newItem in
+                            guard let newItem else { return }
+                            carnetQrStatus = "Analizando QR SUNEDU en la foto..."
+                            Task {
+                                if let data = try? await newItem.loadTransferable(type: Data.self),
+                                   let uiImg = UIImage(data: data),
+                                   let cgImg = uiImg.cgImage {
+                                    let jpegData = uiImg.jpegData(compressionQuality: 0.45) ?? data
+                                    let b64 = jpegData.base64EncodedString()
+                                    let request = VNDetectBarcodesRequest()
+                                    request.symbologies = [.qr]
+                                    let handler = VNImageRequestHandler(cgImage: cgImg, options: [:])
+                                    try? handler.perform([request])
+                                    let payload = request.results?.first?.payloadStringValue
+                                    await MainActor.run {
+                                        carnetPhotoBase64 = b64
+                                        if let payload, !payload.isEmpty {
+                                            detectedCarnetQr = payload
+                                            if dniInput.isEmpty,
+                                               let range = payload.range(of: "\\b\\d{8}\\b", options: .regularExpression) {
+                                                dniInput = String(payload[range])
+                                            }
+                                            carnetQrStatus = "✓ QR SUNEDU identificado correctamente. Esperando confirmación del Panel Admin."
+                                        } else {
+                                            detectedCarnetQr = nil
+                                            carnetQrStatus = "✕ No se pudo identificar el QR en la foto. Toma una foto más nítida."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(carnetQrStatus)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(detectedCarnetQr != nil ? BCTheme.emerald : BCTheme.amber)
 
                         VStack(spacing: 10) {
                             TextField("DNI (8 dígitos)", text: $dniInput)
@@ -573,25 +618,13 @@ struct ProfileSheetView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                                 .foregroundColor(.white)
 
-                            TextField(
-                                carnetType == "STUDENT" ? "Universidad / Instituto" : "N° Resolución CONADIS",
-                                text: $institutionInput
-                            )
-                            .padding(14)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .foregroundColor(.white)
+                            TextField("Universidad (Perú)", text: $institutionInput)
+                                .padding(14)
+                                .background(Color.white.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .foregroundColor(.white)
 
-                            TextField(
-                                carnetType == "STUDENT" ? "Código de Carné Universitario" : "Código de Registro CONADIS",
-                                text: $documentCodeInput
-                            )
-                            .padding(14)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .foregroundColor(.white)
-
-                            DatePicker("Fecha de caducidad", selection: $expiryDateInput, displayedComponents: .date)
+                            DatePicker("Fecha de caducidad del carnet", selection: $expiryDateInput, displayedComponents: .date)
                                 .tint(BCTheme.amber)
                                 .foregroundColor(.white)
                                 .padding(12)
@@ -603,24 +636,27 @@ struct ProfileSheetView: View {
                             let df = DateFormatter()
                             df.dateFormat = "yyyy-MM-dd"
                             let cleanDni = dniInput.trimmingCharacters(in: .whitespacesAndNewlines)
-                            let cleanCode = documentCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let qr = detectedCarnetQr ?? ""
                             viewModel.submitCarnetReviewRequest(
-                                type: carnetType,
-                                dni: cleanDni.isEmpty ? "74829103" : cleanDni,
+                                type: "STUDENT",
+                                dni: cleanDni,
                                 institution: institutionInput,
-                                documentCode: cleanCode.isEmpty ? "SUN-2026-0842" : cleanCode,
-                                expiresAt: df.string(from: expiryDateInput)
+                                documentCode: "SUNEDU-\(cleanDni)",
+                                expiresAt: df.string(from: expiryDateInput),
+                                qrPayload: qr,
+                                frontPhotoBase64: carnetPhotoBase64
                             )
                             showCarnetReviewSheet = false
                         } label: {
-                            Label("Enviar Petición de Revisión", systemImage: "paperplane.fill")
+                            Label("Validar y Enviar a Confirmación Admin", systemImage: "paperplane.fill")
                                 .font(.headline)
                                 .foregroundColor(.black)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 52)
-                                .background(BCTheme.amber)
+                                .background(detectedCarnetQr != nil && dniInput.count == 8 ? BCTheme.amber : Color.gray.opacity(0.45))
                                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
+                        .disabled(detectedCarnetQr == nil || dniInput.count != 8)
                     }
                     .padding(20)
                 }

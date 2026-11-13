@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -47,8 +48,78 @@ fun DriverTabletScreen(
     viewModel: DriverViewModel,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        viewModel.attachContext(context)
+    }
     val state by viewModel.uiState.collectAsState()
     var showBreakdownSubmodule by remember { mutableStateOf(false) }
+
+    if (!state.isAuthenticated) {
+        var dniInput by remember { mutableStateOf("") }
+        var pinInput by remember { mutableStateOf("") }
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Slate950),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = Slate900,
+                border = BorderStroke(1.dp, Slate800),
+                modifier = Modifier
+                    .width(420.dp)
+                    .padding(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Text("Cabina del Chofer • Bus Conectado", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                    Text("Inicia turno con tu DNI y PIN (misma cuenta enlazada al POS)", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                    val fieldColors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedLabelColor = Color(0xFF38BDF8),
+                        unfocusedLabelColor = Color(0xFF94A3B8),
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF475569),
+                        cursorColor = Color.White
+                    )
+                    OutlinedTextField(
+                        value = dniInput,
+                        onValueChange = { dniInput = it },
+                        label = { Text("DNI del Chofer") },
+                        singleLine = true,
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = pinInput,
+                        onValueChange = { pinInput = it },
+                        label = { Text("PIN de Unidad / POS") },
+                        singleLine = true,
+                        colors = fieldColors,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    state.loginError?.let { err ->
+                        Text(err, color = Color(0xFFF87171), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Button(
+                        onClick = { viewModel.loginDriver(dniInput, pinInput) },
+                        enabled = !state.isLoggingIn,
+                        colors = ButtonDefaults.buttonColors(containerColor = BluePrimary),
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(if (state.isLoggingIn) "Autenticando..." else "Iniciar Turno & Enlazar POS", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+        return
+    }
 
     Column(
         modifier = modifier
@@ -58,7 +129,9 @@ fun DriverTabletScreen(
         // 1. BARRA SUPERIOR (HEADER DE CABINA)
         DriverHeader(
             state = state,
-            onAdvanceStop = { viewModel.advanceStop() }
+            onAdvanceStop = { viewModel.advanceStop() },
+            onTogglePosPayment = { viewModel.togglePosPayment() },
+            onLogout = { viewModel.logoutDriver() }
         )
 
         // 2. CUERPO PRINCIPAL (2 COLUMNAS: Izquierda 7 cols / Derecha 5 cols)
@@ -137,7 +210,9 @@ fun DriverTabletScreen(
 @Composable
 fun DriverHeader(
     state: DriverShiftState,
-    onAdvanceStop: () -> Unit
+    onAdvanceStop: () -> Unit,
+    onTogglePosPayment: () -> Unit,
+    onLogout: () -> Unit
 ) {
     Surface(
         color = Slate900,
@@ -217,6 +292,31 @@ fun DriverHeader(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text("Siguiente", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = onTogglePosPayment,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (state.isPosPaymentEnabled) EmeraldPrimary.copy(alpha = 0.25f) else AmberPrimary.copy(alpha = 0.25f)
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Text(
+                        text = if (state.isPosPaymentEnabled) "POS: ACTIVOS" else "Habilitar POS",
+                        color = if (state.isPosPaymentEnabled) Color(0xFF6EE7B7) else Color(0xFFFCD34D),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                }
+
+                Button(
+                    onClick = onLogout,
+                    colors = ButtonDefaults.buttonColors(containerColor = RosePrimary.copy(alpha = 0.22f)),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Text("Cerrar Sesión", color = Color(0xFFFCA5A5), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

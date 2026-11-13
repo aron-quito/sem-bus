@@ -327,6 +327,10 @@ struct ActiveTripState: Identifiable, Equatable {
     let totalPointsDebited: Int
     var isMinimized: Bool
     var nextStopEtaMinutes: Int
+    var isConfirmedOnBoard: Bool? = nil
+    var destinationLatitude: Double? = nil
+    var destinationLongitude: Double? = nil
+    var proximityAlertTriggered: Bool = false
 }
 
 // MARK: - Clasificación Oficial y Propuestas de Paraderos de Tacna (33 Rutas Urbanas)

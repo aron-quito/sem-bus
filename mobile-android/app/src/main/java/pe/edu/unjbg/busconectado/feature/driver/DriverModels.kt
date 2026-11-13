@@ -35,50 +35,34 @@ data class VehicleSensorsState(
 )
 
 data class DriverShiftState(
-    val busId: String = "BUS 01",
-    val routeLine: String = "10",
-    val plate: String = "Z1A-780",
-    val driverName: String = "Juan Mamani Quispe",
-    val occupancy: Int = 22,
-    val maxCapacity: Int = 32,
-    val appTrips: Int = 48,
-    val conadisCount: Int = 3,
-    val totalRevenuePen: Double = 58.40,
+    val isAuthenticated: Boolean = false,
+    val isLoggingIn: Boolean = false,
+    val loginError: String? = null,
+    val driverDni: String = "",
+    val busId: String = "",
+    val routeLine: String = "",
+    val plate: String = "",
+    val driverName: String = "",
+    val occupancy: Int = 0,
+    val maxCapacity: Int = 35,
+    val appTrips: Int = 0,
+    val conadisCount: Int = 0,
+    val totalRevenuePen: Double = 0.0,
     val isPublicMapPaused: Boolean = false,
+    val isPosPaymentEnabled: Boolean = false,
     val currentStopIndex: Int = 0,
-    val stopsList: List<String> = listOf(
-        "P. Cono Norte",
-        "P. Plaza Zela",
-        "P. Mercado Central",
-        "P. Av. Bolognesi",
-        "P. UNJBG",
-        "P. Terminal Terrestre",
-        "P. Alto de la Alianza"
-    ),
-    val lastFare: FareRecord? = FareRecord(
-        id = "init-1",
-        timeFormatted = "19:24:12",
-        fareType = FareType.STUDENT,
-        paymentMethod = PaymentMethod.APP,
-        amountFormatted = "S/. 0.70",
-        isSuccess = true
-    ),
-    val recentFares: List<FareRecord> = listOf(
-        FareRecord("f-1", "19:24:12", FareType.STUDENT, PaymentMethod.APP, "S/. 0.70", true),
-        FareRecord("f-2", "19:22:45", FareType.ADULT, PaymentMethod.YAPE_PLIN, "S/. 1.50", true),
-        FareRecord("f-3", "19:21:10", FareType.CONADIS, PaymentMethod.CARNET, "S/. 0.00", true),
-        FareRecord("f-4", "19:20:18", FareType.INSUFFICIENT, PaymentMethod.APP, "NO PASA", false),
-        FareRecord("f-5", "19:18:02", FareType.ADULT, PaymentMethod.POS, "S/. 1.50", true)
-    ),
+    val stopsList: List<String> = emptyList(),
+    val lastFare: FareRecord? = null,
+    val recentFares: List<FareRecord> = emptyList(),
     val sensors: VehicleSensorsState = VehicleSensorsState()
 ) {
     val occupancyPercentage: Float
         get() = (occupancy.toFloat() / maxCapacity.toFloat()).coerceIn(0f, 1f)
 
     val currentStopName: String
-        get() = stopsList.getOrElse(currentStopIndex) { "P. Cono Norte" }
+        get() = stopsList.getOrElse(currentStopIndex) { "Sin paraderos" }
 
     val nextStopName: String
-        get() = stopsList.getOrElse((currentStopIndex + 1) % stopsList.size) { "P. Plaza Zela" }
+        get() = if (stopsList.isEmpty()) "Sin paraderos" else stopsList.getOrElse((currentStopIndex + 1) % stopsList.size) { "Sin paraderos" }
 }
 

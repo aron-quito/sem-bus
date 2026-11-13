@@ -5,6 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user
+from app.core.config import settings
+from app.core.security import verify_pos_qr_payload
 from app.models.user import User, UserRole, StudentVerification, StudentVerificationStatus
 from app.models.wallet import Wallet, LedgerTransaction, TransactionType
 from app.schemas.auth import StudentVerificationSchema
@@ -17,6 +19,7 @@ from app.schemas.wallet import (
     QrPayRequest,
     QrPayResponse,
 )
+from app.services.pos_store import pos_store
 
 router = APIRouter()
 
@@ -39,7 +42,7 @@ async def get_my_wallet(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    wallet_stmt = select(Wallet).where(Wallet.user_id == current_user.id)
+    wallet_stmt = select(Wallet).where(Wallet.user_id == current_user.id).with_for_update()
     wallet_res = await db.execute(wallet_stmt)
     wallet = wallet_res.scalar_one_or_none()
     if not wallet:
@@ -111,7 +114,7 @@ async def recharge_wallet(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    wallet_stmt = select(Wallet).where(Wallet.user_id == current_user.id)
+    wallet_stmt = select(Wallet).where(Wallet.user_id == current_user.id).with_for_update()
     wallet_res = await db.execute(wallet_stmt)
     wallet = wallet_res.scalar_one_or_none()
     if not wallet:
@@ -222,7 +225,48 @@ async def pay_qr_passage(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    wallet_stmt = select(Wallet).where(Wallet.user_id == current_user.id)
+    pos_order_id = None
+    pos_unit_code = "Línea 10"
+    pos_fixed_points = None
+
+    token = (payload.qr_token or "").strip()
+    if token.startswith("BC-POS|v1|"):
+        try:
+            verified = verify_pos_qr_payload(token)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+
+        pos_order_id = verified["order_id"]
+        pos_unit_code = verified["unit_code"]
+        pos_fixed_points = verified["fixed_points"]
+
+        order = await pos_store.get_order(pos_order_id)
+        if not order or order.get("status") != "PENDING":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Este QR ya fue cobrado o expiró. Escanea el nuevo QR del POS.",
+            )
+
+        consumed = await pos_store.consume_nonce_once(verified["nonce"], ttl_seconds=settings.POS_QR_TTL_SECONDS + 60)
+        if not consumed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Código QR ya utilizado (protección anti-reuso).",
+            )
+    elif token.startswith("BC-BUS|") and settings.ENV == "development":
+        parts = token.split("|")
+        if len(parts) >= 4:
+            pos_unit_code = parts[3]
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Código QR inválido o no reconocido por Bus Conectado.",
+        )
+
+    wallet_stmt = select(Wallet).where(Wallet.user_id == current_user.id).with_for_update()
     wallet_res = await db.execute(wallet_stmt)
     wallet = wallet_res.scalar_one_or_none()
     if not wallet:
@@ -231,7 +275,17 @@ async def pay_qr_passage(
             detail="Monedero sin saldo suficiente. Recarga Puntos BC para abordar."
         )
 
-    holder_fare, _ = _fare_for_role(current_user.role)
+    if pos_fixed_points is not None and pos_fixed_points > 0:
+        holder_fare = pos_fixed_points
+        fare_label = "Tarifa Plana POS"
+    else:
+        holder_fare, _ = _fare_for_role(current_user.role)
+        fare_label = (
+            "Universitario"
+            if current_user.role == UserRole.STUDENT.value
+            else ("CONADIS" if current_user.role == UserRole.CONADIS.value else "Adulto")
+        )
+
     companions_fare = payload.companions_count * 15  # RN-07: acompañantes pagan tarifa Adulto (15 pts)
     total_points = holder_fare + companions_fare
     total_pen = round(total_points / 10.0, 2)
@@ -245,7 +299,7 @@ async def pay_qr_passage(
     balance_before = wallet.points_balance
     balance_after = balance_before - total_points
 
-    desc = "Pasaje QR Línea 10"
+    desc = f"Pasaje QR {pos_unit_code}"
     if payload.companions_count > 0:
         desc += f" (+{payload.companions_count} acomp.)"
 
@@ -269,6 +323,16 @@ async def pay_qr_passage(
 
     await db.commit()
     await db.refresh(tx)
+
+    if pos_order_id:
+        await pos_store.mark_order_paid(
+            order_id=pos_order_id,
+            payment_method="APP_QR",
+            fare_label=fare_label,
+            companions_count=payload.companions_count,
+            amount_points=total_points,
+            amount_pen=total_pen,
+        )
 
     return QrPayResponse(
         success=True,

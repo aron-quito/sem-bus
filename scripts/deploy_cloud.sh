@@ -4,9 +4,9 @@
 # ═══════════════════════════════════════════════════════════════════════
 set -e
 
-SERVER_USER="admin"
-SERVER_IP="34.44.71.179"
-SSH_KEY="${HOME}/.ssh/id_buses"
+SERVER_USER="${SERVER_USER:-admin}"
+SERVER_IP="${SERVER_IP:?Error: define SERVER_IP (ej. export SERVER_IP=tu.ip.del.servidor)}"
+SSH_KEY="${SSH_KEY:-${HOME}/.ssh/id_ed25519}"
 REMOTE_DIR="/home/admin/sem-bus"
 
 echo "🚀 Iniciando despliegue en servidor cloud ($SERVER_IP)..."
@@ -86,7 +86,6 @@ if [ ! -f /etc/nginx/admin_allowed_ips.conf ]; then
   sudo tee /etc/nginx/admin_allowed_ips.conf > /dev/null << 'IPS'
 # IPs Autorizadas para el Panel Administrador
 allow 127.0.0.1;
-allow 38.250.158.151; # Aron (IP actual)
 deny all;
 IPS
 fi
@@ -96,7 +95,7 @@ sudo tee /etc/nginx/sites-available/busconectado > /dev/null << 'NGINX'
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name 34.44.71.179.sslip.io 34.44.71.179 _;
+    server_name _;
 
     gzip on;
     gzip_vary on;

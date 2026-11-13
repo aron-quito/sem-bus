@@ -29,9 +29,17 @@ final class AuthViewModel: ObservableObject {
     @Published var currentUser: UserAuth? = nil
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
+    @Published var successBannerMessage: String? = nil
     @Published var countdownSeconds: Int = 59
-    @Published var backendHost: String = "34.44.71.179.sslip.io"
+    @Published var backendHost: String = "34.30.86.129.sslip.io"
     @Published var isConnectedToBackend: Bool = false
+    var lastStudentFareDate: Date? = nil
+
+    var studentCooldownRemainingSeconds: Int {
+        guard let last = lastStudentFareDate else { return 0 }
+        let elapsed = Int(Date().timeIntervalSince(last))
+        return elapsed < 120 ? max(1, 120 - elapsed) : 0
+    }
 
     // MARK: - Estado del Monedero y Movimientos (CU-05 / CU-08)
     // Para cuentas de prueba o cuentas nuevas inicia estrictamente en [] (0 movimientos y 0 puntos)
@@ -91,12 +99,12 @@ final class AuthViewModel: ObservableObject {
 
     init() {
         if let savedHost = UserDefaults.standard.string(forKey: "bc_backend_host") {
-            let host = (savedHost.contains("34.61.17.233") || savedHost == "34.44.71.179" || savedHost == "172.20.10.11:8000" || savedHost == "localhost:8000") ? "34.44.71.179.sslip.io" : savedHost
+            let host = (savedHost.contains("34.61.17.233") || savedHost.contains("34.44.71.179") || savedHost == "34.30.86.129" || savedHost == "172.20.10.11:8000" || savedHost == "localhost:8000") ? "34.30.86.129.sslip.io" : savedHost
             self.backendHost = host
             APIClient.shared.updateBaseURL(host)
         } else {
-            self.backendHost = "34.44.71.179.sslip.io"
-            APIClient.shared.updateBaseURL("https://34.44.71.179.sslip.io")
+            self.backendHost = "34.30.86.129.sslip.io"
+            APIClient.shared.updateBaseURL("https://34.30.86.129.sslip.io")
         }
 
         // Cargar paraderos y rutas cacheados previamente de la última sincronización con el Administrador Web
@@ -130,6 +138,7 @@ final class AuthViewModel: ObservableObject {
         }
 
         setupSmartSync()
+        startLiveTransitPolling()
 
         // Búsqueda en vivo de cualquier lugar del mapa de Tacna (Apple MapKit + Completer + OSM Photon/Nominatim)
         searchDebounceCancellable = $searchQuery
@@ -811,7 +820,7 @@ final class AuthViewModel: ObservableObject {
             .replacingOccurrences(of: "http://", with: "")
             .replacingOccurrences(of: "https://", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        self.backendHost = cleaned.isEmpty ? "34.44.71.179.sslip.io" : cleaned
+        self.backendHost = cleaned.isEmpty ? "34.30.86.129.sslip.io" : cleaned
         UserDefaults.standard.set(self.backendHost, forKey: "bc_backend_host")
         APIClient.shared.updateBaseURL(self.backendHost)
         Task {
@@ -1077,6 +1086,32 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    private func startLiveTransitPolling() {
+        Task { [weak self] in
+            struct LiveNetworkDTO: Decodable {
+                let routes: [BusRouteModel]
+                let stops: [BusStopModel]
+                let activeBuses: [ActiveBusModel]
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard let self = self, APIClient.shared.canReachRemoteBackend else { continue }
+                if let net: LiveNetworkDTO = try? await APIClient.shared.request(
+                    endpoint: "transit/network",
+                    method: "GET",
+                    requiresAuth: false
+                ) {
+                    await MainActor.run {
+                        self.activeBuses = net.activeBuses
+                        if !net.routes.isEmpty { self.routes = net.routes }
+                        if !net.stops.isEmpty { self.stops = net.stops }
+                        self.isConnectedToBackend = true
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Operaciones del Monedero (CU-05 Recarga / CU-03 SUNEDU / CU-01 Pago QR)
     @discardableResult
     func rechargePoints(points: Int, gateway: String, reference: String? = nil) async -> LedgerTransactionItem? {
@@ -1162,17 +1197,19 @@ final class AuthViewModel: ObservableObject {
         dni: String,
         institution: String,
         documentCode: String,
-        expiresAt: String
+        expiresAt: String,
+        qrPayload: String = "",
+        frontPhotoBase64: String = ""
     ) {
         guard let user = currentUser else { return }
         let req = CarnetReviewRequest(
             id: "CAR-\(Int.random(in: 10000...99999))",
-            carnetType: type,
+            carnetType: "STUDENT",
             dni: dni,
-            institution: institution,
-            documentCode: documentCode,
+            institution: institution.isEmpty ? "Universidad Licenciada SUNEDU" : institution,
+            documentCode: documentCode.isEmpty ? "SUNEDU-\(dni)" : documentCode,
             submittedAt: Date(),
-            status: "PENDING_REVIEW",
+            status: "ESPERANDO CONFIRMACIÓN ADMIN",
             expiresAt: expiresAt
         )
         self.carnetReviewRequest = req
@@ -1180,6 +1217,64 @@ final class AuthViewModel: ObservableObject {
             UserDefaults.standard.set(data, forKey: "bc_carnet_req_\(user.phone)")
         }
         BCFeedbackManager.shared.notificationSuccess()
+
+        Task {
+            guard APIClient.shared.canReachRemoteBackend else { return }
+            struct SuneduVerifyReq: Encodable {
+                let user_id: String
+                let phone: String
+                let passenger_name: String
+                let dni: String
+                let university: String
+                let expiry_date: String
+                let qr_payload: String
+                let front_photo_base64: String
+            }
+            struct SuneduVerifyResp: Decodable {
+                struct ReqObj: Decodable {
+                    let dni: String
+                    let university: String
+                    let carnet_code: String
+                    let expiry_date: String
+                }
+                let request: ReqObj?
+            }
+            let payload = SuneduVerifyReq(
+                user_id: user.id,
+                phone: user.phone,
+                passenger_name: user.name ?? "Estudiante SUNEDU",
+                dni: dni,
+                university: institution,
+                expiry_date: expiresAt,
+                qr_payload: qrPayload.isEmpty ? "SUNEDU|\(dni)|\(institution)|\(expiresAt)" : qrPayload,
+                front_photo_base64: frontPhotoBase64
+            )
+            if let body = try? JSONEncoder().encode(payload),
+               let resp: SuneduVerifyResp = try? await APIClient.shared.request(
+                   endpoint: "carnet/verify-sunedu",
+                   method: "POST",
+                   body: body,
+                   requiresAuth: false
+               ),
+               let rObj = resp.request {
+                await MainActor.run {
+                    let updated = CarnetReviewRequest(
+                        id: req.id,
+                        carnetType: "STUDENT",
+                        dni: rObj.dni,
+                        institution: rObj.university,
+                        documentCode: rObj.carnet_code,
+                        submittedAt: req.submittedAt,
+                        status: "ESPERANDO CONFIRMACIÓN ADMIN",
+                        expiresAt: rObj.expiry_date
+                    )
+                    self.carnetReviewRequest = updated
+                    if let data = try? JSONEncoder().encode(updated) {
+                        UserDefaults.standard.set(data, forKey: "bc_carnet_req_\(user.phone)")
+                    }
+                }
+            }
+        }
     }
 
     private func loadCarnetReviewRequest(for phone: String) {
@@ -1192,10 +1287,41 @@ final class AuthViewModel: ObservableObject {
     }
 
     /// Ejecuta el pago de pasaje con QR en puerta + acompañantes (CU-01 / RN-07)
-    func payPassageWithQr(companionsCount: Int, busUnit: String = "BUS 01", busPlate: String = "Z1A-780", lineNumber: String = "14") -> Bool {
+    func payPassageWithQr(
+        companionsCount: Int,
+        busUnit: String = "BUS 01",
+        busPlate: String = "Z1A-780",
+        lineNumber: String = "14",
+        fixedPoints: Int? = nil,
+        qrPayload: String? = nil
+    ) -> Bool {
         guard var user = currentUser else { return false }
 
-        let holderFare = user.roleType.farePoints
+        let isStudent = user.roleType == .student
+        let now = Date()
+
+        // Límite de tiempo anti-fraude SUNEDU: máximo 1 pasaje universitario cada 2 minutos (120 segundos)
+        // Control de reuso universitario: si pagó hace < 120s, se cobra tarifa general de 15 pts con aviso
+        var isStudentCooldownActive = false
+        var remainingCooldownSec = 0
+        if isStudent {
+            if let last = lastStudentFareDate {
+                let elapsed = now.timeIntervalSince(last)
+                if elapsed < 120 {
+                    isStudentCooldownActive = true
+                    remainingCooldownSec = max(1, Int(120 - elapsed))
+                }
+            }
+        }
+
+        let holderFare: Int
+        if isStudent && !isStudentCooldownActive {
+            holderFare = 7 // Tarifa Universitaria SUNEDU (S/. 0.70)
+        } else if isStudent && isStudentCooldownActive {
+            holderFare = 15 // Tarifa General Adulto por espera de 2 min
+        } else {
+            holderFare = fixedPoints ?? user.roleType.farePoints
+        }
         let companionsFare = companionsCount * 15 // RN-07: cada acompañante abona tarifa Adulto (15 pts)
         let totalPoints = holderFare + companionsFare
         let totalPen = Double(totalPoints) / 10.0
@@ -1207,12 +1333,40 @@ final class AuthViewModel: ObservableObject {
             return false
         }
 
+        if isStudent && !isStudentCooldownActive {
+            self.lastStudentFareDate = now
+        }
+
+        if isStudentCooldownActive {
+            self.successBannerMessage = "Pagaste tarifa universitaria hace menos de 2 min. Se cobraron 15 pts (espera de \(remainingCooldownSec)s activa)."
+        }
+
         let before = user.pointsBalance
         let after = before - totalPoints
         user.pointsBalance = after
         self.currentUser = user
         self.saveActiveUserLocally(user)
         self.persistAccountState(user)
+
+        // Si es QR de terminal POS dinámico, notificar asíncronamente al backend en la nube
+        if let payload = qrPayload, payload.hasPrefix("BC-POS|v1|") {
+            Task {
+                guard let url = URL(string: "https://34.30.86.129.sslip.io/api/v1/wallet/pay-qr") else { return }
+                var req = URLRequest(url: url)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                let payloadDict: [String: Any] = [
+                    "qr_payload": payload,
+                    "companions_count": companionsCount,
+                    "user_id": user.id,
+                    "phone": user.phone,
+                    "user_role": user.roleType.rawValue,
+                    "is_student": isStudent
+                ]
+                req.httpBody = try? JSONSerialization.data(withJSONObject: payloadDict)
+                _ = try? await URLSession.shared.data(for: req)
+            }
+        }
 
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
@@ -1236,18 +1390,46 @@ final class AuthViewModel: ObservableObject {
         self.saveLocalTransactions(for: user.phone)
 
         // Iniciar Seguimiento de Viaje en Curso (CU-06)
+        let resolvedLine = lineNumber.contains("14") || busUnit.contains("14") ? "Ruta 14" : lineNumber
+        let destStop = activeRouteGuidance?.destination ?? searchedDestinationPin
+
         self.activeTrip = ActiveTripState(
             id: UUID().uuidString,
             busUnit: busUnit,
             busPlate: busPlate,
-            lineNumber: lineNumber,
+            lineNumber: resolvedLine,
             boardingStopName: "Paradero de Abordaje",
-            destinationStopName: "Paradero de Destino",
+            destinationStopName: destStop?.shortName ?? "Paradero de Destino",
             companionsCount: companionsCount,
             totalPointsDebited: totalPoints,
             isMinimized: false,
-            nextStopEtaMinutes: 4
+            nextStopEtaMinutes: 4,
+            isConfirmedOnBoard: true,
+            destinationLatitude: destStop?.coordinate.latitude,
+            destinationLongitude: destStop?.coordinate.longitude,
+            proximityAlertTriggered: false
         )
+
+        // Proyectar la ruta en tiempo real sobre el mapa y cambiar pestaña a Explorar (0)
+        let matchedRoute = dynamicRoutes.first(where: { route in
+            route.code.localizedCaseInsensitiveContains(resolvedLine) ||
+            route.title.localizedCaseInsensitiveContains(resolvedLine) ||
+            resolvedLine.localizedCaseInsensitiveContains(route.code)
+        }) ?? dynamicRoutes.first(where: { $0.code.contains("14") })
+
+        if let route = matchedRoute {
+            self.activeRouteOverlayOnMap = route
+            let coords = route.resolvedPolylineCoordinates(using: dynamicCatalogStops)
+            if let first = coords.first, let last = coords.last {
+                let midLat = (first.latitude + last.latitude) / 2.0
+                let midLon = (first.longitude + last.longitude) / 2.0
+                let span = max(abs(first.latitude - last.latitude) * 1.6, 0.032)
+                focusMap(on: CLLocationCoordinate2D(latitude: midLat, longitude: midLon), spanDelta: span)
+            }
+        }
+
+        // Redirigir de la pestaña QR (2) a Explorar (0)
+        self.selectedTab = 0
 
         BCFeedbackManager.shared.playValidationTone()
         return true
@@ -1256,6 +1438,96 @@ final class AuthViewModel: ObservableObject {
     func finishActiveTrip() {
         BCFeedbackManager.shared.impactLight()
         self.activeTrip = nil
+    }
+
+    func confirmOnBoardStatus(_ onBoard: Bool) {
+        guard var trip = self.activeTrip else { return }
+        trip.isConfirmedOnBoard = onBoard
+        self.activeTrip = trip
+        self.successBannerMessage = onBoard
+            ? "Suscrito a alertas en \(trip.busUnit). Te avisaremos 200m antes de llegar."
+            : "Esperando unidad \(trip.busUnit) en paradero."
+        if onBoard {
+            evaluateInBusProximityAlert()
+        }
+    }
+
+    func verifyAndSubscribeNearestBus() {
+        let userCoord = LocationService.shared.userCoordinate ?? CLLocationCoordinate2D(latitude: -18.0146, longitude: -70.2536)
+        let userLoc = CLLocation(latitude: userCoord.latitude, longitude: userCoord.longitude)
+
+        let candidates = activeBuses.map { bus -> (ActiveBusModel, CLLocationDistance) in
+            let busLoc = CLLocation(latitude: bus.latitude, longitude: bus.longitude)
+            return (bus, userLoc.distance(from: busLoc))
+        }.sorted(by: { $0.1 < $1.1 })
+
+        guard let nearest = candidates.first(where: { $0.1 <= 120.0 }) else {
+            self.successBannerMessage = "No se detectó ningún bus a ≤ 120m de tu ubicación actual."
+            return
+        }
+
+        let bus = nearest.0
+        let distMeters = Int(nearest.1)
+        let matchedRoute = dynamicRoutes.first(where: { route in
+            route.code.localizedCaseInsensitiveContains(bus.lineNumber) ||
+            bus.lineNumber.localizedCaseInsensitiveContains(route.code)
+        }) ?? dynamicRoutes.first(where: { $0.code.contains("14") })
+
+        let destStop = activeRouteGuidance?.destination ?? searchedDestinationPin
+
+        self.activeTrip = ActiveTripState(
+            id: UUID().uuidString,
+            busUnit: bus.unitNumber,
+            busPlate: bus.plate,
+            lineNumber: bus.lineNumber,
+            boardingStopName: "Abordaje detectado",
+            destinationStopName: destStop?.shortName ?? bus.nextStopName,
+            companionsCount: 0,
+            totalPointsDebited: 0,
+            isMinimized: false,
+            nextStopEtaMinutes: bus.nextStopEtaMinutes,
+            isConfirmedOnBoard: true,
+            destinationLatitude: destStop?.coordinate.latitude,
+            destinationLongitude: destStop?.coordinate.longitude,
+            proximityAlertTriggered: false
+        )
+
+        if let route = matchedRoute {
+            self.activeRouteOverlayOnMap = route
+        }
+        focusMap(on: CLLocationCoordinate2D(latitude: bus.latitude, longitude: bus.longitude), spanDelta: 0.015)
+        self.successBannerMessage = "✓ Detectado a bordo de \(bus.unitNumber) (\(distMeters)m). Suscrito en tiempo real."
+        BCFeedbackManager.shared.notificationSuccess()
+    }
+
+    func evaluateInBusProximityAlert() {
+        guard var trip = self.activeTrip,
+              trip.isConfirmedOnBoard == true,
+              !trip.proximityAlertTriggered,
+              let destLat = trip.destinationLatitude,
+              let destLon = trip.destinationLongitude else { return }
+
+        let liveBus = activeBuses.first(where: {
+            $0.unitNumber.caseInsensitiveCompare(trip.busUnit) == .orderedSame ||
+            $0.plate.caseInsensitiveCompare(trip.busPlate) == .orderedSame
+        })
+        let currentLoc = CLLocation(
+            latitude: liveBus?.latitude ?? -18.0146,
+            longitude: liveBus?.longitude ?? -70.2536
+        )
+        let destLoc = CLLocation(latitude: destLat, longitude: destLon)
+        if currentLoc.distance(from: destLoc) <= 220 {
+            trip.proximityAlertTriggered = true
+            self.activeTrip = trip
+            self.activeArrivalAlert = ArrivalAlertState(
+                stopId: "dest-alert",
+                stopName: trip.destinationStopName,
+                advanceMinutes: 1,
+                imminentEnabled: true,
+                remainingSeconds: 35
+            )
+            BCFeedbackManager.shared.notificationSuccess()
+        }
     }
 
     // MARK: - Alerta de Paradero (2 Timers)

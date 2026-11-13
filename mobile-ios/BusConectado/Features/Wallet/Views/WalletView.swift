@@ -212,22 +212,6 @@ struct WalletView: View {
                 }
                 .padding(.top, 10)
 
-                // Resumen rápido de movimientos
-                HStack(spacing: 10) {
-                    walletMetricMiniCard(
-                        icon: "arrow.down.left.circle.fill",
-                        color: BCTheme.emerald,
-                        label: "Recargado",
-                        value: "\(rechargeTransactions.reduce(0) { $0 + $1.amountPoints }) pts"
-                    )
-                    walletMetricMiniCard(
-                        icon: "bus.fill",
-                        color: Color(hex: "#60A5FA"),
-                        label: "Viajes QR",
-                        value: "\(tripTransactions.count)"
-                    )
-                }
-
                 // Tarjeta de Beneficio Tarifario / Solicitud de Revisión y Caducidad de Carné
                 benefitTierCard
 
@@ -991,15 +975,9 @@ struct WalletView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Solicita la revisión de tu carné para acceder a la tarifa preferencial en los buses de Tacna.")
+                        Text("Solicita la verificación de tu carnet universitario SUNEDU para acceder a la tarifa de S/. 0.70 (7 pts).")
                             .font(.subheadline)
                             .foregroundColor(.white.opacity(0.75))
-
-                        Picker("Tipo de carné", selection: $carnetType) {
-                            Text("Universitario SUNEDU (7 pts)").tag("STUDENT")
-                            Text("CONADIS (0 pts)").tag("CONADIS")
-                        }
-                        .pickerStyle(.segmented)
 
                         VStack(alignment: .leading, spacing: 10) {
                             TextField("DNI (8 dígitos)", text: $dniInput)
@@ -1009,23 +987,17 @@ struct WalletView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                                 .foregroundColor(.white)
 
-                            TextField(
-                                carnetType == "STUDENT" ? "Universidad / Instituto" : "N° Resolución / Registro CONADIS",
-                                text: $institutionInput
-                            )
-                            .padding(14)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .foregroundColor(.white)
+                            TextField("Universidad (Perú)", text: $institutionInput)
+                                .padding(14)
+                                .background(Color.white.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .foregroundColor(.white)
 
-                            TextField(
-                                carnetType == "STUDENT" ? "Código de Carné Universitario" : "Código de Carné CONADIS",
-                                text: $documentCodeInput
-                            )
-                            .padding(14)
-                            .background(Color.white.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .foregroundColor(.white)
+                            TextField("Código de Carné Universitario", text: $documentCodeInput)
+                                .padding(14)
+                                .background(Color.white.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .foregroundColor(.white)
 
                             DatePicker(
                                 "Fecha de caducidad",
@@ -1045,10 +1017,10 @@ struct WalletView: View {
                             let cleanDni = dniInput.trimmingCharacters(in: .whitespacesAndNewlines)
                             let cleanCode = documentCodeInput.trimmingCharacters(in: .whitespacesAndNewlines)
                             viewModel.submitCarnetReviewRequest(
-                                type: carnetType,
+                                type: "STUDENT",
                                 dni: cleanDni.isEmpty ? "74829103" : cleanDni,
                                 institution: institutionInput,
-                                documentCode: cleanCode.isEmpty ? "SUN-2026-0842" : cleanCode,
+                                documentCode: cleanCode.isEmpty ? "SUNEDU-\(cleanDni)" : cleanCode,
                                 expiresAt: df.string(from: expiryDateInput)
                             )
                             showCarnetRequestSheet = false

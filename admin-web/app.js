@@ -4,16 +4,32 @@
  * Módulo colaborativo en tiempo real estilo Google Docs con WebSockets.
  */
 
-const PROFILES = [
-  { id: 'admin1', username: 'admin', name: 'Admin 1 (Aron)', avatar: 'A1', color: '#2563EB' },
-  { id: 'admin2', username: 'admin2', name: 'Admin 2', avatar: 'A2', color: '#10B981' }
-];
+// Administrador General Autenticado Oficial
+const CURRENT_ADMIN = {
+  id: 'USR-ADM-001',
+  username: 'aron.quispe',
+  name: 'Aron Quispe',
+  role: 'Administrador General',
+  dni: '70881234',
+  avatar: 'AQ',
+  color: '#2563EB'
+};
+
+const PROFILES = [CURRENT_ADMIN];
 
 // Estado global de la aplicación
 const state = {
-  activeModule: 'stops',     // 'stops' | 'routes'
+  activeModule: 'stops',     // 'stops' | 'routes' | 'pos' | 'users' | 'stats'
   stops: [],
   routes: [],
+  posTerminals: [],
+  transactions: [],
+  users: [],
+  posFilterRoute: 'all',
+  posFilterMethod: 'all',
+  posSearchText: '',
+  userFilterRole: 'all',
+  userSearchText: '',
   selectedStopId: null,
   selectedRouteId: null,
   activeFilter: 'all',
@@ -37,7 +53,7 @@ const state = {
   tempTraceStopIds: [],      // IDs de paraderos asociados durante el trazado
   isRoutingStreet: false,    // Indicador de consulta activa al motor vial OSRM
   modalSelectedStopIds: [],  // IDs de paraderos seleccionados en orden dentro del modal de ruta
-  currentUser: PROFILES[0],  // Perfil activo (Admin 1 por defecto)
+  currentUser: CURRENT_ADMIN, // Administrador General autenticado
   activeUsers: [],           // Usuarios conectados al WebSocket
   lockedStops: {},           // { [stopId]: user } paraderos bloqueados en tiempo real
   ws: null,                  // Instancia WebSocket
@@ -70,8 +86,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateRouteStats();
   }
 
-  // 3. Validar con servidor usando ETag (304 Not Modified = 0 bytes si no hubo cambios)
-  await Promise.all([loadStopsData(), loadRoutesData()]);
+  // 3. Validar con servidor usando ETag y cargar catálogo, usuarios y POS
+  await Promise.all([loadStopsData(), loadRoutesData(), loadUsersData(), loadPosData()]);
   renderMapMarkers();
   renderMapRoutes();
   renderStopsList();
@@ -81,21 +97,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// GESTIÓN DE PERFILES Y WEBSOCKETS EN TIEMPO REAL (GOOGLE DOCS STYLE)
+// GESTIÓN DE PERFILES Y WEBSOCKETS EN TIEMPO REAL
 // ═══════════════════════════════════════════════════════════════════════
 
 function loadStoredProfile() {
-  const savedId = localStorage.getItem('bc_collab_profile_id');
-  const found = PROFILES.find(p => p.id === savedId);
-  if (found) {
-    state.currentUser = found;
-  }
+  state.currentUser = CURRENT_ADMIN;
   updateProfileUI();
 }
 
 function updateProfileUI() {
   const avatarEl = document.getElementById('collab-my-avatar');
   const nameEl = document.getElementById('collab-my-name');
+  const subEl = document.getElementById('collab-my-sub');
   if (avatarEl) {
     avatarEl.textContent = state.currentUser.avatar;
     avatarEl.style.backgroundColor = state.currentUser.color;
@@ -104,16 +117,9 @@ function updateProfileUI() {
   if (nameEl) {
     nameEl.textContent = state.currentUser.name;
   }
-}
-
-function switchUserProfile() {
-  const currentIdx = PROFILES.findIndex(p => p.id === state.currentUser.id);
-  const nextProfile = PROFILES[(currentIdx + 1) % PROFILES.length];
-  state.currentUser = nextProfile;
-  localStorage.setItem('bc_collab_profile_id', nextProfile.id);
-  updateProfileUI();
-  sendWsMessage({ type: 'join', user: state.currentUser });
-  showToast(`Cambiado a perfil: ${nextProfile.name}`);
+  if (subEl) {
+    subEl.textContent = `${state.currentUser.role} • DNI ${state.currentUser.dni}`;
+  }
 }
 
 function initCollaborationWebSocket() {
@@ -390,7 +396,7 @@ async function loadStopsData() {
     const res = await fetchWithTimeout(`${backendBase}/api/v1/transit/stops`, { cache: 'no-cache' });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         state.stops = data;
         localStorage.setItem('bc_admin_stops', JSON.stringify(state.stops));
         const syncStatus = document.getElementById('sync-status');
@@ -466,7 +472,7 @@ async function loadRoutesData() {
     const res = await fetchWithTimeout(`${backendBase}/api/v1/transit/routes`, { cache: 'no-cache' });
     if (res.ok) {
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         state.routes = data;
         localStorage.setItem('bc_admin_routes', JSON.stringify(state.routes));
         return;
@@ -1225,18 +1231,86 @@ function switchAdminModule(moduleName) {
 
   const tabStops = document.getElementById('tab-module-stops');
   const tabRoutes = document.getElementById('tab-module-routes');
+  const tabDrivers = document.getElementById('tab-module-drivers');
+  const tabClients = document.getElementById('tab-module-clients');
+  const tabPos = document.getElementById('tab-module-pos');
+  const tabStats = document.getElementById('tab-module-stats');
+
+  const tabs = [
+    { name: 'stops', el: tabStops },
+    { name: 'routes', el: tabRoutes },
+    { name: 'drivers', el: tabDrivers },
+    { name: 'clients', el: tabClients },
+    { name: 'pos', el: tabPos },
+    { name: 'stats', el: tabStats }
+  ];
+
+  tabs.forEach(t => {
+    if (t.el) {
+      const isActive = t.name === moduleName;
+      t.el.classList.toggle('active', isActive);
+      t.el.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    }
+  });
+
   const stopsHeader = document.getElementById('stops-header-controls');
   const routesHeader = document.getElementById('routes-header-controls');
   const stopsSection = document.getElementById('stops-list-section');
   const routesSection = document.getElementById('routes-list-section');
+  const mapViewport = document.querySelector('.map-viewport');
   const modeLabel = document.getElementById('current-mode-label');
 
-  if (moduleName === 'routes') {
-    tabStops?.classList.remove('active');
-    tabStops?.setAttribute('aria-selected', 'false');
-    tabRoutes?.classList.add('active');
-    tabRoutes?.setAttribute('aria-selected', 'true');
+  const posPanel = document.getElementById('pos-admin-panel');
+  const driversPanel = document.getElementById('drivers-admin-panel');
+  const clientsPanel = document.getElementById('clients-admin-panel');
+  const statsPanel = document.getElementById('stats-admin-panel');
 
+  if (moduleName !== 'routes' && state.tracingRouteId) {
+    cancelRouteTrace();
+  }
+
+  // Ocultar todos los paneles full-width primero
+  posPanel?.classList.add('hidden');
+  driversPanel?.classList.add('hidden');
+  clientsPanel?.classList.add('hidden');
+  statsPanel?.classList.add('hidden');
+
+  if (moduleName === 'pos') {
+    mapViewport?.classList.add('hidden');
+    posPanel?.classList.remove('hidden');
+    stopsHeader?.classList.add('hidden');
+    routesHeader?.classList.add('hidden');
+    stopsSection?.classList.add('hidden');
+    routesSection?.classList.add('hidden');
+    renderPosTerminals();
+    renderTransactionsTable();
+    updatePosKPIs();
+  } else if (moduleName === 'drivers') {
+    mapViewport?.classList.add('hidden');
+    driversPanel?.classList.remove('hidden');
+    stopsHeader?.classList.add('hidden');
+    routesHeader?.classList.add('hidden');
+    stopsSection?.classList.add('hidden');
+    routesSection?.classList.add('hidden');
+    renderDriversTable();
+  } else if (moduleName === 'clients') {
+    mapViewport?.classList.add('hidden');
+    clientsPanel?.classList.remove('hidden');
+    stopsHeader?.classList.add('hidden');
+    routesHeader?.classList.add('hidden');
+    stopsSection?.classList.add('hidden');
+    routesSection?.classList.add('hidden');
+    renderUsersTable();
+  } else if (moduleName === 'stats') {
+    mapViewport?.classList.add('hidden');
+    statsPanel?.classList.remove('hidden');
+    stopsHeader?.classList.add('hidden');
+    routesHeader?.classList.add('hidden');
+    stopsSection?.classList.add('hidden');
+    routesSection?.classList.add('hidden');
+    renderStatsCharts();
+  } else if (moduleName === 'routes') {
+    mapViewport?.classList.remove('hidden');
     stopsHeader?.classList.add('hidden');
     routesHeader?.classList.remove('hidden');
     stopsSection?.classList.add('hidden');
@@ -1246,22 +1320,16 @@ function switchAdminModule(moduleName) {
       modeLabel.textContent = 'Modo: Gestión de Rutas y Trazados Oficiales (Referencia ETA App + Chofer)';
     }
 
-    // Si no hay ruta seleccionada aún, seleccionar la primera ruta para visualizarla
     if (!state.selectedRouteId && state.routes.length > 0) {
       state.selectedRouteId = state.routes[0].id;
     }
     renderRoutesList();
     updateRouteStats();
     renderMapRoutes();
+    setTimeout(() => state.map?.invalidateSize(), 60);
   } else {
-    if (state.tracingRouteId) {
-      cancelRouteTrace();
-    }
-    tabRoutes?.classList.remove('active');
-    tabRoutes?.setAttribute('aria-selected', 'false');
-    tabStops?.classList.add('active');
-    tabStops?.setAttribute('aria-selected', 'true');
-
+    // Paraderos (default)
+    mapViewport?.classList.remove('hidden');
     routesHeader?.classList.add('hidden');
     stopsHeader?.classList.remove('hidden');
     routesSection?.classList.add('hidden');
@@ -1274,6 +1342,7 @@ function switchAdminModule(moduleName) {
     renderStopsList();
     updateStats();
     renderMapRoutes();
+    setTimeout(() => state.map?.invalidateSize(), 60);
   }
 }
 
@@ -2913,17 +2982,56 @@ function downloadSwiftFile() {
 // ═══════════════════════════════════════════════════════════════════════
 
 function setupUIEventListeners() {
-  // Conmutador principal de módulos: Paraderos vs Rutas y Trazados
+  // Conmutador principal de módulos: Paraderos vs Rutas vs Choferes vs Clientes vs POS vs Estadísticas
   const tabStops = document.getElementById('tab-module-stops');
   const tabRoutes = document.getElementById('tab-module-routes');
+  const tabDrivers = document.getElementById('tab-module-drivers');
+  const tabClients = document.getElementById('tab-module-clients');
+  const tabPos = document.getElementById('tab-module-pos');
+  const tabStats = document.getElementById('tab-module-stats');
+
   if (tabStops) tabStops.addEventListener('click', () => switchAdminModule('stops'));
   if (tabRoutes) tabRoutes.addEventListener('click', () => switchAdminModule('routes'));
+  if (tabDrivers) tabDrivers.addEventListener('click', () => switchAdminModule('drivers'));
+  if (tabClients) tabClients.addEventListener('click', () => switchAdminModule('clients'));
+  if (tabPos) tabPos.addEventListener('click', () => switchAdminModule('pos'));
+  if (tabStats) tabStats.addEventListener('click', () => switchAdminModule('stats'));
 
-  // Botón Cambiar Perfil de Colaborador (Admin 1 ⇄ Admin 2)
-  const btnSwitchUser = document.getElementById('btn-switch-user');
-  if (btnSwitchUser) {
-    btnSwitchUser.addEventListener('click', switchUserProfile);
+  const btnGotoCreateRoute = document.getElementById('btn-goto-create-route');
+  if (btnGotoCreateRoute) {
+    btnGotoCreateRoute.addEventListener('click', () => {
+      switchAdminModule('routes');
+      document.getElementById('btn-add-route')?.click();
+    });
   }
+
+  const btnOpenAddDriver = document.getElementById('btn-open-add-driver');
+  if (btnOpenAddDriver) {
+    btnOpenAddDriver.addEventListener('click', () => {
+      openUserDialog('DRIVER');
+    });
+  }
+
+  const driversSearchInput = document.getElementById('drivers-search-input');
+  if (driversSearchInput) {
+    driversSearchInput.addEventListener('input', () => renderDriversTable());
+  }
+
+  // Botón Refrescar POS
+  const btnRefreshPos = document.getElementById('btn-refresh-pos');
+  if (btnRefreshPos) {
+    btnRefreshPos.addEventListener('click', async () => {
+      await loadPosData();
+      showToast('Datos POS y transacciones actualizados.');
+    });
+  }
+
+  // Botones de Modales POS y Usuarios
+  const btnOpenAddPos = document.getElementById('btn-open-add-pos');
+  if (btnOpenAddPos) btnOpenAddPos.addEventListener('click', () => openPosDialog());
+
+  const btnOpenAddUser = document.getElementById('btn-open-add-user');
+  if (btnOpenAddUser) btnOpenAddUser.addEventListener('click', () => openUserDialog());
 
   // Botón Nuevo Paradero
   document.getElementById('btn-add-stop').addEventListener('click', () => {
@@ -3203,4 +3311,931 @@ function getCategoryLabel(cat) {
     default: return 'Paradero Oficial';
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+// MÓDULO 3: GESTIÓN DE POS, RECAUDACIÓN Y ABORDAJES EN VIVO
+// ═══════════════════════════════════════════════════════════════════════
+
+async function loadPosData() {
+  try {
+    const [resPos, resTx] = await Promise.all([
+      fetch('/api/v1/admin/pos-terminals'),
+      fetch('/api/v1/admin/transactions')
+    ]);
+    if (resPos.ok) {
+      state.posTerminals = await resPos.json();
+    }
+    if (resTx.ok) {
+      state.transactions = await resTx.json();
+    }
+  } catch (err) {
+    console.warn('⚠️ [POS Admin] Modo local sin backend activo:', err);
+  }
+
+  const countBadge = document.getElementById('pos-terminals-count');
+  if (countBadge) {
+    countBadge.textContent = `${state.posTerminals.length} terminales`;
+  }
+  const tabBadgePos = document.getElementById('tab-badge-pos');
+  if (tabBadgePos) {
+    tabBadgePos.textContent = `${state.posTerminals.length} POS`;
+  }
+
+  if (state.activeModule === 'pos') {
+    renderPosTerminals();
+    renderTransactionsTable();
+    updatePosKPIs();
+  }
+}
+
+function updatePosKPIs() {
+  const kpiGross = document.getElementById('pos-kpi-gross');
+  const kpiNet = document.getElementById('pos-kpi-net');
+  const kpiComm = document.getElementById('pos-kpi-comm');
+  const kpiTrips = document.getElementById('pos-kpi-trips');
+  const kpiTripsSub = document.getElementById('pos-kpi-trips-sub');
+
+  let totalGross = 0;
+  let totalNet = 0;
+  let totalComm = 0;
+  let totalTrips = 0;
+  let studentTrips = 0;
+  let conadisTrips = 0;
+  let adultTrips = 0;
+
+  state.transactions.forEach(tx => {
+    const amount = Number(tx.amount_pen) || 0;
+    const comm = Number(tx.commission_pen) || 0;
+    const net = Number(tx.net_pen) || (amount - comm);
+    const comps = Number(tx.companions_count) || 0;
+    const count = 1 + comps;
+
+    totalGross += amount;
+    totalComm += comm;
+    totalNet += net;
+    totalTrips += count;
+
+    if (tx.user_role === 'STUDENT' || (tx.fare_label && tx.fare_label.includes('Universitaria'))) {
+      studentTrips += 1;
+      if (comps > 0) adultTrips += comps;
+    } else if (tx.user_role === 'CONADIS' || (tx.fare_label && tx.fare_label.includes('CONADIS'))) {
+      conadisTrips += 1;
+    } else {
+      adultTrips += count;
+    }
+  });
+
+  if (kpiGross) kpiGross.textContent = `S/. ${totalGross.toFixed(2)}`;
+  if (kpiNet) kpiNet.textContent = `S/. ${totalNet.toFixed(2)}`;
+  if (kpiComm) kpiComm.textContent = `S/. ${totalComm.toFixed(2)}`;
+  if (kpiTrips) kpiTrips.textContent = `${totalTrips}`;
+  if (kpiTripsSub) {
+    kpiTripsSub.textContent = `Adulto: ${adultTrips} · Univ: ${studentTrips} · Conadis: ${conadisTrips}`;
+  }
+}
+
+function renderPosTerminals() {
+  const container = document.getElementById('pos-terminals-grid');
+  if (!container) return;
+
+  if (state.posTerminals.length === 0) {
+    container.innerHTML = `<div class="empty-state">No hay terminales POS registrados. Haz clic en "+ Vincular Nuevo POS / Chofer" para agregar uno.</div>`;
+    return;
+  }
+
+  container.innerHTML = state.posTerminals.map(pos => {
+    const isOnline = pos.status === 'ONLINE';
+    return `
+      <div class="pos-terminal-card" data-posid="${escapeHtml(pos.pos_id)}">
+        <div class="pos-card-head">
+          <div>
+            <div class="pos-card-title">${escapeHtml(pos.pos_id)}</div>
+            <div class="pos-card-unit">${escapeHtml(pos.unit_code)} • Placa ${escapeHtml(pos.plate)}</div>
+          </div>
+          <span class="pos-status-pill ${isOnline ? 'online' : 'offline'}">
+            <span class="presence-dot"></span> ${isOnline ? 'EN LÍNEA' : 'OFFLINE'}
+          </span>
+        </div>
+
+        <div class="pos-card-info-grid">
+          <div class="pos-info-item">
+            <span class="lbl">Ruta Asignada</span>
+            <span class="val" style="color: #38BDF8;">${escapeHtml(pos.route_code)}</span>
+          </div>
+          <div class="pos-info-item">
+            <span class="lbl">PIN de Inicio</span>
+            <span class="val pos-card-pin">${escapeHtml(pos.pairing_code || '1408')}</span>
+          </div>
+          <div class="pos-info-item" style="grid-column: span 2;">
+            <span class="lbl">Chofer Titular</span>
+            <span class="val" style="color: #F8FAFC;">${escapeHtml(pos.driver_name)}</span>
+          </div>
+          <div class="pos-info-item" style="grid-column: span 2;">
+            <span class="lbl">Hardware Validador</span>
+            <span class="val" style="font-size: 0.72rem; color: #94A3B8;">${escapeHtml(pos.device_model || 'Tablet Android')}</span>
+          </div>
+        </div>
+
+        <div class="pos-card-stats">
+          <div>
+            <span style="color: #94A3B8; font-size: 0.72rem;">Turno hoy:</span>
+            <strong style="color: #34D399; margin-left: 4px;">S/. ${(Number(pos.today_gross_pen) || 0).toFixed(2)}</strong>
+          </div>
+          <div style="font-size: 0.72rem; color: #CBD5E1;">
+            ${pos.today_trips_count || 0} viajes (App: ${pos.today_app_trips || 0} · Yape: ${pos.today_yape_trips || 0})
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderTransactionsTable() {
+  const tbody = document.getElementById('transactions-table-body');
+  if (!tbody) return;
+
+  const routeFilter = state.posFilterRoute;
+  const methodFilter = state.posFilterMethod;
+  const search = state.posSearchText.toLowerCase().trim();
+
+  const filtered = state.transactions.filter(tx => {
+    if (routeFilter !== 'all' && tx.route_code !== routeFilter) return false;
+    if (methodFilter !== 'all') {
+      if (methodFilter === 'APP_BUS_CONECTADO' && tx.payment_method !== 'APP_BUS_CONECTADO' && tx.payment_method !== 'APP_PUNTOS') return false;
+      if (methodFilter === 'YAPE_EMPRESA' && tx.payment_method !== 'YAPE_EMPRESA') return false;
+      if (methodFilter === 'NFC' && tx.payment_method !== 'NFC') return false;
+      if (methodFilter === 'CONADIS' && tx.payment_method !== 'CONADIS') return false;
+    }
+    if (search) {
+      const matchName = (tx.passenger_name || '').toLowerCase().includes(search);
+      const matchCarnet = (tx.carnet_code || '').toLowerCase().includes(search);
+      const matchUnit = (tx.unit_code || '').toLowerCase().includes(search);
+      const matchPlate = (tx.plate || '').toLowerCase().includes(search);
+      if (!matchName && !matchCarnet && !matchUnit && !matchPlate) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; padding: 24px; color: var(--text-muted);">No se encontraron transacciones con los filtros actuales.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(tx => {
+    const timeStr = tx.timestamp ? new Date(tx.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '--:--';
+    const amount = Number(tx.amount_pen) || 0;
+    const comm = Number(tx.commission_pen) || 0;
+    const net = Number(tx.net_pen) || (amount - comm);
+
+    let methodBadge = '<span class="badge-method badge-method-app">📱 App Bus Conectado</span>';
+    if (tx.payment_method === 'YAPE_EMPRESA') {
+      methodBadge = '<span class="badge-method badge-method-yape">🟣 Yape Empresas BCP</span>';
+    } else if (tx.payment_method === 'NFC') {
+      methodBadge = '<span class="badge-method badge-method-nfc">💳 Contactless NFC</span>';
+    } else if (tx.payment_method === 'CONADIS') {
+      methodBadge = '<span class="badge-method badge-method-conadis">♿ Pase Libre CONADIS</span>';
+    }
+
+    let passengerLabel = escapeHtml(tx.passenger_name || 'Pasajero General');
+    if (tx.carnet_code) {
+      passengerLabel += ` <span style="font-size: 0.72rem; color: #A5B4FC; font-family: var(--font-mono);">(${escapeHtml(tx.carnet_code)})</span>`;
+    }
+
+    return `
+      <tr>
+        <td style="font-family: var(--font-mono); font-size: 0.78rem; color: #94A3B8;">${timeStr}</td>
+        <td>
+          <strong style="color: #F8FAFC;">${escapeHtml(tx.unit_code)}</strong>
+          <span style="font-size: 0.72rem; color: #94A3B8; margin-left: 4px;">(${escapeHtml(tx.plate)})</span>
+        </td>
+        <td><span style="color: #38BDF8; font-weight: 600;">${escapeHtml(tx.route_code)}</span></td>
+        <td>${passengerLabel}</td>
+        <td>${methodBadge}</td>
+        <td><span style="font-size: 0.78rem; color: #CBD5E1;">${escapeHtml(tx.fare_label || 'Tarifa Plana')}</span></td>
+        <td class="text-right" style="font-family: var(--font-mono); font-weight: 700; color: #F8FAFC;">S/. ${amount.toFixed(2)}</td>
+        <td class="text-right" style="font-family: var(--font-mono); font-size: 0.78rem; color: #F59E0B;">${comm > 0 ? `-S/. ${comm.toFixed(2)}` : 'S/. 0.00'}</td>
+        <td class="text-right" style="font-family: var(--font-mono); font-weight: 800; color: #34D399;">S/. ${net.toFixed(2)}</td>
+        <td><span class="pos-status-pill online">VALIDADO</span></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MÓDULO 4: DIRECTORIO DE USUARIOS, CHOFERES Y BENEFICIARIOS
+// ═══════════════════════════════════════════════════════════════════════
+
+async function loadUsersData() {
+  try {
+    const [res, sessRes, carnetRes] = await Promise.all([
+      fetch('/api/v1/admin/users'),
+      fetch('/api/v1/admin/drivers/sessions').catch(() => null),
+      fetch('/api/v1/admin/carnets').catch(() => null)
+    ]);
+    if (res.ok) {
+      state.users = await res.json();
+    }
+    if (sessRes && sessRes.ok) {
+      const sData = await sessRes.json();
+      state.driverSessions = sData.sessions || {};
+      state.disabledDrivers = sData.disabled || [];
+      state.unitOccupancy = sData.occupancy || {};
+    }
+    if (carnetRes && carnetRes.ok) {
+      state.carnetRequests = await carnetRes.json();
+    }
+  } catch (err) {
+    console.warn('⚠️ [Users Admin] Modo local sin backend activo:', err);
+  }
+  renderSuneduCarnets();
+
+  // Actualizar contadores separados: Choferes vs Clientes
+  const drivers = state.users.filter(u => u.role === 'DRIVER');
+  const clients = state.users.filter(u => u.role !== 'DRIVER');
+
+  const countClients = clients.length;
+  const countDriver = drivers.length;
+  const countStudent = clients.filter(u => u.role === 'STUDENT').length;
+  const countConadis = clients.filter(u => u.role === 'CONADIS').length;
+  const countPassenger = clients.filter(u => u.role === 'PASSENGER').length;
+  const countAdmin = clients.filter(u => u.role === 'ADMIN').length;
+
+  const setCnt = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  setCnt('user-count-all', countClients);
+  setCnt('user-count-student', countStudent);
+  setCnt('user-count-conadis', countConadis);
+  setCnt('user-count-passenger', countPassenger);
+  setCnt('user-count-admin', countAdmin);
+  setCnt('driver-count-total', countDriver);
+  setCnt('driver-count-pos', drivers.filter(d => (state.posTerminals || []).some(p => p.driver_dni === d.dni || p.unit_code === d.unit_code)).length || countDriver);
+
+  const tabBadgeDrivers = document.getElementById('tab-badge-drivers');
+  if (tabBadgeDrivers) tabBadgeDrivers.textContent = `${countDriver}`;
+  const tabBadgeClients = document.getElementById('tab-badge-clients');
+  if (tabBadgeClients) tabBadgeClients.textContent = `${countClients}`;
+
+  if (state.activeModule === 'drivers') {
+    renderDriversTable();
+  } else if (state.activeModule === 'clients') {
+    renderUsersTable();
+  }
+}
+
+function renderDriversTable() {
+  const tbody = document.getElementById('drivers-table-body');
+  if (!tbody) return;
+
+  const searchEl = document.getElementById('drivers-search-input');
+  const search = (searchEl ? searchEl.value : '').toLowerCase().trim();
+
+  const drivers = state.users.filter(u => {
+    if (u.role !== 'DRIVER') return false;
+    if (search) {
+      const hay = `${u.name || ''} ${u.dni || ''} ${u.brevete || ''} ${u.unit_code || ''} ${u.plate || ''} ${u.route_code || ''}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  if (drivers.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">No hay choferes registrados. Usa "+ Registrar Chofer en Ruta" para asignar uno.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = drivers.map(u => {
+    const linkedPos = (state.posTerminals || []).find(p => p.driver_dni === u.dni || p.unit_code === u.unit_code);
+    const posCode = linkedPos ? linkedPos.terminal_id : (u.pos_terminal_id || 'POS-TACNA');
+    const pinCode = linkedPos ? linkedPos.pin : (u.pin || '1408');
+    const sess = (state.driverSessions || {})[u.dni] || {};
+    const isDisabled = (state.disabledDrivers || []).includes(u.dni);
+    const isOnline = !isDisabled && Boolean(sess.active);
+    const occ = (state.unitOccupancy || {})[u.unit_code || 'UNI-1408'] ?? 0;
+
+    const statusPill = isDisabled
+      ? '<span class="pos-status-pill" style="background:rgba(239,68,68,0.18);color:#FCA5A5;border-color:rgba(239,68,68,0.4);">DESHABILITADO</span>'
+      : (isOnline
+        ? '<span class="pos-status-pill online">EN LÍNEA</span>'
+        : '<span class="pos-status-pill" style="background:rgba(148,163,184,0.15);color:#94A3B8;border-color:rgba(148,163,184,0.3);">DESCONECTADO</span>');
+
+    return `
+      <tr>
+        <td>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 34px; height: 34px; border-radius: 50%; background: rgba(56,189,248,0.16); border: 1px solid rgba(56,189,248,0.4); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.78rem; color: #38BDF8;">
+              🚌
+            </div>
+            <div>
+              <strong style="color: #F8FAFC;">${escapeHtml(u.name)}</strong>
+              <div style="font-size: 0.74rem; color: #94A3B8;">${escapeHtml(u.phone || 'Sin teléfono')}</div>
+            </div>
+          </div>
+        </td>
+        <td>
+          <div style="font-family: var(--font-mono); font-size: 0.8rem; color: #CBD5E1;">DNI: <strong>${escapeHtml(u.dni)}</strong></div>
+          <div style="font-size: 0.72rem; color: #94A3B8;">Brevete: ${escapeHtml(u.brevete || 'N/A')} (${escapeHtml(u.brevete_category || 'A-IIIa')})</div>
+        </td>
+        <td>
+          <span class="badge badge-route" style="font-size:0.78rem;">${escapeHtml(u.route_code || 'Ruta 14')}</span>
+        </td>
+        <td>
+          <strong style="color: #F8FAFC;">${escapeHtml(u.unit_code || 'UNI-1408')}</strong>
+          <div style="font-size: 0.74rem; color: #CBD5E1; font-family: var(--font-mono);">Placa: ${escapeHtml(u.plate || 'Z4B-812')} · Aforo: <strong style="color:#34D399;">${occ}/45</strong></div>
+        </td>
+        <td>
+          <div style="font-size: 0.76rem; color: #34D399; font-family: var(--font-mono); font-weight: 700;">${escapeHtml(posCode)}</div>
+          <div style="font-size: 0.72rem; color: #94A3B8;">PIN Enlace: <strong style="color:#FBBF24;">${escapeHtml(pinCode)}</strong></div>
+        </td>
+        <td>${statusPill}</td>
+        <td>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openDriverDetailModal('${escapeHtml(u.dni)}')">
+              Ver Ficha
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="controlDriverSession('${escapeHtml(u.dni)}', 'force_logout')" title="Cerrar sesión remota en Cabina y POS">
+              🔒 Cerrar Sesión
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="controlDriverSession('${escapeHtml(u.dni)}', '${isDisabled ? 'enable' : 'disable'}')">
+              ${isDisabled ? '⚡ Habilitar' : '⛔ Deshabilitar'}
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function controlDriverSession(dni, action) {
+  try {
+    const res = await fetch('/api/v1/admin/drivers/control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dni, action })
+    });
+    if (res.ok) {
+      await loadUsersData();
+    }
+  } catch (err) {
+    console.error('Error controlando sesión del chofer:', err);
+  }
+}
+
+function renderSuneduCarnets() {
+  const container = document.getElementById('sunedu-carnets-list');
+  const badge = document.getElementById('sunedu-pending-badge');
+  if (!container) return;
+  const reqs = state.carnetRequests || [];
+  const pendingCount = reqs.filter(r => r.status === 'PENDING_ADMIN').length;
+  if (badge) badge.textContent = `${pendingCount} pendiente${pendingCount === 1 ? '' : 's'}`;
+
+  if (reqs.length === 0) {
+    container.innerHTML = `<p style="color: var(--text-muted); font-size:0.82rem; margin:0;">No hay solicitudes de carnet SUNEDU registradas.</p>`;
+    return;
+  }
+
+  container.innerHTML = reqs.map(r => {
+    const isPending = r.status === 'PENDING_ADMIN';
+    const isApproved = r.status === 'APPROVED';
+    const statusBadge = isApproved
+      ? '<span class="pos-status-pill online">APROBADO</span>'
+      : (isPending
+        ? '<span class="pos-status-pill" style="background:rgba(245,158,11,0.18);color:#FCD34D;border-color:rgba(245,158,11,0.4);">PENDIENTE</span>'
+        : '<span class="pos-status-pill" style="background:rgba(239,68,68,0.18);color:#FCA5A5;border-color:rgba(239,68,68,0.4);">RECHAZADO</span>');
+
+    const imgHtml = r.front_photo_base64
+      ? `<img src="data:image/jpeg;base64,${escapeHtml(r.front_photo_base64)}" alt="Carnet Frontal" style="width:100%; max-height:140px; object-fit:cover; border-radius:10px; border:1px solid rgba(255,255,255,0.12); margin-bottom:8px;">`
+      : '';
+
+    return `
+      <div style="background:rgba(15,23,42,0.85); border:1px solid rgba(99,102,241,0.28); border-radius:14px; padding:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong style="color:#F8FAFC; font-size:0.9rem;">${escapeHtml(r.passenger_name || 'Estudiante')}</strong>
+          ${statusBadge}
+        </div>
+        ${imgHtml}
+        <div style="font-size:0.78rem; color:#CBD5E1; line-height:1.5; margin-bottom:8px;">
+          <div>DNI: <strong style="font-family:var(--font-mono); color:#38BDF8;">${escapeHtml(r.dni || '')}</strong> · QR: <span style="color:#34D399;">Validado ✓</span></div>
+          <div>Universidad: <strong>${escapeHtml(r.university || '')}</strong></div>
+          <div>Código: <span style="font-family:var(--font-mono);">${escapeHtml(r.carnet_code || '')}</span></div>
+          <div style="margin-top:4px;">Caducidad: <input type="date" id="carnet-exp-${escapeHtml(r.id)}" value="${escapeHtml(r.expiry_date || '2026-12-31')}" style="background:#0F172A; color:#F8FAFC; border:1px solid #334155; border-radius:6px; padding:2px 6px; font-size:0.76rem;"></div>
+        </div>
+        ${isPending ? `
+          <div style="display:flex; gap:8px;">
+            <button type="button" class="btn btn-primary btn-sm" style="flex:1;" onclick="reviewSuneduCarnet('${escapeHtml(r.id)}', 'approve')">✓ Aprobar Carnet</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="reviewSuneduCarnet('${escapeHtml(r.id)}', 'reject')">✕ Rechazar</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+async function reviewSuneduCarnet(requestId, action) {
+  const expEl = document.getElementById(`carnet-exp-${requestId}`);
+  const expiry_date = expEl ? expEl.value : '2026-12-31';
+  try {
+    const res = await fetch('/api/v1/admin/carnets/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_id: requestId, action, expiry_date })
+    });
+    if (res.ok) {
+      await loadUsersData();
+    }
+  } catch (err) {
+    console.error('Error revisando carnet SUNEDU:', err);
+  }
+}
+
+function renderUsersTable() {
+  const tbody = document.getElementById('users-table-body');
+  if (!tbody) return;
+
+  const roleFilter = state.userFilterRole;
+  const search = state.userSearchText.toLowerCase().trim();
+
+  const filtered = state.users.filter(u => {
+    if (u.role === 'DRIVER') return false; // Choferes tienen su propio panel
+    if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+    if (search) {
+      const matchName = (u.name || '').toLowerCase().includes(search);
+      const matchDni = (u.dni || '').toLowerCase().includes(search);
+      const matchCarnet = (u.carnet_code || '').toLowerCase().includes(search);
+      if (!matchName && !matchDni && !matchCarnet) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 24px; color: var(--text-muted);">No se encontraron usuarios registrados con el filtro actual.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(u => {
+    let roleBadge = '';
+    let opsDetail = '<span style="color: var(--text-muted);">-</span>';
+    let balanceOrCarnet = '';
+
+    if (u.role === 'DRIVER') {
+      roleBadge = '<span class="badge-role badge-driver">🚌 Chofer Profesional</span>';
+      opsDetail = `
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <strong style="color: #38BDF8;">${escapeHtml(u.route_code || 'Ruta 14')}</strong>
+          <span style="font-size: 0.74rem; color: #CBD5E1;">Unidad: <strong>${escapeHtml(u.unit_code || 'UNI-1408')}</strong> • Placa: ${escapeHtml(u.plate || 'Z4B-812')}</span>
+          <span style="font-size: 0.7rem; color: #94A3B8; font-family: var(--font-mono);">Brevete: ${escapeHtml(u.brevete || '')} (${escapeHtml(u.brevete_category || 'A-IIIa')})</span>
+        </div>
+      `;
+      balanceOrCarnet = `<span style="font-size: 0.74rem; color: #34D399;">Turno habilitado</span>`;
+    } else if (u.role === 'STUDENT') {
+      roleBadge = '<span class="badge-role badge-student">🎓 Universitario SUNEDU</span>';
+      opsDetail = `
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 0.78rem; color: #CBD5E1;">${escapeHtml(u.university || 'UNJBG Tacna')}</span>
+          <span style="font-size: 0.72rem; color: #A5B4FC; font-family: var(--font-mono);">Carnet: ${escapeHtml(u.carnet_code || '')}</span>
+        </div>
+      `;
+      balanceOrCarnet = `
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <strong style="color: #A5B4FC; font-family: var(--font-mono);">${u.points_balance || 0} pts</strong>
+          <span style="font-size: 0.7rem; color: #94A3B8;">Vence: ${escapeHtml(u.carnet_expiry || '2026-12-31')}</span>
+        </div>
+      `;
+    } else if (u.role === 'CONADIS') {
+      roleBadge = '<span class="badge-role badge-conadis">♿ Pase Libre CONADIS</span>';
+      opsDetail = `
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 0.78rem; color: #34D399; font-weight: 600;">Ley 30412 (Pase 100% Libre)</span>
+          <span style="font-size: 0.72rem; color: #94A3B8; font-family: var(--font-mono);">${escapeHtml(u.conadis_code || '')}</span>
+        </div>
+      `;
+      balanceOrCarnet = `<span style="color: #34D399; font-weight: 700;">Exento (S/. 0.00)</span>`;
+    } else if (u.role === 'ADMIN') {
+      roleBadge = '<span class="badge-role badge-admin">🛡️ Administrador General</span>';
+      opsDetail = `<span style="color: #38BDF8; font-weight: 600;">Control Maestro Tacna</span>`;
+      balanceOrCarnet = `<span style="color: #94A3B8; font-family: var(--font-mono);">${u.points_balance || 0} pts</span>`;
+    } else {
+      roleBadge = '<span class="badge-role badge-passenger">📱 Pasajero General</span>';
+      opsDetail = `<span style="color: #94A3B8;">Transporte Urbano</span>`;
+      balanceOrCarnet = `<strong style="color: #F8FAFC; font-family: var(--font-mono);">${u.points_balance || 0} pts</strong>`;
+    }
+
+    return `
+      <tr>
+        <td>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: #1E293B; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.75rem; color: #38BDF8;">
+              ${escapeHtml((u.name || 'U').substring(0, 2).toUpperCase())}
+            </div>
+            <div>
+              <strong style="color: #F8FAFC;">${escapeHtml(u.name)}</strong>
+              <div style="font-size: 0.74rem; color: #94A3B8;">${escapeHtml(u.phone || '')}</div>
+            </div>
+          </div>
+        </td>
+        <td style="font-family: var(--font-mono); font-size: 0.8rem; color: #CBD5E1;">${escapeHtml(u.dni)}</td>
+        <td>${roleBadge}</td>
+        <td>${opsDetail}</td>
+        <td>${balanceOrCarnet}</td>
+        <td><span class="pos-status-pill online">ACTIVO</span></td>
+        <td>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="showToast('Usuario ${escapeHtml(u.name)} verificado en padrón.');">
+            Ver Ficha
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function openUserDialog(defaultRole = 'STUDENT') {
+  const dialog = document.getElementById('user-dialog');
+  const form = document.getElementById('user-form');
+  if (!dialog || !form) return;
+
+  form.reset();
+  document.getElementById('user-field-id').value = '';
+  document.getElementById('user-field-points').value = '100';
+  document.getElementById('user-field-university').value = 'UNJBG Tacna';
+  document.getElementById('user-field-student-expiry').value = '2026-12-31';
+
+  const roleSelect = document.getElementById('user-field-role');
+  if (roleSelect && defaultRole) {
+    roleSelect.value = defaultRole;
+  }
+
+  // Sincronizar campos según rol inicial
+  handleUserRoleFieldsToggle(defaultRole || 'STUDENT');
+
+  dialog.showModal();
+}
+
+function handleUserRoleFieldsToggle(role) {
+  const driverBox = document.getElementById('user-role-fields-driver');
+  const studentBox = document.getElementById('user-role-fields-student');
+  const conadisBox = document.getElementById('user-role-fields-conadis');
+
+  if (driverBox) driverBox.classList.toggle('hidden', role !== 'DRIVER');
+  if (studentBox) studentBox.classList.toggle('hidden', role !== 'STUDENT');
+  if (conadisBox) conadisBox.classList.toggle('hidden', role !== 'CONADIS');
+}
+
+function openPosDialog() {
+  const dialog = document.getElementById('pos-dialog');
+  const form = document.getElementById('pos-form');
+  if (!dialog || !form) return;
+
+  form.reset();
+  const nextNum = (state.posTerminals.length + 1).toString().padStart(2, '0');
+  document.getElementById('pos-field-id').value = `POS-UNI-14${nextNum}`;
+  document.getElementById('pos-field-unit').value = `UNI-14${nextNum}`;
+  document.getElementById('pos-field-pairing-code').value = `14${nextNum}`;
+  document.getElementById('pos-field-device-model').value = 'Samsung Galaxy Tab S6 Lite (SM-P613)';
+
+  dialog.showModal();
+}
+
+function renderStatsCharts() {
+  const container = document.getElementById('hourly-bars-container');
+  if (!container) return;
+
+  // 17 franjas de 06:00 a 22:00
+  const hourlyData = [
+    { hour: '06:00', trips: 14, isPeak: false },
+    { hour: '07:00', trips: 68, isPeak: true },
+    { hour: '08:00', trips: 85, isPeak: true },
+    { hour: '09:00', trips: 36, isPeak: false },
+    { hour: '10:00', trips: 28, isPeak: false },
+    { hour: '11:00', trips: 34, isPeak: false },
+    { hour: '12:00', trips: 58, isPeak: false },
+    { hour: '13:00', trips: 92, isPeak: true },
+    { hour: '14:00', trips: 64, isPeak: true },
+    { hour: '15:00', trips: 32, isPeak: false },
+    { hour: '16:00', trips: 40, isPeak: false },
+    { hour: '17:00', trips: 55, isPeak: false },
+    { hour: '18:00', trips: 88, isPeak: true },
+    { hour: '19:00', trips: 95, isPeak: true },
+    { hour: '20:00', trips: 62, isPeak: false },
+    { hour: '21:00', trips: 30, isPeak: false },
+    { hour: '22:00', trips: 12, isPeak: false }
+  ];
+
+  const maxTrips = Math.max(...hourlyData.map(d => d.trips));
+
+  container.innerHTML = hourlyData.map(d => {
+    const heightPercent = Math.max(10, Math.round((d.trips / maxTrips) * 100));
+    return `
+      <div class="hourly-bar ${d.isPeak ? 'peak' : ''}" style="height: ${heightPercent}%;" title="${d.hour}: ${d.trips} abordajes"></div>
+    `;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LISTENERS DE FORMULARIOS Y FILTROS POS / USUARIOS
+// ═══════════════════════════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Filtros de Transacciones POS
+  const filterTxRoute = document.getElementById('filter-tx-route');
+  if (filterTxRoute) {
+    filterTxRoute.addEventListener('change', (e) => {
+      state.posFilterRoute = e.target.value;
+      renderTransactionsTable();
+    });
+  }
+
+  const filterTxMethod = document.getElementById('filter-tx-method');
+  if (filterTxMethod) {
+    filterTxMethod.addEventListener('change', (e) => {
+      state.posFilterMethod = e.target.value;
+      renderTransactionsTable();
+    });
+  }
+
+  const searchTxInput = document.getElementById('search-tx-input');
+  if (searchTxInput) {
+    searchTxInput.addEventListener('input', (e) => {
+      state.posSearchText = e.target.value;
+      renderTransactionsTable();
+    });
+  }
+
+  // Filtro de Chips de Usuarios por Rol
+  const roleChipsNav = document.getElementById('user-role-chips');
+  if (roleChipsNav) {
+    roleChipsNav.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-userfilter]');
+      if (!btn) return;
+      roleChipsNav.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.userFilterRole = btn.dataset.userfilter;
+      renderUsersTable();
+    });
+  }
+
+  const usersSearchInput = document.getElementById('users-search-input');
+  if (usersSearchInput) {
+    usersSearchInput.addEventListener('input', (e) => {
+      state.userSearchText = e.target.value;
+      renderUsersTable();
+    });
+  }
+
+  // Cambio dinámico de campos en Diálogo de Usuario
+  const userFieldRole = document.getElementById('user-field-role');
+  if (userFieldRole) {
+    userFieldRole.addEventListener('change', (e) => {
+      handleUserRoleFieldsToggle(e.target.value);
+    });
+  }
+
+  // Envío de Formulario Nuevo Usuario / Chofer
+  const userForm = document.getElementById('user-form');
+  if (userForm) {
+    userForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const role = document.getElementById('user-field-role').value;
+      const name = document.getElementById('user-field-name').value.trim();
+      const dni = document.getElementById('user-field-dni').value.trim();
+      const phone = document.getElementById('user-field-phone').value.trim();
+      const email = document.getElementById('user-field-email').value.trim();
+      const points = parseInt(document.getElementById('user-field-points').value) || 0;
+
+      const newUser = {
+        name,
+        dni,
+        phone,
+        role,
+        points_balance: points,
+        email: email || `${slugify(name)}@busconectado.pe`
+      };
+
+      if (role === 'DRIVER') {
+        newUser.route_code = document.getElementById('user-field-route').value;
+        newUser.unit_code = document.getElementById('user-field-unit').value.trim();
+        newUser.plate = document.getElementById('user-field-plate').value.trim().toUpperCase();
+        newUser.brevete = document.getElementById('user-field-brevete').value.trim().toUpperCase();
+      } else if (role === 'STUDENT') {
+        newUser.carnet_code = document.getElementById('user-field-student-code').value.trim();
+        newUser.university = document.getElementById('user-field-university').value.trim();
+        newUser.carnet_expiry = document.getElementById('user-field-student-expiry').value;
+      } else if (role === 'CONADIS') {
+        newUser.conadis_code = document.getElementById('user-field-conadis-code').value.trim();
+        newUser.is_exempt = true;
+      }
+
+      try {
+        const res = await fetch('/api/v1/admin/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newUser)
+        });
+        if (res.ok) {
+          const saved = await res.json();
+          showToast(`✓ Usuario ${saved.name} registrado con éxito.`);
+          document.getElementById('user-dialog').close();
+          await loadUsersData();
+        } else {
+          showToast('Error al registrar usuario en el servidor.');
+        }
+      } catch (err) {
+        showToast('Error de conexión al guardar usuario.');
+      }
+    });
+  }
+
+  // Cancelar Diálogo Usuario
+  const btnCancelUserDialog = document.getElementById('btn-cancel-user-dialog');
+  if (btnCancelUserDialog) {
+    btnCancelUserDialog.addEventListener('click', () => {
+      document.getElementById('user-dialog').close();
+    });
+  }
+  const userDialogCloseX = document.getElementById('user-dialog-close-x');
+  if (userDialogCloseX) {
+    userDialogCloseX.addEventListener('click', () => {
+      document.getElementById('user-dialog').close();
+    });
+  }
+
+  // Envío de Formulario Vincular POS
+  const posForm = document.getElementById('pos-form');
+  if (posForm) {
+    posForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const posId = document.getElementById('pos-field-id').value.trim();
+      const unitCode = document.getElementById('pos-field-unit').value.trim();
+      const plate = document.getElementById('pos-field-plate').value.trim().toUpperCase();
+      const routeCode = document.getElementById('pos-field-route').value;
+      const driverName = document.getElementById('pos-field-driver-name').value.trim();
+      const pairingCode = document.getElementById('pos-field-pairing-code').value.trim();
+      const deviceModel = document.getElementById('pos-field-device-model').value.trim();
+
+      const newPos = {
+        pos_id: posId,
+        unit_code: unitCode,
+        plate: plate,
+        route_code: routeCode,
+        driver_name: driverName,
+        pairing_code: pairingCode,
+        device_model: deviceModel
+      };
+
+      try {
+        const res = await fetch('/api/v1/admin/pos-terminals', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newPos)
+        });
+        if (res.ok) {
+          const saved = await res.json();
+          showToast(`✓ Terminal ${saved.pos_id} enlazado a unidad ${saved.unit_code} con PIN ${saved.pairing_code}.`);
+          document.getElementById('pos-dialog').close();
+          await loadPosData();
+        } else {
+          showToast('Error al vincular terminal POS en el servidor.');
+        }
+      } catch (err) {
+        showToast('Error de conexión al vincular POS.');
+      }
+    });
+  }
+
+  // Cancelar Diálogo POS
+  const btnCancelPosDialog = document.getElementById('btn-cancel-pos-dialog');
+  if (btnCancelPosDialog) {
+    btnCancelPosDialog.addEventListener('click', () => {
+      document.getElementById('pos-dialog').close();
+    });
+  }
+  const posDialogCloseX = document.getElementById('pos-dialog-close-x');
+  if (posDialogCloseX) {
+    posDialogCloseX.addEventListener('click', () => {
+      document.getElementById('pos-dialog').close();
+    });
+  }
+
+  startLiveBusesMapPolling();
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// TELEMETRÍA EN VIVO DE BUSES POS SOBRE EL MAPA + FICHA DETALLADA CHOFER
+// ═══════════════════════════════════════════════════════════════════════
+let liveBusesLayer = null;
+
+function startLiveBusesMapPolling() {
+  const poll = async () => {
+    if (!state.map) return;
+    try {
+      const res = await fetch('/api/v1/transit/buses/live');
+      if (!res.ok) return;
+      const buses = await res.json();
+      if (!liveBusesLayer) {
+        liveBusesLayer = L.layerGroup().addTo(state.map);
+      }
+      liveBusesLayer.clearLayers();
+      buses.forEach(bus => {
+        if (typeof bus.latitude !== 'number' || typeof bus.longitude !== 'number') return;
+        const markerHtml = `
+          <div style="display:flex;align-items:center;gap:6px;background:#0F172A;color:#F8FAFC;border:2px solid #38BDF8;border-radius:999px;padding:4px 10px;box-shadow:0 4px 14px rgba(56,189,248,0.45);font-weight:800;font-size:11px;white-space:nowrap;">
+            <span>🚌</span>
+            <span>${escapeHtml(bus.unit_code || 'UNI')}</span>
+            <span style="color:#34D399;">${Math.round(bus.speed_kmh || 25)} km/h</span>
+          </div>
+        `;
+        const icon = L.divIcon({
+          className: 'live-bus-div-icon',
+          html: markerHtml,
+          iconSize: [120, 30],
+          iconAnchor: [60, 15]
+        });
+        const marker = L.marker([bus.latitude, bus.longitude], { icon, zIndexOffset: 900 });
+        marker.bindPopup(`
+          <div style="font-family:system-ui;min-width:190px;">
+            <strong style="font-size:13px;">🚌 ${escapeHtml(bus.unit_code || 'Unidad')} (${escapeHtml(bus.plate || '')})</strong><br/>
+            <span style="color:#38BDF8;font-weight:700;">${escapeHtml(bus.route_code || 'Ruta 14')}</span><br/>
+            Velocidad: <strong>${Math.round(bus.speed_kmh || 25)} km/h</strong><br/>
+            Próx. paradero: <strong>${escapeHtml(bus.closest_stop_name || 'En ruta')}</strong> (${Math.max(1, Math.round((bus.eta_seconds || 120) / 60))} min)
+          </div>
+        `);
+        marker.addTo(liveBusesLayer);
+      });
+    } catch (_) {}
+  };
+  poll();
+  setInterval(poll, 3000);
+}
+
+async function openDriverDetailModal(dni) {
+  const driver = (state.users || []).find(u => u.dni === dni && u.role === 'DRIVER');
+  if (!driver) {
+    showToast('No se encontró información del chofer.');
+    return;
+  }
+
+  let txs = state.posTransactions || [];
+  try {
+    const res = await fetch('/api/v1/admin/pos/transactions');
+    if (res.ok) txs = await res.json();
+  } catch (_) {}
+
+  const unitCode = (driver.unit_code || '').toUpperCase();
+  const driverTxs = txs.filter(t => !unitCode || (t.unit_code || '').toUpperCase() === unitCode);
+  const appCount = driverTxs.filter(t => t.payment_method === 'APP_BUS_CONECTADO').length;
+  const yapeCount = driverTxs.filter(t => t.payment_method === 'YAPE_EMPRESA').length;
+  const conadisCount = driverTxs.filter(t => (t.fare_label || '').toUpperCase().includes('CONADIS') || t.payment_method === 'CONADIS').length;
+  const totalNet = driverTxs.reduce((acc, t) => acc + Number(t.net_pen || t.amount_pen || 0), 0);
+
+  const linkedPos = (state.posTerminals || []).find(p => p.driver_dni === driver.dni || p.unit_code === driver.unit_code);
+  const posId = linkedPos?.pos_id || linkedPos?.terminal_id || driver.pos_terminal_id || 'POS-UNI-1408';
+  const posPin = linkedPos?.pairing_code || linkedPos?.pin || driver.pin || '1408';
+
+  let dialog = document.getElementById('driver-detail-dialog');
+  if (!dialog) {
+    dialog = document.createElement('dialog');
+    dialog.id = 'driver-detail-dialog';
+    dialog.className = 'admin-dialog';
+    dialog.style.maxWidth = '720px';
+    dialog.style.width = '92vw';
+    document.body.appendChild(dialog);
+  }
+
+  const rowsHtml = driverTxs.slice(0, 20).map(t => `
+    <tr>
+      <td style="font-family:var(--font-mono);font-size:0.75rem;">${new Date(t.timestamp).toLocaleTimeString('es-PE')}</td>
+      <td><strong>${escapeHtml(t.passenger_name || 'Pasajero')}</strong></td>
+      <td>${escapeHtml(t.fare_label || 'Tarifa General')}</td>
+      <td>${escapeHtml(t.method_label || t.payment_method || 'App')}</td>
+      <td style="font-family:var(--font-mono);font-weight:700;color:#34D399;">S/. ${Number(t.amount_pen || 0).toFixed(2)}</td>
+    </tr>
+  `).join('') || `<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-muted);">Sin abordajes registrados aún para esta unidad.</td></tr>`;
+
+  dialog.innerHTML = `
+    <div style="padding:20px;background:#0F172A;color:#F8FAFC;border-radius:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+        <div>
+          <h3 style="margin:0;font-size:1.15rem;">🚌 Ficha del Chofer: ${escapeHtml(driver.name)}</h3>
+          <p style="margin:4px 0 0;color:#94A3B8;font-size:0.82rem;">DNI: ${escapeHtml(driver.dni)} • Brevete: ${escapeHtml(driver.brevete || 'N/A')} (${escapeHtml(driver.brevete_category || 'A-IIIa')}) • Tel: ${escapeHtml(driver.phone || '-')}</p>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('driver-detail-dialog').close()">Cerrar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+        <div class="stat-card"><span class="stat-number" style="font-size:1rem;">${escapeHtml(driver.unit_code || 'UNI-1408')}</span><span class="stat-label">${escapeHtml(driver.plate || 'Z4B-812')} · ${escapeHtml(driver.route_code || 'Ruta 14')}</span></div>
+        <div class="stat-card"><span class="stat-number" style="font-size:1rem;color:#38BDF8;">${appCount + yapeCount}</span><span class="stat-label">App (${appCount}) / Yape (${yapeCount})</span></div>
+        <div class="stat-card"><span class="stat-number" style="font-size:1rem;color:#FBBF24;">${conadisCount}</span><span class="stat-label">Pases CONADIS</span></div>
+        <div class="stat-card"><span class="stat-number" style="font-size:1rem;color:#34D399;">S/. ${totalNet.toFixed(2)}</span><span class="stat-label">POS ${escapeHtml(posId)} (PIN ${escapeHtml(posPin)})</span></div>
+      </div>
+      <h4 style="margin:0 0 8px;font-size:0.9rem;color:#CBD5E1;">Historial de Abordajes (App QR, Billetera y CONADIS)</h4>
+      <div class="table-responsive" style="max-height:280px;overflow-y:auto;">
+        <table class="admin-data-table">
+          <thead><tr><th>Hora</th><th>Pasajero</th><th>Tarifa</th><th>Medio</th><th>Monto</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  dialog.showModal();
+}
+
 

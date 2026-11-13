@@ -41,35 +41,50 @@
           </div>
         </div>
 
-        <!-- PERFIL DE ADMINISTRADOR Y PRESENCIA EN VIVO (ESTILO GOOGLE DOCS) -->
+        <!-- PERFIL DE ADMINISTRADOR OFICIAL AUTENTICADO -->
         <div class="collab-profile-card" id="collab-profile-card">
           <div class="collab-user-info">
-            <span class="collab-avatar" id="collab-my-avatar">A1</span>
+            <span class="collab-avatar admin-avatar" id="collab-my-avatar">AQ</span>
             <div class="collab-text">
-              <span class="collab-name" id="collab-my-name">Admin 1 (Aron)</span>
-              <span class="collab-sub" id="collab-my-sub">En línea • Tiempo Real</span>
+              <span class="collab-name" id="collab-my-name">Aron Quispe</span>
+              <span class="collab-sub" id="collab-my-sub">Administrador General • DNI 70881234</span>
             </div>
-            <button type="button" class="btn-switch-user" id="btn-switch-user" title="Cambiar perfil entre Admin 1 y Admin 2 para probar la colaboración en tiempo real">
-              ⇄ Cambiar Perfil
-            </button>
+            <span class="admin-badge-verified" title="Administrador Oficial del Sistema">
+              ✓ Super Admin
+            </span>
           </div>
           <div class="collab-presence-strip">
-            <span class="collab-presence-label">Equipo en vivo:</span>
+            <span class="collab-presence-label">Central Operativa:</span>
             <div class="collab-presence-pills" id="collab-presence-pills">
-              <span class="presence-pill"><span class="presence-dot"></span> Admin 1 (Tú)</span>
+              <span class="presence-pill live"><span class="presence-dot"></span> Servidor en Línea (34.30.86.129)</span>
             </div>
           </div>
         </div>
 
-        <!-- CONMUTADOR PRINCIPAL DE MÓDULOS: PARADEROS VS RUTAS Y TRAZADOS -->
+        <!-- CONMUTADOR PRINCIPAL DE MÓDULOS -->
         <div class="module-tabs" role="tablist" aria-label="Módulos del Administrador">
           <button type="button" class="module-tab active" id="tab-module-stops" data-module="stops" role="tab" aria-selected="true">
             <span>🚏 Paraderos</span>
             <span class="module-tab-badge" id="tab-badge-stops">34</span>
           </button>
           <button type="button" class="module-tab" id="tab-module-routes" data-module="routes" role="tab" aria-selected="false">
-            <span>🛣️ Rutas y Trazados</span>
+            <span>🛣️ Rutas</span>
             <span class="module-tab-badge" id="tab-badge-routes">5</span>
+          </button>
+          <button type="button" class="module-tab" id="tab-module-drivers" data-module="drivers" role="tab" aria-selected="false">
+            <span>🚌 Choferes &amp; Flota</span>
+            <span class="module-tab-badge" id="tab-badge-drivers">0</span>
+          </button>
+          <button type="button" class="module-tab" id="tab-module-clients" data-module="clients" role="tab" aria-selected="false">
+            <span>👥 Clientes / SUNEDU</span>
+            <span class="module-tab-badge" id="tab-badge-clients">0</span>
+          </button>
+          <button type="button" class="module-tab" id="tab-module-pos" data-module="pos" role="tab" aria-selected="false">
+            <span>💳 POS &amp; Caja</span>
+            <span class="module-tab-badge live-badge" id="tab-badge-pos">En vivo</span>
+          </button>
+          <button type="button" class="module-tab" id="tab-module-stats" data-module="stats" role="tab" aria-selected="false">
+            <span>📊 Métricas</span>
           </button>
         </div>
 
@@ -288,6 +303,332 @@
       <!-- Toast de Notificaciones -->
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </main>
+
+    <!-- ═════════════════════════════════════════════════════════════════
+         PANEL PRINCIPAL 1: POS & RECAUDACIÓN (MÓDULO 3)
+         ═════════════════════════════════════════════════════════════════ -->
+    <section class="admin-main-panel hidden" id="pos-admin-panel" aria-label="Panel POS y Recaudación en Vivo">
+      <div class="panel-inner">
+        <header class="panel-header">
+          <div>
+            <div class="panel-badge-live"><span class="presence-dot"></span> EN VIVO • CAJA CENTRALIZADA</div>
+            <h2 class="panel-title">💳 Gestión de POS, Recaudación &amp; Abordajes</h2>
+            <p class="panel-subtitle">Monitoreo en tiempo real de terminales POS por bus, cobros por App Bus Conectado, Billeteras Digitales (Yape Empresas), Tarjetas NFC y Pase Libre CONADIS (Ley 30412).</p>
+          </div>
+          <div class="panel-header-actions">
+            <button type="button" class="btn btn-secondary" id="btn-refresh-pos" title="Actualizar transacciones y terminales">
+              ↻ Actualizar
+            </button>
+            <button type="button" class="btn btn-primary" id="btn-open-add-pos">
+              + Vincular Nuevo POS / Chofer
+            </button>
+          </div>
+        </header>
+
+        <!-- Strip de KPIs Principales de Caja -->
+        <div class="panel-kpi-grid">
+          <div class="panel-kpi-card">
+            <span class="panel-kpi-label">Recaudación Bruta</span>
+            <span class="panel-kpi-value highlight-cyan" id="pos-kpi-gross">S/. 0.00</span>
+            <span class="panel-kpi-desc">Total acumulado en ruta hoy</span>
+          </div>
+          <div class="panel-kpi-card">
+            <span class="panel-kpi-label">Neto Acreditado a Buses</span>
+            <span class="panel-kpi-value highlight-green" id="pos-kpi-net">S/. 0.00</span>
+            <span class="panel-kpi-desc">Disponible para liquidación a choferes</span>
+          </div>
+          <div class="panel-kpi-card">
+            <span class="panel-kpi-label">Comisión Digital BCP Yape</span>
+            <span class="panel-kpi-value highlight-amber" id="pos-kpi-comm">S/. 0.00</span>
+            <span class="panel-kpi-desc">Tarifa plana 2.95% por cobro Yape QR</span>
+          </div>
+          <div class="panel-kpi-card">
+            <span class="panel-kpi-label">Pasajes Validados</span>
+            <span class="panel-kpi-value" id="pos-kpi-trips">0</span>
+            <span class="panel-kpi-desc" id="pos-kpi-trips-sub">General: 0 · Univ: 0 · Conadis: 0</span>
+          </div>
+        </div>
+
+        <!-- Terminales POS Enlazados a Buses y Choferes -->
+        <div class="panel-section-box">
+          <div class="section-box-header">
+            <div>
+              <h3 class="section-box-title">Terminales POS Activos por Unidad de Bus</h3>
+              <p class="section-box-desc">Estado de enlace de tablet/dispositivo validador, chofer asignado, PIN de inicio de sesión y recaudación del turno.</p>
+            </div>
+            <span class="badge-count" id="pos-terminals-count">2 terminales</span>
+          </div>
+          <div class="pos-terminals-grid" id="pos-terminals-grid">
+            <!-- Renderizado dinámico desde app.js -->
+          </div>
+        </div>
+
+        <!-- Libro Mayor de Abordajes y Transacciones -->
+        <div class="panel-section-box">
+          <div class="section-box-header">
+            <div>
+              <h3 class="section-box-title">Libro Mayor de Transacciones &amp; Abordajes en Ruta</h3>
+              <p class="section-box-desc">Registro auditable con usuario, método de pago, tarifa aplicada y comisiones bancarias.</p>
+            </div>
+            <div class="table-filters-toolbar">
+              <select id="filter-tx-route" class="select-filter" aria-label="Filtrar por ruta">
+                <option value="all">Todas las rutas</option>
+                <option value="Ruta 14">Ruta 14</option>
+                <option value="Ruta 10B">Ruta 10B</option>
+                <option value="Ruta 200">Ruta 200</option>
+              </select>
+              <select id="filter-tx-method" class="select-filter" aria-label="Filtrar por método de pago">
+                <option value="all">Todos los métodos</option>
+                <option value="APP_BUS_CONECTADO">App Bus Conectado (Puntos)</option>
+                <option value="YAPE_EMPRESA">Yape Empresas BCP</option>
+                <option value="NFC">Tarjeta Contactless NFC</option>
+                <option value="CONADIS">Pase Libre CONADIS</option>
+              </select>
+              <input type="search" id="search-tx-input" class="search-input-compact" placeholder="Buscar pasajero, carnet o unidad...">
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="admin-data-table" id="transactions-table">
+              <thead>
+                <tr>
+                  <th>Hora</th>
+                  <th>Unidad / Placa</th>
+                  <th>Ruta</th>
+                  <th>Pasajero / Beneficiario</th>
+                  <th>Método de Pago</th>
+                  <th>Tarifa Aplicada</th>
+                  <th class="text-right">Bruto</th>
+                  <th class="text-right">Comisión</th>
+                  <th class="text-right">Neto Bus</th>
+                  <th>Estado</th>
+                </tr>
+              </thead>
+              <tbody id="transactions-table-body">
+                <!-- Filas dinámicas desde app.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════════════════
+         PANEL PRINCIPAL 2A: CHOFERES, FLOTA Y ENLACE POS/RUTA
+         ═════════════════════════════════════════════════════════════════ -->
+    <section class="admin-main-panel hidden" id="drivers-admin-panel" aria-label="Gestión de Choferes y Flota">
+      <div class="panel-inner">
+        <header class="panel-header">
+          <div>
+            <div class="panel-badge-live">FLOTA OPERATIVA • TACNA</div>
+            <h2 class="panel-title">🚌 Choferes, Rutas Asignadas &amp; Enlace POS</h2>
+            <p class="panel-subtitle">Registra conductores, asígnalos a rutas existentes con su unidad y placa, y vincula sus credenciales (DNI + PIN) tanto para la App del Chofer como para el Terminal POS.</p>
+          </div>
+          <div class="panel-header-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" id="btn-goto-create-route">
+              🛣️ Ir a Crear Ruta
+            </button>
+            <button type="button" class="btn btn-primary" id="btn-open-add-driver">
+              + Registrar Chofer en Ruta
+            </button>
+          </div>
+        </header>
+
+        <!-- Barra de búsqueda de choferes -->
+        <div class="users-filter-bar">
+          <div class="driver-kpi-strip" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+            <span class="badge badge-official">Choferes activos: <strong id="driver-count-total">0</strong></span>
+            <span class="badge badge-route">Con POS enlazado: <strong id="driver-count-pos">0</strong></span>
+          </div>
+          <input type="search" id="drivers-search-input" class="search-input-compact" placeholder="Buscar chofer por nombre, DNI, brevete, placa o ruta...">
+        </div>
+
+        <!-- Tabla de Choferes y Flota -->
+        <div class="panel-section-box">
+          <div class="table-responsive">
+            <table class="admin-data-table" id="drivers-table">
+              <thead>
+                <tr>
+                  <th>Chofer</th>
+                  <th>DNI &amp; Brevete</th>
+                  <th>Ruta Asignada</th>
+                  <th>Unidad &amp; Placa</th>
+                  <th>POS &amp; App Chofer (PIN)</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="drivers-table-body">
+                <!-- Filas dinámicas desde app.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════════════════
+         PANEL PRINCIPAL 2B: CLIENTES, UNIVERSITARIOS SUNEDU Y CONADIS
+         ═════════════════════════════════════════════════════════════════ -->
+    <section class="admin-main-panel hidden" id="clients-admin-panel" aria-label="Directorio de Clientes y Beneficiarios">
+      <div class="panel-inner">
+        <header class="panel-header">
+          <div>
+            <div class="panel-badge-live">PADRÓN DE PASAJEROS • TACNA</div>
+            <h2 class="panel-title">👥 Clientes &amp; Universitarios SUNEDU</h2>
+            <p class="panel-subtitle">Administra pasajeros regulares, verificación de carnet universitario SUNEDU (tarifa S/. 0.70 / 7 pts con espera de 2 min) y administradores.</p>
+          </div>
+          <div class="panel-header-actions">
+            <button type="button" class="btn btn-primary" id="btn-open-add-user">
+              + Nuevo Cliente / Estudiante
+            </button>
+          </div>
+        </header>
+
+        <!-- Módulo de Verificación de Carnets Universitarios SUNEDU -->
+        <div class="panel-section-box" style="margin-bottom: 18px; border: 1px solid rgba(99, 102, 241, 0.35);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div>
+              <h3 style="margin:0; font-size:1rem; color:#A5B4FC;">🎓 Verificación de Carnets Universitarios (SUNEDU)</h3>
+              <p style="margin:2px 0 0; font-size:0.78rem; color:#94A3B8;">Revisa la foto frontal, el QR validado y DNI del estudiante para aprobar su tarifa universitaria y fecha de caducidad.</p>
+            </div>
+            <span class="badge-role badge-student" id="sunedu-pending-badge">0 pendientes</span>
+          </div>
+          <div id="sunedu-carnets-list" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px;">
+            <p style="color: var(--text-muted); font-size:0.82rem; margin:0;">No hay solicitudes de carnet SUNEDU pendientes.</p>
+          </div>
+        </div>
+
+        <!-- Barra de Filtros por Rol y Búsqueda -->
+        <div class="users-filter-bar">
+          <nav class="category-chips" id="user-role-chips" aria-label="Filtrar por tipo de cliente">
+            <button type="button" class="route-chip active" data-userfilter="all">Todos (<span id="user-count-all">0</span>)</button>
+            <button type="button" class="route-chip" data-userfilter="STUDENT">🎓 Universitarios SUNEDU (<span id="user-count-student">0</span>)</button>
+            <button type="button" class="route-chip" data-userfilter="PASSENGER">📱 Pasajeros (<span id="user-count-passenger">0</span>)</button>
+            <button type="button" class="route-chip" data-userfilter="ADMIN">🛡️ Admins (<span id="user-count-admin">0</span>)</button>
+          </nav>
+          <input type="search" id="users-search-input" class="search-input-compact" placeholder="Buscar cliente por nombre, DNI o carnet...">
+        </div>
+
+        <!-- Tabla de Clientes / Pasajeros -->
+        <div class="panel-section-box">
+          <div class="table-responsive">
+            <table class="admin-data-table" id="users-table">
+              <thead>
+                <tr>
+                  <th>Usuario</th>
+                  <th>DNI / Identificador</th>
+                  <th>Tipo / Tarifa</th>
+                  <th>Institución / Carnet</th>
+                  <th>Saldo Monedero</th>
+                  <th>Estado</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="users-table-body">
+                <!-- Filas dinámicas desde app.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════════════════════════════════════════════════════════
+         PANEL PRINCIPAL 3: ESTADÍSTICAS Y RENDIMIENTO (MÓDULO 5)
+         ═════════════════════════════════════════════════════════════════ -->
+    <section class="admin-main-panel hidden" id="stats-admin-panel" aria-label="Estadísticas y Métricas del Sistema">
+      <div class="panel-inner">
+        <header class="panel-header">
+          <div>
+            <div class="panel-badge-live">ANALÍTICA DE TRANSPORTE URBANO</div>
+            <h2 class="panel-title">📊 Estadísticas &amp; Demanda Operativa de Tacna</h2>
+            <p class="panel-subtitle">Patrones de abordaje por horas pico, adopción de medios de pago digitales y rendimiento por corredor de transporte.</p>
+          </div>
+        </header>
+
+        <!-- Grid de Tarjetas Analíticas -->
+        <div class="stats-cards-grid">
+          <div class="panel-section-box">
+            <h3 class="section-box-title">⏰ Demanda por Franja Horaria (Horas Pico)</h3>
+            <p class="section-box-desc">Distribución de abordajes registrados a lo largo de la jornada operativa.</p>
+            <div class="hourly-bars-container" id="hourly-bars-container">
+              <!-- Barras horarias dinámicas -->
+            </div>
+            <div class="hourly-legend">
+              <span>06:00</span>
+              <span class="peak-marker">07:30 (Pico Mañana)</span>
+              <span>12:00</span>
+              <span class="peak-marker">13:15 (Pico Mediodía)</span>
+              <span>17:00</span>
+              <span class="peak-marker">19:00 (Pico Tarde)</span>
+              <span>22:00</span>
+            </div>
+          </div>
+
+          <div class="panel-section-box">
+            <h3 class="section-box-title">💳 Distribución por Medio de Pago</h3>
+            <p class="section-box-desc">Porcentaje de viajes cobrados según tecnología utilizada.</p>
+            <div class="distribution-list">
+              <div class="dist-item">
+                <div class="dist-header">
+                  <span>📱 App Bus Conectado (Puntos QR)</span>
+                  <strong>62%</strong>
+                </div>
+                <div class="dist-bar"><div class="dist-fill" style="width: 62%; background: #38BDF8;"></div></div>
+              </div>
+              <div class="dist-item">
+                <div class="dist-header">
+                  <span>🟣 Yape Empresas BCP (QR Dinámico)</span>
+                  <strong>24%</strong>
+                </div>
+                <div class="dist-bar"><div class="dist-fill" style="width: 24%; background: #A855F7;"></div></div>
+              </div>
+              <div class="dist-item">
+                <div class="dist-header">
+                  <span>♿ Pase Libre CONADIS (Ley 30412)</span>
+                  <strong>10%</strong>
+                </div>
+                <div class="dist-bar"><div class="dist-fill" style="width: 10%; background: #10B981;"></div></div>
+              </div>
+              <div class="dist-item">
+                <div class="dist-header">
+                  <span>💳 Tarjeta Contactless NFC</span>
+                  <strong>4%</strong>
+                </div>
+                <div class="dist-bar"><div class="dist-fill" style="width: 4%; background: #F59E0B;"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-section-box">
+          <h3 class="section-box-title">🎓 Impacto del Pasaje Universitario SUNEDU vs Adulto</h3>
+          <p class="section-box-desc">Resumen del subsidio de medio pasaje universitario (S/. 0.70) y control de reuso anti-fraude (2 minutos).</p>
+          <div class="panel-kpi-grid">
+            <div class="panel-kpi-card">
+              <span class="panel-kpi-label">Pasajes Universitarios</span>
+              <span class="panel-kpi-value highlight-cyan">20 viajes</span>
+              <span class="panel-kpi-desc">Tarifa aplicada: 7 puntos / S/. 0.70</span>
+            </div>
+            <div class="panel-kpi-card">
+              <span class="panel-kpi-label">Pasajes Adulto / General</span>
+              <span class="panel-kpi-value">40 viajes</span>
+              <span class="panel-kpi-desc">Tarifa aplicada: 15 puntos / S/. 1.50</span>
+            </div>
+            <div class="panel-kpi-card">
+              <span class="panel-kpi-label">Intentos Bloqueados (< 2 min)</span>
+              <span class="panel-kpi-value highlight-amber">2 bloqueos</span>
+              <span class="panel-kpi-desc">Protección anti-fraude temporal activa</span>
+            </div>
+            <div class="panel-kpi-card">
+              <span class="panel-kpi-label">Pases Libres CONADIS</span>
+              <span class="panel-kpi-value highlight-green">8 abordajes</span>
+              <span class="panel-kpi-desc">Costo S/. 0.00 según Ley 30412</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <!-- DIÁLOGO MODAL: CREAR / EDITAR PARADERO (Conforme a modern-web-guidance) -->
@@ -528,6 +869,181 @@
         <button type="button" class="btn btn-ghost" id="btn-cancel-confirm">Cancelar</button>
         <button type="button" class="btn btn-destructive" id="btn-confirm-delete">Sí, Eliminar Paradero</button>
       </div>
+    </div>
+  </dialog>
+
+  <!-- DIÁLOGO MODAL: CREAR / EDITAR USUARIO, CHOFER, ESTUDIANTE O CONADIS -->
+  <dialog id="user-dialog" aria-labelledby="user-dialog-title" closedby="any">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <div>
+          <span class="dialog-badge official" id="user-dialog-badge">PADRÓN TACNA</span>
+          <h2 id="user-dialog-title">Registrar Nuevo Usuario / Chofer</h2>
+        </div>
+        <button type="button" class="dialog-close-btn" id="user-dialog-close-x" aria-label="Cerrar ventana">&times;</button>
+      </div>
+
+      <form id="user-form" method="dialog" class="dialog-form">
+        <input type="hidden" id="user-field-id">
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="user-field-name">Nombres y Apellidos Completos <span class="req">*</span></label>
+            <input type="text" id="user-field-name" required placeholder="Ej: Carlos Mamani Flores">
+          </div>
+          <div class="form-group flex-1">
+            <label for="user-field-dni">DNI / Documento <span class="req">*</span></label>
+            <input type="text" id="user-field-dni" required maxlength="12" placeholder="8 dígitos">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="user-field-phone">Teléfono Móvil <span class="req">*</span></label>
+            <input type="tel" id="user-field-phone" required placeholder="+51 952 000 000">
+          </div>
+          <div class="form-group flex-1">
+            <label for="user-field-role">Tipo de Usuario / Rol <span class="req">*</span></label>
+            <select id="user-field-role" required>
+              <option value="DRIVER">🚌 Chofer Profesional de Ruta</option>
+              <option value="STUDENT">🎓 Estudiante Universitario (SUNEDU - 7 pts)</option>
+              <option value="PASSENGER">📱 Pasajero General</option>
+              <option value="ADMIN">🛡️ Administrador del Sistema</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Campos Específicos para CHOFER -->
+        <div id="user-role-fields-driver" class="role-specific-box">
+          <h4 class="role-box-title">🚍 Datos de Operación y Flota del Chofer</h4>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="user-field-route">Ruta Asignada <span class="req">*</span></label>
+              <select id="user-field-route">
+                <option value="Ruta 14">Ruta 14 (Cono Norte - UNJBG - Terminal)</option>
+                <option value="Ruta 10B">Ruta 10B (Pocollay - Ciudad Nueva - Univ.)</option>
+                <option value="Ruta 200">Ruta 200 (Gregorio Albarracín - Centro)</option>
+                <option value="Ruta 11">Ruta 11 (Alto de la Alianza - Centro)</option>
+              </select>
+            </div>
+            <div class="form-group flex-1">
+              <label for="user-field-unit">Código de Unidad <span class="req">*</span></label>
+              <input type="text" id="user-field-unit" placeholder="Ej: UNI-1408">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="user-field-plate">Placa del Bus <span class="req">*</span></label>
+              <input type="text" id="user-field-plate" placeholder="Ej: Z4B-812">
+            </div>
+            <div class="form-group flex-1">
+              <label for="user-field-brevete">N° Brevete / Categoría <span class="req">*</span></label>
+              <input type="text" id="user-field-brevete" placeholder="Ej: Q43892110 (A-IIIa)">
+            </div>
+          </div>
+        </div>
+
+        <!-- Campos Específicos para ESTUDIANTE UNIVERSITARIO -->
+        <div id="user-role-fields-student" class="role-specific-box hidden">
+          <h4 class="role-box-title">🎓 Validación de Carnet Universitario SUNEDU</h4>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="user-field-student-code">Código Carnet / Matrícula <span class="req">*</span></label>
+              <input type="text" id="user-field-student-code" placeholder="Ej: 2023-119042">
+            </div>
+            <div class="form-group flex-1">
+              <label for="user-field-university">Universidad / Instituto</label>
+              <input type="text" id="user-field-university" value="UNJBG Tacna" placeholder="Ej: UNJBG Tacna / UPT">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group flex-1">
+              <label for="user-field-student-expiry">Fecha de Vencimiento Carnet</label>
+              <input type="date" id="user-field-student-expiry" value="2026-12-31">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="user-field-points">Saldo Inicial de Puntos (10 pts = S/. 1.00)</label>
+            <input type="number" id="user-field-points" value="100" min="0" step="5">
+          </div>
+          <div class="form-group flex-1">
+            <label for="user-field-email">Correo Electrónico</label>
+            <input type="email" id="user-field-email" placeholder="usuario@correo.com">
+          </div>
+        </div>
+
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-user-dialog">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-user">Guardar en Padrón</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- DIÁLOGO MODAL: VINCULAR TERMINAL POS A BUS Y CHOFER -->
+  <dialog id="pos-dialog" aria-labelledby="pos-dialog-title" closedby="any">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <div>
+          <span class="dialog-badge official">HARDWARE POS &amp; DESPACHO</span>
+          <h2 id="pos-dialog-title">Vincular Terminal POS a Bus y Chofer</h2>
+        </div>
+        <button type="button" class="dialog-close-btn" id="pos-dialog-close-x" aria-label="Cerrar ventana">&times;</button>
+      </div>
+
+      <form id="pos-form" method="dialog" class="dialog-form">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="pos-field-id">ID de Terminal POS <span class="req">*</span></label>
+            <input type="text" id="pos-field-id" required placeholder="Ej: POS-UNI-1409">
+          </div>
+          <div class="form-group flex-1">
+            <label for="pos-field-pairing-code">PIN de Inicio de Sesión POS <span class="req">*</span></label>
+            <input type="text" id="pos-field-pairing-code" required maxlength="6" placeholder="Ej: 1409 (PIN para chofer)">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="pos-field-route">Ruta Asignada <span class="req">*</span></label>
+            <select id="pos-field-route" required>
+              <option value="Ruta 14">Ruta 14 (Cono Norte - UNJBG - Terminal)</option>
+              <option value="Ruta 10B">Ruta 10B (Pocollay - Ciudad Nueva - Univ.)</option>
+              <option value="Ruta 200">Ruta 200 (Gregorio Albarracín - Centro)</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label for="pos-field-unit">Código de Unidad de Bus <span class="req">*</span></label>
+            <input type="text" id="pos-field-unit" required placeholder="Ej: UNI-1409">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="pos-field-plate">Placa del Bus <span class="req">*</span></label>
+            <input type="text" id="pos-field-plate" required placeholder="Ej: Z3C-901">
+          </div>
+          <div class="form-group flex-1">
+            <label for="pos-field-driver-name">Nombre del Chofer Titular <span class="req">*</span></label>
+            <input type="text" id="pos-field-driver-name" required placeholder="Ej: Víctor Mendoza Quispe">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="pos-field-device-model">Dispositivo / Tablet Validadora</label>
+            <input type="text" id="pos-field-device-model" value="Samsung Galaxy Tab S6 Lite (SM-P613)" placeholder="Modelo de dispositivo">
+          </div>
+        </div>
+
+        <div class="dialog-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-pos-dialog">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-pos">Vincular y Habilitar POS</button>
+        </div>
+      </form>
     </div>
   </dialog>
 

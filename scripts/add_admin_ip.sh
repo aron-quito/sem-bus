@@ -7,9 +7,9 @@
 # ═══════════════════════════════════════════════════════════════════════
 set -e
 
-SERVER_USER="admin"
-SERVER_IP="34.44.71.179"
-SSH_KEY="${HOME}/.ssh/id_buses"
+SERVER_USER="${SERVER_USER:-admin}"
+SERVER_IP="${SERVER_IP:?Error: define SERVER_IP (ej. export SERVER_IP=tu.ip.del.servidor)}"
+SSH_KEY="${SSH_KEY:-${HOME}/.ssh/id_ed25519}"
 IPS_FILE="/etc/nginx/admin_allowed_ips.conf"
 
 TARGET="$1"
@@ -42,7 +42,6 @@ set -e
 if [ ! -f "$IPS_FILE" ]; then
   sudo tee "$IPS_FILE" > /dev/null << 'EOF'
 allow 127.0.0.1;
-allow 38.250.158.151; # Aron
 deny all;
 EOF
 fi
@@ -66,7 +65,4 @@ echo "🎉 ¡IP $TARGET autorizada exitosamente!"
 echo "📋 Lista actual en el servidor:"
 ssh -i "$SSH_KEY" "$SERVER_USER@$SERVER_IP" "cat $IPS_FILE"
 echo ""
-echo "🔗 Pasa estos datos a tu compañero:"
-echo "   • URL:      http://$SERVER_IP"
-echo "   • Usuario:  admin2"
-echo "   • Clave:    TacnaAdmin2_2026!"
+echo "🔗 Comparte la URL del panel y las credenciales configuradas en /etc/nginx/.htpasswd."

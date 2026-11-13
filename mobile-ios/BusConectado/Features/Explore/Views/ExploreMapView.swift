@@ -271,6 +271,139 @@ struct ExploreMapView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
 
+                // Aviso de tarifa / espera universitaria de 2 min / validación QR
+                if let bannerMsg = viewModel.successBannerMessage {
+                    HStack(spacing: 10) {
+                        Image(systemName: bannerMsg.localizedCaseInsensitiveContains("espera") ? "clock.badge.exclamationmark.fill" : "checkmark.seal.fill")
+                            .foregroundColor(bannerMsg.localizedCaseInsensitiveContains("espera") ? BCTheme.amber : BCTheme.emerald)
+                        Text(bannerMsg)
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.white)
+                            .multilineTextAlignment(.leading)
+                        Spacer()
+                        Button {
+                            viewModel.successBannerMessage = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white.opacity(0.65))
+                        }
+                    }
+                    .padding(12)
+                    .background(BCTheme.elevatedSurface.opacity(0.96))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke((bannerMsg.localizedCaseInsensitiveContains("espera") ? BCTheme.amber : BCTheme.emerald).opacity(0.55), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 14)
+                }
+
+                // Pregunta en tiempo real: ¿Te encuentras a bordo de la unidad?
+                if let trip = viewModel.activeTrip {
+                    if trip.isConfirmedOnBoard == nil {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("¿Te encuentras a bordo de la unidad \(trip.busUnit)?")
+                                .font(.subheadline.weight(.bold))
+                                .foregroundColor(.white)
+                            Text("Si confirmas, monitorearemos la velocidad del bus en tiempo real y te avisaremos 200m antes de tu paradero.")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.72))
+                            HStack(spacing: 8) {
+                                Button {
+                                    viewModel.confirmOnBoardStatus(true)
+                                } label: {
+                                    Text("✓ Sí, estoy a bordo")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundColor(.black)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 9)
+                                        .background(BCTheme.emerald)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                                Button {
+                                    viewModel.confirmOnBoardStatus(false)
+                                } label: {
+                                    Text("En paradero")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 9)
+                                        .background(Color.white.opacity(0.12))
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                        .padding(14)
+                        .background(BCTheme.elevatedSurface.opacity(0.96))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(BCTheme.cyanAccent.opacity(0.55), lineWidth: 1.2)
+                        )
+                        .padding(.horizontal, 14)
+                    } else if trip.proximityAlertTriggered {
+                        HStack(spacing: 10) {
+                            Image(systemName: "bell.and.waves.left.and.right.fill")
+                                .foregroundColor(BCTheme.amber)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("¡Paradero próximo (≤ 200m)!")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(.white)
+                                Text("Tu unidad \(trip.busUnit) está llegando a \(trip.destinationStopName). Prepárate para descender.")
+                                    .font(.caption2)
+                                    .foregroundColor(.white.opacity(0.85))
+                            }
+                            Spacer()
+                            Button {
+                                viewModel.finishActiveTrip()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                        }
+                        .padding(12)
+                        .background(Color(red: 0.27, green: 0.10, blue: 0.01))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(BCTheme.amber.opacity(0.75), lineWidth: 1.2)
+                        )
+                        .padding(.horizontal, 14)
+                    } else if trip.isConfirmedOnBoard == true {
+                        let liveBus = viewModel.activeBuses.first(where: {
+                            $0.unitNumber.caseInsensitiveCompare(trip.busUnit) == .orderedSame ||
+                            $0.plate.caseInsensitiveCompare(trip.busPlate) == .orderedSame
+                        })
+                        let nextStop = liveBus?.nextStopName ?? trip.destinationStopName
+                        let etaMin = liveBus?.nextStopEtaMinutes ?? trip.nextStopEtaMinutes
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("🚌 A bordo de \(trip.busUnit) · \(trip.lineNumber)")
+                                    .font(.caption.weight(.heavy))
+                                    .foregroundColor(BCTheme.emerald)
+                                Text("Próx. paradero: \(nextStop) (~\(etaMin) min)")
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundColor(.white)
+                            }
+                            Spacer()
+                            Button {
+                                viewModel.finishActiveTrip()
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                        }
+                        .padding(12)
+                        .background(BCTheme.elevatedSurface.opacity(0.96))
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(BCTheme.emerald.opacity(0.55), lineWidth: 1)
+                        )
+                        .padding(.horizontal, 14)
+                    }
+                }
+
                 // Widget Circular de Alerta de Llegada (Si el usuario activó los 2 Timers de un paradero)
                 if let alert = viewModel.activeArrivalAlert {
                     HStack {
@@ -304,7 +437,31 @@ struct ExploreMapView: View {
                 HStack(alignment: .bottom) {
                     Spacer()
 
-                    VStack(spacing: 12) {
+                    VStack(alignment: .trailing, spacing: 12) {
+                        if viewModel.activeTrip == nil {
+                            Button {
+                                onDismissSearchFocus?()
+                                viewModel.verifyAndSubscribeNearestBus()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "bus.fill")
+                                        .font(.caption.weight(.bold))
+                                        .foregroundColor(BCTheme.emerald)
+                                    Text("¿Estoy en el bus?")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundColor(.white)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                                .background(BCTheme.elevatedSurface.opacity(0.96))
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule()
+                                        .stroke(BCTheme.emerald.opacity(0.65), lineWidth: 1)
+                                )
+                            }
+                        }
+
                         // Botón Centrar Mi Ubicación (Estilo Google Maps)
                         Button {
                             onDismissSearchFocus?()
@@ -332,31 +489,33 @@ struct ExploreMapView: View {
                         }
                         .accessibilityLabel("Centrar mi ubicación")
 
-                        // Botón FAB Cian Cuadrado Redondeado "Ir / Cómo Llegar" (Idéntico a Google Maps / Mockup)
-                        Button {
-                            onDismissSearchFocus?()
-                            viewModel.openRoutePlanner(with: viewModel.searchedDestinationPin)
-                        } label: {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                    .fill(Color(hex: "#38BDF8"))
-                                    .frame(width: 54, height: 54)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                            .stroke(Color.white.opacity(0.45), lineWidth: 1)
-                                    )
+                        // Botón FAB Cian Cuadrado Redondeado "Ir / Cómo Llegar" (Oculto durante un viaje activo)
+                        if viewModel.activeTrip == nil {
+                            Button {
+                                onDismissSearchFocus?()
+                                viewModel.openRoutePlanner(with: viewModel.searchedDestinationPin)
+                            } label: {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .fill(Color(hex: "#38BDF8"))
+                                        .frame(width: 54, height: 54)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                                .stroke(Color.white.opacity(0.45), lineWidth: 1)
+                                        )
 
-                                Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                                    .font(.system(size: 24, weight: .bold))
-                                    .foregroundColor(Color(hex: "#090D16"))
+                                    Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+                                        .font(.system(size: 24, weight: .bold))
+                                        .foregroundColor(Color(hex: "#090D16"))
+                                }
+                                .shadow(color: Color(hex: "#38BDF8").opacity(0.45), radius: 10, y: 4)
                             }
-                            .shadow(color: Color(hex: "#38BDF8").opacity(0.45), radius: 10, y: 4)
+                            .accessibilityLabel("Ir / Cómo llegar")
                         }
-                        .accessibilityLabel("Ir / Cómo llegar")
                     }
                     .padding(.trailing, 14)
                 }
-                .padding(.bottom, (viewModel.stops.isEmpty && viewModel.activeBuses.isEmpty && !viewModel.isEmptyTransitBannerDismissed) ? 4 : 18)
+                .padding(.bottom, viewModel.activeTrip != nil ? 96 : ((viewModel.stops.isEmpty && viewModel.activeBuses.isEmpty && !viewModel.isEmptyTransitBannerDismissed) ? 4 : 18))
 
                 // 5. Pop-up "Sin paraderos ni buses en camino" Retirable con un Gesto (Deslizar o pulsar [✕])
                 if viewModel.stops.isEmpty && viewModel.activeBuses.isEmpty && !viewModel.isEmptyTransitBannerDismissed {
